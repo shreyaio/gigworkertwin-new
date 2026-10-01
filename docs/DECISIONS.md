@@ -3120,3 +3120,15 @@ here because they move a documented rule; everything else is mechanical.
   conservative reading of `docs/03` §9.1. The case for allowing it is that `origin='studio'` and
   `twins_n` are on every surface, so a reader can judge it; the case against is that the gate exists
   precisely so that judgement does not have to be made per number. **Researcher's call.**
+
+### 004's pointer backfill demotes, it does not delete
+
+`004_studio_origin.sql` adds `studio_runs.is_latest_for_twin_version` with `default true`, so on any
+project that already held Studio rows every pre-004 row claimed to be current and
+`studio_runs_latest_uq` refused to build on the first duplicate `(twin_id, version_code,
+custom_change)`. Mechanical, so picked rather than asked: the migration now demotes all but the
+newest row per key (`created_at desc`, tie-broken by `studio_run_id desc`) immediately before
+creating the index. **Nothing is deleted** — the losing rows keep every field and only stop being
+the pointer, which is precisely what a second ask would have done to them had the pointer existed
+when they were written (CLAUDE.md rule 6). The tie-break is there because `created_at` is not
+unique, and two rows in one millisecond must still resolve to one winner or the index fails again.
