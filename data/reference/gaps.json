@@ -1,0 +1,424 @@
+[
+ {
+  "gap_id": "1.1.a",
+  "criterion_id": "1.1.a",
+  "threshold_id": "1.1",
+  "lever": "L1",
+  "gap_type": "EXTEND",
+  "commitment": "State one payment rule that applies whichever pay model the driver is on, and stand behind it: where a rider does not pay in full, Uber makes up the difference rather than leaving the loss with the driver.",
+  "precedent": "MVAG 2025 cl. 17.4 requires that payment to the driver “may be settled daily, weekly or fortnightly but not later as per the agreement between the driver and the aggregator”. Fairwork 2024 awarded 1.1 to bigbasket on evidence of on-time payment backed by a documented policy.",
+  "anchor_text": "Daily Pay (S21); Services Agreement §4.3.7 (S32)",
+  "anchor_sources": [
+   "S21",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "1.1.b",
+  "criterion_id": "1.1.b",
+  "threshold_id": "1.1",
+  "lever": "L1",
+  "gap_type": "INTRODUCE",
+  "commitment": "Publish a policy guaranteeing that, after fuel, maintenance, insurance and device costs, a driver earns at least the local minimum wage for every active hour including waiting time — or publish the transaction and cost statistics that show they already do.",
+  "precedent": "Footnote 4 of the standard accepts either form of evidence. Fairwork 2024 awarded 1.1 to bigbasket, noting it “has a minimum wage policy ensuring the same”. MVAG 2025 cl. 17.4 sets a floor of 80% of the fare for drivers using their own vehicle.",
+  "anchor_text": "Earnings page (S12); Services Agreement §4 (S32)",
+  "anchor_sources": [
+   "S12",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "1.2.a",
+  "criterion_id": "1.2.a",
+  "threshold_id": "1.2",
+  "lever": "L1",
+  "gap_type": "INTRODUCE",
+  "commitment": "The same guarantee measured against a local living wage rather than the minimum wage.",
+  "precedent": "No Indian platform held 1.2 in the Fairwork India 2024 ratings, so there is no domestic platform precedent. Footnote 5 provides the method where no living wage figure exists.",
+  "anchor_text": "Earnings page (S12)",
+  "anchor_sources": [
+   "S12"
+  ]
+ },
+ {
+  "gap_id": "2.1.a",
+  "criterion_id": "2.1.a",
+  "threshold_id": "2.1",
+  "lever": "L2",
+  "gap_type": "INTRODUCE",
+  "commitment": "Supply safety equipment appropriate to the vehicle type at no cost, and deliver induction and refresher training at Uber's expense rather than requiring the driver to arrive already trained.",
+  "precedent": "MVAG 2025 cl. 10.1 requires an induction programme of “at least forty (40) hours” including “first responder training for at least six (6) hours”, with course details published online; cl. 11.2(iv) requires an annual refresher programme with records kept. Fairwork 2024 awarded 2.1 to bigbasket, Swiggy and Zomato on safety training and an SOS button.",
+  "anchor_text": "Services Agreement §3.1 (S32); driver safety page (S15)",
+  "anchor_sources": [
+   "S15",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "2.1.b",
+  "criterion_id": "2.1.b",
+  "threshold_id": "2.1",
+  "lever": "L2",
+  "gap_type": "REMOVE",
+  "commitment": "Delete the clause making safety and support services discretionary, so the features already built are commitments rather than favours that can be withdrawn.",
+  "precedent": "Fairwork 2024 awarded 2.1 to three Indian platforms for mechanisms of exactly this kind. MVAG 2025 cl. 14.12 and 14.13 require a 24x7 control room and a 24x7 call centre the driver can contact about journey issues — obligations, not discretions.",
+  "anchor_text": "Services Agreement §2.7 (S32); driver safety page (S15)",
+  "anchor_sources": [
+   "S15",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "2.1.c",
+  "criterion_id": "2.1.c",
+  "threshold_id": "2.1",
+  "lever": "L2",
+  "gap_type": "INTRODUCE",
+  "commitment": "Provide accident and injury cover at Uber's cost, with a published sum insured, named insurer and claims route, so a driver does not carry the cost of a work accident.",
+  "precedent": "MVAG 2025 cl. 11.2(i) requires health insurance “for not less than Rs. 5 Lakh for each driver on-boarded” and cl. 11.2(ii) term insurance “for not less than Rs. 10 Lakh”. Fairwork 2024 awarded 2.2 to bigbasket, Swiggy and Zomato for “documented policies to provide safety nets, such as insurance, at no additional cost to workers”.",
+  "anchor_text": "Services Agreement §§8.1–8.3 (S32); Uber Care (S23)",
+  "anchor_sources": [
+   "S23",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "2.2.a",
+  "criterion_id": "2.2.a",
+  "threshold_id": "2.2",
+  "lever": "L2",
+  "gap_type": "EXTEND",
+  "commitment": "Move from brokering third-party products to funding social protection: extend e-Shram support beyond the first 10,000 drivers and state what Uber itself contributes.",
+  "precedent": "The Code on Social Security, 2020 came into force on 21 November 2025 and the Social Security (Central) Rules, 2026 were notified on 8 May 2026, placing aggregator obligations on platforms. The Karnataka Act 2025 operates a welfare fee remitted by aggregators, notified for collection on 16 February 2026.",
+  "anchor_text": "e-Shram support (S20); Uber Care (S23); Uber Pro rewards (S03)",
+  "anchor_sources": [
+   "S03",
+   "S20",
+   "S23"
+  ]
+ },
+ {
+  "gap_id": "2.2.b",
+  "criterion_id": "2.2.b",
+  "threshold_id": "2.2",
+  "lever": "L2",
+  "gap_type": "INTRODUCE",
+  "commitment": "Publish a rule that time away for sickness, injury, pregnancy or bereavement does not reduce a driver's rating, tier, dispatch priority or access, and say how a driver invokes it.",
+  "precedent": "Fairwork 2024 awarded 2.2 to bigbasket, Swiggy and Zomato, each noted as having “policies that provide for loss of pay and that guarantee no loss of standing in case of prolonged absence from the platform”.",
+  "anchor_text": "Uber Pro tier rules (S03); deactivations page (S02)",
+  "anchor_sources": [
+   "S02",
+   "S03"
+  ]
+ },
+ {
+  "gap_id": "2.2.c",
+  "criterion_id": "2.2.c",
+  "threshold_id": "2.2",
+  "lever": "L2",
+  "gap_type": "REMOVE",
+  "commitment": "Detach earnings from acceptance and cancellation rates, and stop rewarding trip counts completed inside a time window, so that pay does not reward working longer or faster than is safe.",
+  "precedent": "MVAG 2025 cl. 18.1 permits a cancellation penalty only where the reason is not one “identified as valid by the aggregator and duly and specifically mentioned on its website and App”, which presumes a published list of valid reasons for declining. Fairwork assesses this limb under 2.2, held by three Indian platforms in 2024.",
+  "anchor_text": "Uber Pro standards (S03); promotions (S12); Community Guidelines (S01)",
+  "anchor_sources": [
+   "S01",
+   "S03",
+   "S12"
+  ]
+ },
+ {
+  "gap_id": "3.1.b",
+  "criterion_id": "3.1.b",
+  "threshold_id": "3.1",
+  "lever": "L3",
+  "gap_type": "EXTEND",
+  "commitment": "Publish a plain-language summary of the operative terms — pay, deductions, deactivation, liability, data — alongside the legal text, in the languages the Driver app supports, so a driver does not need a lawyer to understand what they signed.",
+  "precedent": "MVAG 2025 cl. 11.1(ix) requires the driver contract to be executed “including in the language of the State” with standard terms “made available online”; cl. 14.3 requires the App in English, Hindi and the State's official language. Fairwork 2024 awarded 3.1 to bigbasket, Swiggy and Zomato for terms “clear, transparent, and accessible in multiple regional languages”.",
+  "anchor_text": "Legal hub (S31); agreeing to terms (S28)",
+  "anchor_sources": [
+   "S28",
+   "S31"
+  ]
+ },
+ {
+  "gap_id": "3.1.d",
+  "criterion_id": "3.1.d",
+  "threshold_id": "3.1",
+  "lever": "L3",
+  "gap_type": "UNIVERSALISE",
+  "commitment": "Publish the driver contract for Moto, Auto, Intercity, Hire and courier work, so every Indian driver can read the agreement that governs them.",
+  "precedent": "MVAG 2025 cl. 11.1(ix) requires a valid executed contract for every on-boarded driver with standard terms available online, and applies to aggregators across vehicle classes.",
+  "anchor_text": "Legal hub (S31); driver profile Contracts section (S28)",
+  "anchor_sources": [
+   "S28",
+   "S31"
+  ]
+ },
+ {
+  "gap_id": "3.1.e",
+  "criterion_id": "3.1.e",
+  "threshold_id": "3.1",
+  "lever": "L3",
+  "gap_type": "REMOVE",
+  "commitment": "Delete the clause by which the driver agrees they are not a consumer under the Consumer Protection Act, 2019, and the indemnity covering social security contributions.",
+  "precedent": "Fairwork 2024 awarded 3.1 to bigbasket, Swiggy and Zomato, noting in each case that “The T&Cs are subject to Indian law”. MVAG 2025 cl. 8.2 requires aggregators to comply with the Consumer Protection Act, 2019 as a condition of licence.",
+  "anchor_text": "Services Agreement §2.6, §9, §11 (S32)",
+  "anchor_sources": [
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "3.1.f",
+  "criterion_id": "3.1.f",
+  "threshold_id": "3.1",
+  "lever": "L3",
+  "gap_type": "EXTEND",
+  "commitment": "Publish an India driver privacy notice written to the Digital Personal Data Protection Act, 2023, and give drivers a portable copy of the work record their driving generates rather than declaring it Uber's property.",
+  "precedent": "MVAG 2025 cl. 8.2 and 14.5 require compliance with the DPDP Act, 2023 and storage of journey and fare data under it. Fairwork 2024 awarded 3.1 to bigbasket, Swiggy and Zomato for a data protection policy detailing “the types of data collected from a worker and the measures put in place to protect this data”.",
+  "anchor_text": "Privacy Notice (S08); Services Agreement §5.1 (S32)",
+  "anchor_sources": [
+   "S08",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "3.2.a",
+  "criterion_id": "3.2.a",
+  "threshold_id": "3.2",
+  "lever": "L3",
+  "gap_type": "EXTEND",
+  "commitment": "Give individual notice of contract and promotion changes a stated number of days before they take effect, and protect points, tier status and rewards already earned from forfeiture.",
+  "precedent": "The Karnataka Act 2025 requires 14 days' prior notice with written reasons and observance of natural justice before termination, and an exhaustive list of grounds in the contract. Fairwork 2024 awarded 3.2 to bigbasket, Swiggy and Zomato.",
+  "anchor_text": "Services Agreement §13 (S32); Uber Pro terms (S03)",
+  "anchor_sources": [
+   "S03",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "3.2.b",
+  "criterion_id": "3.2.b",
+  "threshold_id": "3.2",
+  "lever": "L3",
+  "gap_type": "REMOVE",
+  "commitment": "Narrow the liability exclusion and the indemnity so risk is shared, lengthen or remove the one-year claim window, and make the assignment right symmetric.",
+  "precedent": "Fairwork 2024 awarded 3.2 to bigbasket, Swiggy and Zomato, each noted for T&Cs containing “provisions that reduce asymmetry in liabilities” and compensation for platform outages, and containing no provisions preventing workers from seeking redress.",
+  "anchor_text": "Services Agreement §§2.6, 9, 10, 14.4 (S32)",
+  "anchor_sources": [
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "3.2.c",
+  "criterion_id": "3.2.c",
+  "threshold_id": "3.2",
+  "lever": "L3",
+  "gap_type": "INTRODUCE",
+  "commitment": "Operate a mechanism by which Uber checks how fleet partners treat the drivers they supply, rather than assigning them sole responsibility.",
+  "precedent": "Fairwork 2024 awarded 3.2 to bigbasket, Swiggy and Zomato, each noted as having “a Code of Conduct in place for subcontractors to ensure all workers are offered the same working conditions”. Definition 3 of the standard places this responsibility on the platform.",
+  "anchor_text": "Services Agreement §11.2 (S32); driver requirements (S16)",
+  "anchor_sources": [
+   "S16",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "3.2.d",
+  "criterion_id": "3.2.d",
+  "threshold_id": "3.2",
+  "lever": "L3",
+  "gap_type": "DOCUMENT",
+  "commitment": "Publish the tier thresholds, the allocation rule and the bonus calculation in a form a driver can read and keep outside the app, instead of setting them “from time to time” inside it.",
+  "precedent": "MVAG 2025 cl. 14.6 requires that “The proportion of the share of the fare and incentives provided to the driver, particulars of the driver fare and apportioned fare … shall be ensured by the aggregator through up-to-date disclosures on its website and in the App.” Karnataka Act 2025 s.13 requires platforms to explain how automated systems affect fares, ratings and task assignment in simple language.",
+  "anchor_text": "Uber Pro T&Cs (S03); Privacy Notice §II.C (S08); Upfront Fares (S11)",
+  "anchor_sources": [
+   "S03",
+   "S08",
+   "S11"
+  ]
+ },
+ {
+  "gap_id": "4.1.a",
+  "criterion_id": "4.1.a",
+  "threshold_id": "4.1",
+  "lever": "L4",
+  "gap_type": "UNIVERSALISE",
+  "commitment": "Make a human point of contact reachable from the app for every driver in India, not only in Greenlight cities, state the time within which Uber replies, and write both into the contract.",
+  "precedent": "MVAG 2025 cl. 9.10 requires a Grievance Officer whose “name, e-mail address, and telephone number(s) shall be made available by the aggregator on its App and website”; cl. 14.13 requires a 24x7 call centre in English and the State language enabling “the passenger and/or the driver” to raise journey issues. Karnataka's Rules require a mandatory human point of contact with multilingual support.",
+  "anchor_text": "Help screen (S17); Services Agreement §14.7 (S32); support call button (S21)",
+  "anchor_sources": [
+   "S17",
+   "S21",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "4.1.b",
+  "criterion_id": "4.1.b",
+  "threshold_id": "4.1",
+  "lever": "L4",
+  "gap_type": "EXTEND",
+  "commitment": "Extend appeals beyond deactivation to low ratings, payment disputes and short suspensions; give the driver enough detail about a disputed rating to contest it; publish a decision deadline; and set the process out in the Agreement.",
+  "precedent": "The Karnataka Act 2025 requires an Internal Dispute Resolution Committee: the worker files within 7 working days and the committee must decide within 15 working days, with escalation to the state Board. MVAG 2025 cl. 11.2(vi) requires an inquiry within three days of a complaint. Fairwork 2024 awarded 4.1 to bigbasket, Swiggy and Zomato.",
+  "anchor_text": "Review Center (S02, S20); ratings page (S14); Services Agreement (S32)",
+  "anchor_sources": [
+   "S02",
+   "S14",
+   "S20",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "4.1.d",
+  "criterion_id": "4.1.d",
+  "threshold_id": "4.1",
+  "lever": "L4",
+  "gap_type": "REMOVE",
+  "commitment": "Remove disparagement, and harm to Uber's brand, reputation or business, from the grounds for deactivation in §2.5 and from the Community Guidelines. State positively that raising a concern or bringing an appeal will never count against a driver's standing.",
+  "precedent": "Fairwork 2024 4.1 notes record that bigbasket “has a policy that ensures workers are not penalised for raising concerns” and that Swiggy and Zomato workers “are not penalised for raising concerns”. The Karnataka Act 2025 requires observance of natural justice with written reasons before termination.",
+  "anchor_text": "Services Agreement §2.5 (S32); Community Guidelines (S01)",
+  "anchor_sources": [
+   "S01",
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "4.2.a",
+  "criterion_id": "4.2.a",
+  "threshold_id": "4.2",
+  "lever": "L4",
+  "gap_type": "EXTEND",
+  "commitment": "Add to the Non-Discrimination Policy a route by which a driver reports discrimination against them, a stated investigation and correction step, and a stated consequence for the rider or employee responsible.",
+  "precedent": "Fairwork 2024 4.2 notes for Swiggy and Zomato record “an anti-discrimination policy for reporting any acts of discrimination against workers” which “also has deterrent provisions for customers”.",
+  "anchor_text": "Non-Discrimination Policy (S04); Community Guidelines (S01)",
+  "anchor_sources": [
+   "S01",
+   "S04"
+  ]
+ },
+ {
+  "gap_id": "4.2.b",
+  "criterion_id": "4.2.b",
+  "threshold_id": "4.2",
+  "lever": "L4",
+  "gap_type": "INTRODUCE",
+  "commitment": "Publish practical accommodations for drivers covering pregnancy, disability and religious observance, stating what a driver may ask for and how.",
+  "precedent": "Fairwork 2024 4.2 notes for Swiggy and Zomato record that each “has adopted policies to provide equal opportunities to the marginalised”. MVAG 2025 cl. 10.1 requires induction training to include gender sensitivity and disability awareness.",
+  "anchor_text": "Non-Discrimination Policy (S04); driver requirements (S16)",
+  "anchor_sources": [
+   "S04",
+   "S16"
+  ]
+ },
+ {
+  "gap_id": "4.2.c",
+  "criterion_id": "4.2.c",
+  "threshold_id": "4.2",
+  "lever": "L4",
+  "gap_type": "INTRODUCE",
+  "commitment": "Report where a group is under-represented among Uber's Indian drivers, name the barriers identified, and state what is being changed to remove them.",
+  "precedent": "Fairwork 2024 4.2 notes for Swiggy and Zomato, as above. Fairwork awards this limb only where barrier analysis is evidenced, not where a campaign is announced.",
+  "anchor_text": "Driver requirements (S16); India newsroom (S20–S27)",
+  "anchor_sources": [
+   "S16",
+   "S20",
+   "S27"
+  ]
+ },
+ {
+  "gap_id": "4.2.d",
+  "criterion_id": "4.2.d",
+  "threshold_id": "4.2",
+  "lever": "L4",
+  "gap_type": "INTRODUCE",
+  "commitment": "Commission an independent audit of the allocation and pay algorithms for biased outcomes across gender, caste, religion and disability, and publish the result. Publish error rates for the facial recognition check across groups.",
+  "precedent": "Fairwork 2024 4.2 notes record that Swiggy and Zomato each “conducted an external independent audit of its work allocation algorithm to check it for instances of bias”. Karnataka Act 2025 s.13 requires that automated monitoring and decision systems not discriminate on religion, race, gender, place of birth or disability.",
+  "anchor_text": "Uber Pro T&Cs (S03); Privacy Notice §II.C (S08)",
+  "anchor_sources": [
+   "S03",
+   "S08"
+  ]
+ },
+ {
+  "gap_id": "4.2.e",
+  "criterion_id": "4.2.e",
+  "threshold_id": "4.2",
+  "lever": "L4",
+  "gap_type": "DOCUMENT",
+  "commitment": "Publish how the biased-rating filter works — what counts as a biased rider, how a driver reports one, whether the driver is told the filter ran, and within what time — and give drivers a route to report discriminatory rider conduct.",
+  "precedent": "Fairwork 2024 4.2 notes record that the Swiggy and Zomato anti-discrimination policies have “deterrent provisions for customers”, and that each platform conducted an external bias audit. MVAG 2025 cl. 9.10 requires grievances to be logged and reported to the Competent Authority through an online process.",
+  "anchor_text": "Deactivations page, Ratings section (S02); star ratings (S14)",
+  "anchor_sources": [
+   "S02",
+   "S14"
+  ]
+ },
+ {
+  "gap_id": "5.1.a",
+  "criterion_id": "5.1.a",
+  "threshold_id": "5.1",
+  "lever": "L5",
+  "gap_type": "EXTEND",
+  "commitment": "Open the voice mechanism to every driver rather than to a selected panel, let drivers set part of the agenda, and publish its terms of reference and meeting cadence.",
+  "precedent": "Footnote 13 of the standard sets the test. No Indian platform held 5.1 in the Fairwork India 2024 ratings, so there is no domestic platform precedent — this gap rests on the standard and on the Karnataka Act 2025, whose Welfare Board includes gig worker representation.",
+  "anchor_text": "Driver Advisory Council (S21, S22); uberSAMAAJ (S26)",
+  "anchor_sources": [
+   "S21",
+   "S22",
+   "S26"
+  ]
+ },
+ {
+  "gap_id": "5.1.b",
+  "criterion_id": "5.1.b",
+  "threshold_id": "5.1",
+  "lever": "L5",
+  "gap_type": "INTRODUCE",
+  "commitment": "Publish, on the Driver app, a written statement that Uber will recognise and bargain with an independent body of drivers or a trade union.",
+  "precedent": "No Indian platform held 5.1 in 2024, so there is no domestic platform precedent. Footnote 14 of the standard supplies the expected form of words. This is the hardest gap in the codebook and should be labelled as such in any use of it.",
+  "anchor_text": "Legal hub (S31); Driver app",
+  "anchor_sources": [
+   "S31"
+  ]
+ },
+ {
+  "gap_id": "5.1.c",
+  "criterion_id": "5.1.c",
+  "threshold_id": "5.1",
+  "lever": "L5",
+  "gap_type": "REMOVE",
+  "commitment": "Remove the disparagement ground for deactivation, and narrow the confidentiality clause so it does not cover drivers discussing their own pay and conditions with each other or with a representative body.",
+  "precedent": "Footnotes 15 and 16 anchor this in ILO C087 and C098. No Indian platform held 5.1 in 2024. The Karnataka Act 2025 requires natural justice before termination, which constrains discretionary deactivation.",
+  "anchor_text": "Services Agreement §2.5, §6 (S32)",
+  "anchor_sources": [
+   "S32"
+  ]
+ },
+ {
+  "gap_id": "5.2.a",
+  "criterion_id": "5.2.a",
+  "threshold_id": "5.2",
+  "lever": "L5",
+  "gap_type": "EXTEND",
+  "commitment": "Give the driver body a defined decision right over a named set of matters, rather than a consultative voice, and let drivers rather than Uber choose its members.",
+  "precedent": "No Indian platform held 5.2 in 2024. The Karnataka Act 2025 constitutes a Welfare Board with worker representation, which is the closest Indian precedent for drivers holding a seat with standing.",
+  "anchor_text": "Driver Advisory Council (S21, S22)",
+  "anchor_sources": [
+   "S21",
+   "S22"
+  ]
+ },
+ {
+  "gap_id": "5.2.b",
+  "criterion_id": "5.2.b",
+  "threshold_id": "5.2",
+  "lever": "L5",
+  "gap_type": "INTRODUCE",
+  "commitment": "Publish formal, non-exclusive recognition of an independent drivers' body or union on the Driver app.",
+  "precedent": "No Indian platform held 5.2 in 2024. Footnote 17 requires recognition to be non-exclusive and extended to any significant collective body where the law allows.",
+  "anchor_text": "Legal hub (S31); Driver app",
+  "anchor_sources": [
+   "S31"
+  ]
+ }
+]

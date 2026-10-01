@@ -1,0 +1,30 @@
+[
+ {
+  "arm_id": "BASE",
+  "label": "No change",
+  "version_code": "00000",
+  "lever": null,
+  "is_control": true
+ },
+ {
+  "arm_id": "MGT1",
+  "label": "Human appeals with no penalty for complaints",
+  "version_code": "00010",
+  "lever": "L4",
+  "is_control": false
+ },
+ {
+  "arm_id": "CON1",
+  "label": "Safety equipment, training, and accident cover",
+  "version_code": "01000",
+  "lever": "L2",
+  "is_control": false
+ },
+ {
+  "arm_id": "REP1",
+  "label": "A drivers' forum and union recognition",
+  "version_code": "00001",
+  "lever": "L5",
+  "is_control": false
+ }
+]

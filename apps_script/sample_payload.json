@@ -1,0 +1,580 @@
+{
+ "response_id": "2_ABaOnudSTUBRESPONSEID",
+ "submitted_at": "2026-09-23T09:41:02.000Z",
+ "answers": [
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Are you aged 18 years or above?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Have you driven with Uber, by cab, auto rickshaw, or motorcycle, for at least three continuous months up to today?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Has the Uber Driver app, on your own device, given you trip requests in the last 30 days?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Can you read English, Hindi, or Marathi well enough to complete this questionnaire on your own?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Are you in India at present?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Are you a salaried employee on Uber's own payroll (for example ground or engineering staff)?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Have you taken part in an earlier stage of this research?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 1 — A FEW QUICK CHECKS",
+   "title": "Is your Uber account deactivated or suspended at present for a reason other than a voluntary pause?",
+   "value": "Yes"
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I have read and understood the information about this research on this sheet.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I understand my participation is voluntary and I can withdraw at any time during the survey without giving a reason.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I understand I can withdraw my responses within 14 days of completing the survey by writing to the principal investigator.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I understand my responses will be anonymised and used only for academic research on algorithmic management of gig workers.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I understand my data will be retained in encrypted form for five years and then destroyed.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I confirm I am aged 18 years or above and meet the eligibility criteria set out in Section II.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "I agree that my survey answers, including my answers in my own words, may be used to build an anonymised computer model that answers research questions in the way I might. I understand that the model will be used only for this research and that I can ask for it to be deleted within 14 days of completing the survey.",
+   "value": [
+    "I agree"
+   ]
+  },
+  {
+   "section": "PART 2 — YOUR AGREEMENT",
+   "title": "Do you agree to take part?",
+   "value": "Yes, I agree to take part"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "Which Uber service do you drive for most?",
+   "value": "Cab (Uber Go or Premier)"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "In which city do you usually drive?",
+   "value": "Mumbai"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "For how many years have you driven with Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "In a typical week, how many hours do you work through platform apps?",
+   "value": "4"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "From how many platform apps do you receive tasks at present?",
+   "value": "1"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "Which other ride or delivery apps, if any, do you also use for work?",
+   "value": "Ola and Rapido"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "What is your age in completed years?",
+   "value": "4"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "How do you describe your gender?",
+   "value": "Woman"
+  },
+  {
+   "section": "PART 3 — ABOUT YOU AND YOUR WORK",
+   "title": "In which language are you completing this survey?",
+   "value": "English"
+  },
+  {
+   "section": "PART 4 — YOUR BACKGROUND",
+   "title": "How do you have the vehicle you drive?",
+   "value": "Own outright"
+  },
+  {
+   "section": "PART 4 — YOUR BACKGROUND",
+   "title": "How many people depend on your earnings?",
+   "value": "4"
+  },
+  {
+   "section": "PART 4 — YOUR BACKGROUND",
+   "title": "Apart from platform work, what other income does your household have?",
+   "value": "None"
+  },
+  {
+   "section": "PART 4 — YOUR BACKGROUND",
+   "title": "What is the highest level of education you have completed?",
+   "value": "Up to class 10"
+  },
+  {
+   "section": "PART 4 — YOUR BACKGROUND",
+   "title": "How many years did you drive for a living before joining Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 5 — THE APP AND YOUR WORK",
+   "title": "An automated system tracks me carefully to ensure I am completing my tasks.",
+   "value": "4"
+  },
+  {
+   "section": "PART 5 — THE APP AND YOUR WORK",
+   "title": "My daily tasks are assigned by an automated system.",
+   "value": "4"
+  },
+  {
+   "section": "PART 5 — THE APP AND YOUR WORK",
+   "title": "My work schedule is made by an automated system.",
+   "value": "4"
+  },
+  {
+   "section": "PART 5 — THE APP AND YOUR WORK",
+   "title": "The evaluation of my work performance is handled by an electronic system.",
+   "value": "4"
+  },
+  {
+   "section": "PART 5 — THE APP AND YOUR WORK",
+   "title": "A large part of my compensation is determined by an automated system.",
+   "value": "4"
+  },
+  {
+   "section": "PART 5 — THE APP AND YOUR WORK",
+   "title": "To show you are reading carefully, please select 2 for this statement.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm assigns my tasks intelligently.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm provides normative instructions for my work according to the platform standard.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm provides me with considerable information support related to the completion of work tasks.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm provides me with real time feedback on performance information.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm tracks my location in real time.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm keeps track of my work progress.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm tracks my work attitude in real time.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm automatically evaluates the quality of my service.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm ranks me according to my performance.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm provides me a monetary incentive to work hard for a specific period.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "The algorithm imposes a fine on me if I fail to comply with the platform's requirements.",
+   "value": "4"
+  },
+  {
+   "section": "PART 6 — HOW THE APP GUIDES YOU",
+   "title": "What makes you feel the app controls, or does not control, how you work?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 7 — HOW FAIR THE APP IS",
+   "title": "Do you consider that the app's matching procedures are based on accurate information?",
+   "value": "4"
+  },
+  {
+   "section": "PART 7 — HOW FAIR THE APP IS",
+   "title": "Have you been able to express your views and feelings during the evaluation procedure?",
+   "value": "4"
+  },
+  {
+   "section": "PART 7 — HOW FAIR THE APP IS",
+   "title": "Are you able to appeal the rides assigned to you by the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 7 — HOW FAIR THE APP IS",
+   "title": "Do you consider that the app's matching procedures are free of bias?",
+   "value": "4"
+  },
+  {
+   "section": "PART 8 — HOW CLEAR THE APP IS",
+   "title": "I think I could understand the decision making process of platform algorithms very well.",
+   "value": "4"
+  },
+  {
+   "section": "PART 8 — HOW CLEAR THE APP IS",
+   "title": "I think I can see through platform algorithms' decision making process.",
+   "value": "4"
+  },
+  {
+   "section": "PART 8 — HOW CLEAR THE APP IS",
+   "title": "I think the decision making process of platform algorithms are clear and transparent.",
+   "value": "4"
+  },
+  {
+   "section": "PART 9 — YOUR JOB",
+   "title": "All in all, I am satisfied with my job.",
+   "value": "4"
+  },
+  {
+   "section": "PART 9 — YOUR JOB",
+   "title": "In general, I don't like my job.",
+   "value": "4"
+  },
+  {
+   "section": "PART 9 — YOUR JOB",
+   "title": "In general, I like working here.",
+   "value": "4"
+  },
+  {
+   "section": "PART 9 — YOUR JOB",
+   "title": "What is the main reason for your satisfaction rating?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 10 — STAYING WITH UBER",
+   "title": "I hope this job will continue in the future.",
+   "value": "4"
+  },
+  {
+   "section": "PART 10 — STAYING WITH UBER",
+   "title": "I hope my job will continue in the future.",
+   "value": "4"
+  },
+  {
+   "section": "PART 11 — WORKING AROUND THE APP",
+   "title": "I do not enjoy working under the supervision of algorithms.",
+   "value": "4"
+  },
+  {
+   "section": "PART 11 — WORKING AROUND THE APP",
+   "title": "I experience the platform's algorithms as unfair.",
+   "value": "4"
+  },
+  {
+   "section": "PART 11 — WORKING AROUND THE APP",
+   "title": "I would rather have more human management than algorithmic management.",
+   "value": "4"
+  },
+  {
+   "section": "PART 11 — WORKING AROUND THE APP",
+   "title": "I deliberately change my behavior to get assigned better tasks by the platform's algorithm.",
+   "value": "4"
+  },
+  {
+   "section": "PART 11 — WORKING AROUND THE APP",
+   "title": "To show you are reading carefully, please select 6 for this statement.",
+   "value": "4"
+  },
+  {
+   "section": "PART 12 — LEAVING UBER",
+   "title": "I will probably look for a new job in the next year.",
+   "value": "4"
+  },
+  {
+   "section": "PART 12 — LEAVING UBER",
+   "title": "I often think about quitting.",
+   "value": "4"
+  },
+  {
+   "section": "PART 12 — LEAVING UBER",
+   "title": "How likely is it that you will actively look for a new job in the next year?",
+   "value": "4"
+  },
+  {
+   "section": "PART 13 — YOUR INCOME",
+   "title": "I can easily get another job outside the platform economy if I want to.",
+   "value": "4"
+  },
+  {
+   "section": "PART 13 — YOUR INCOME",
+   "title": "To maintain the standard of living I desire for myself, I must keep working via a platform.",
+   "value": "4"
+  },
+  {
+   "section": "PART 13 — YOUR INCOME",
+   "title": "Why is finding other work easy or hard for you?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 14 — YOUR WORK IN YOUR OWN WORDS",
+   "title": "Describe your least difficult day driving with Uber. What happened, and what did you do?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 14 — YOUR WORK IN YOUR OWN WORDS",
+   "title": "In your own words, how does the Uber app decide what a trip pays and which driver gets it?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 14 — YOUR WORK IN YOUR OWN WORDS",
+   "title": "Tell us about a time you needed help from Uber, or your account was blocked or penalised. How was it handled?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 14 — YOUR WORK IN YOUR OWN WORDS",
+   "title": "What do you and other drivers do when you have a problem with the platform?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 14 — YOUR WORK IN YOUR OWN WORDS",
+   "title": "Who depends on your earnings, and where do you see yourself in a year or two?",
+   "value": "A steady day with airport trips and no cancellations."
+  },
+  {
+   "section": "PART 15 — IMAGINE A CHANGE",
+   "title": "Which change did the story describe? Please tick one.",
+   "value": "No change"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "Do you consider that the app's matching procedures are based on accurate information?",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "Have you been able to express your views and feelings during the evaluation procedure?",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "Are you able to appeal the rides assigned to you by the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "Do you consider that the app's matching procedures are free of bias?",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "All in all, I am satisfied with my job.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "In general, I don't like my job.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "In general, I like working here.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I do not enjoy working under the supervision of algorithms.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I experience the platform's algorithms as unfair.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I would rather have more human management than algorithmic management.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I deliberately change my behavior to get assigned better tasks by the platform's algorithm.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I will probably look for a new job in the next year.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I often think about quitting.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "How likely is it that you will actively look for a new job in the next year?",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I hope this job will continue in the future.",
+   "value": "4"
+  },
+  {
+   "section": "PART 16 — IMAGINING THE STORY IS TRUE",
+   "title": "I hope my job will continue in the future.",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 1 of 6",
+   "title": "Under this version, how fair would the app's decisions be for you?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 1 of 6",
+   "title": "Under this version, how likely would you be to push back against or work around the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 1 of 6",
+   "title": "Under this version, how likely would you be to keep driving with Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 2 of 6",
+   "title": "Under this version, how fair would the app's decisions be for you?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 2 of 6",
+   "title": "Under this version, how likely would you be to push back against or work around the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 2 of 6",
+   "title": "Under this version, how likely would you be to keep driving with Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 3 of 6",
+   "title": "Under this version, how fair would the app's decisions be for you?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 3 of 6",
+   "title": "Under this version, how likely would you be to push back against or work around the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 3 of 6",
+   "title": "Under this version, how likely would you be to keep driving with Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 4 of 6",
+   "title": "Under this version, how fair would the app's decisions be for you?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 4 of 6",
+   "title": "Under this version, how likely would you be to push back against or work around the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 4 of 6",
+   "title": "Under this version, how likely would you be to keep driving with Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 5 of 6",
+   "title": "Under this version, how fair would the app's decisions be for you?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 5 of 6",
+   "title": "Under this version, how likely would you be to push back against or work around the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 5 of 6",
+   "title": "Under this version, how likely would you be to keep driving with Uber?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 6 of 6",
+   "title": "Under this version, how fair would the app's decisions be for you?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 6 of 6",
+   "title": "Under this version, how likely would you be to push back against or work around the app?",
+   "value": "4"
+  },
+  {
+   "section": "PART 17 — SIX VERSIONS — Version 6 of 6",
+   "title": "Under this version, how likely would you be to keep driving with Uber?",
+   "value": "4"
+  }
+ ]
+}

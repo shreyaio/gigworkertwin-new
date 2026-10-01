@@ -1,0 +1,67 @@
+01000 means: Pay no change, Conditions at level 1, Contracts no change, Management no change, Representation no change. Fairwork score 1 of 10.
+
+So four levers do nothing, and one lever does all the work. Here's the whole path.
+
+Step 1 — Turn the digit into a list of changes
+
+The digit for Conditions is 1, so you open Table D and take only the threshold 2.1 gaps. There are three:
+
+Gap	Type	What would close it
+2.1.a	INTRODUCE	Supply safety equipment at no cost, and pay for induction and refresher training, instead of requiring the driver to arrive already trained.
+2.1.b	REMOVE	Delete the clause making safety and support services discretionary, so the features already built are commitments rather than favours.
+2.1.c	INTRODUCE	Provide accident and injury cover at Uber's cost, with a published sum insured, named insurer and claims route.
+
+That's the whole treatment. Three sentences, copied out of the codebook. No judgement, no model — a lookup.
+
+Step 2 — Notice what you are not taking
+
+Because the digit is 1 and not 2, the threshold 2.2 gaps stay out:
+
+2.2.a — social protection Uber actually funds
+2.2.b — your standing is protected if you can't work for a long time
+2.2.c — pay stops rewarding you for taking risks
+
+This is the single most important step in the whole process. If any of those three sentences leaks into the text, 01000 and 02000 become the same thing, and the Conditions lever stops measuring anything. Most of what the checker later does is guard this line.
+
+Step 3 — Pull the Uber text the change attaches to
+
+Table D's last column tells you where to look in the policy corpus. For 2.1 that's the driver safety page (S15), Uber Care (S23), and Services Agreement §3.1, §2.7 and §§8.1–8.3 (S32).
+
+You pull those chunks for two different reasons, and it's worth being clear they're different jobs:
+
+To copy the voice. S15 reads: "Safety is designed into the experience. So you feel comfortable driving at night." Short sentences, second person, plain. That's the register the new text has to match.
+
+To avoid repeating what already exists. Table C records that Uber's lone-working features — emergency button, Follow My Ride, number masking, 24/7 incident support — are already real and coded SUPPORTS. The new text must not announce them as new. If it does, you're measuring drivers' reaction to something they already have.
+
+Step 4 — The brief to the design agent
+
+Four things, and nothing else:
+
+The three commitments from Step 1
+The anchor chunks from Step 3, for voice
+The style contract — one paragraph, 45–70 words, second person, no numbers unless the gap supplies them, never say "Fairwork" or "threshold"
+A do-not-say list: nothing about social protection, nothing about standing after absence, nothing about pay — and don't present the emergency button or trip sharing as new
+Step 5 — What comes back
+
+Conditions: Uber now gives you the safety equipment you need for your vehicle, and pays for your training instead of expecting you to arrive with it. The safety support already in the app — the emergency button, trip sharing, round-the-clock help — is now something you can count on rather than something Uber can withdraw. And if you are hurt while working, Uber's cover pays, with the amount and the claim steps written down.
+
+66 words. Three commitments, all present. Nothing from 2.2.
+
+Step 6 — The checker
+Check	Result
+All three commitments present?	Yes
+Anything present that wasn't a commitment?	No — no social protection, no absence protection, no pay language
+45–70 words?	66 ✓
+The four zero levers byte-identical to every other cell with those digits?	Yes
+
+Fail any of these → re-render once → then halt the cell and log it.
+
+Step 7 — The finished variant
+
+Pay: No change from today.
+Conditions: Uber now gives you the safety equipment you need for your vehicle, and pays for your training… (as above)
+Contracts: No change from today.
+Management: No change from today.
+Representation: No change from today.
+
+Cached against a hash of the three commitments plus the style version, so every other cell where Conditions = 1 reuses this exact paragraph. The twin sees these five lines in randomised order, plus its own baseline answers, and never sees the code or the number 1.

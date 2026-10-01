@@ -1,0 +1,27 @@
+# The seed AnalysisConfig. ARCHITECTURE.md §4, docs/07 §4.1.
+# Validated into models.analysis.AnalysisConfig on load, which forbids extras.
+
+# A weight per metric. docs/07 §4.1: THE DEFAULT IS UNWEIGHTED AND THAT IS WHAT THE PAPER REPORTS.
+# Weights exist for sensitivity analysis only. A weight of 0 omits a metric from the index; the
+# index is then the weighted mean over the non-zero weights. Any non-default set is recorded on the
+# run and shown in the UI, so a reweighted index can never be mistaken for the headline one.
+#
+# The sign flip for pushback and leaving is NOT here: it comes from `constructs.index_sign` in the
+# frozen reference data (-1 for VOIC and EXIT). Putting it in config would let a researcher invert
+# the meaning of a metric by editing a file, which is a research decision, not a setting.
+weights:
+  fairness: 1.0
+  clarity: 1.0
+  happiness: 1.0
+  staying: 1.0
+  pushback: 1.0
+  leaving: 1.0
+
+# docs/07 §9. The bootstrap for the PLS-SEM layer (M12), not for the counterfactual shifts.
+# The DDL constrains this to >= 30 (`analysis_bootstrap_floor`): a bootstrap over fewer resamples
+# reports a confidence interval that is narrower than the evidence supports.
+bootstrap_samples: 5000
+
+# Round shifts and the index to this many decimals when stored and displayed. 3 dp is what the
+# golden fixtures in docs/07 §4.2 are stated to, so it is the precision the regression test asserts.
+decimals: 3

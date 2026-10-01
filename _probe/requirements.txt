@@ -1,0 +1,15 @@
+# Deliberately empty of pins.
+#
+# A ZeroGPU Space appends its own packages to the pip install line and FORCES a Gradio
+# version, observed 2026-09-28 as:
+#
+#   pip install -r requirements.txt "torch<=2.13.0" gradio[oauth,mcp]==6.28.0 \
+#       "uvicorn>=0.14.0" "websockets>=10.4" spaces==0.51.3
+#
+# Pinning `gradio>=5.29,<6.0` here (per ARCHITECTURE.md section 3) makes that line
+# unsatisfiable and the build fails before anything runs. Gradio arrives from the platform
+# either way, so the probe names no dependency at all.
+#
+# `spaces` being INSTALLED by the platform does not breach ARCHITECTURE.md section 8.2 rule 4,
+# which forbids importing it and decorating with @spaces.GPU. The probe reports whether it has
+# been imported, and it has not.

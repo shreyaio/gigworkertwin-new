@@ -1,0 +1,66 @@
+# The design agent's style contract. docs/02 §4.4.
+# Constant across all 243 cells: anything that varies with the cell is a confound.
+# Bumping style_version invalidates the cached lever paragraphs and the variants built from them
+# (`lever_paragraphs` is keyed on (lever, dial, style_version) and `variants` on
+# (version_code, style_version)), and nothing else (I4).
+#
+# **Any change to this file, once a paragraph has been PERSISTED, MUST bump style_version.** A
+# cached paragraph served under a contract it was not written to is exactly the silent confound
+# the (lever, dial, style_version) key exists to prevent.
+#
+# HISTORY
+#
+# v1, until 2026-10-01. The 2026-09-29 band widenings (word_max 70 -> 75 -> 150) did NOT bump it,
+#   correctly at the time: no paragraph had ever survived a process. `pydantic_ai` was not
+#   installed, the migrations were unapplied and `lever_paragraphs` had never been written, so
+#   there was nothing to mis-serve and a v2 whose v1 produced no text would have sent a future
+#   reader hunting for renders that never existed.
+#
+# v2, from 2026-10-01. The rule above now bites for the first time: M15 persisted 7 rows in
+#   `lever_paragraphs` and 3 passing `variants` (00000, 01000, 00001) under v1, and the
+#   2026-10-01 change below alters what the design agent is shown, so a v1 paragraph and a v2
+#   paragraph are no longer written to the same contract. Those three cells must be re-rendered
+#   under v2; that cost is paid now, deliberately, because it only grows once a sweep has run.
+#   RESEARCHER, 2026-10-01. See docs/DECISIONS.md M16.
+#
+# The v2 change is NOT in this file's values. `reading_grade_min` and `reading_grade_max` were
+# added to `agents.design.STYLE_KEYS_SHOWN`, so the band below is now part of the design prompt
+# instead of being withheld from it. The prompt is a style-contract input, so this bumps.
+style_version: v2
+person: second
+tense: present or near-future
+paragraphs_per_lever: 1
+word_min: 45
+# RESEARCHER, 2026-09-29, in two steps. See docs/DECISIONS.md for both.
+#   70 -> 75: so the specification's own exemplar passes. docs/03 §4.2 and worked_out_eg.txt both
+#     call the 01000 Conditions paragraph 66 words; it is 71, and the band rejected it.
+#   75 -> 150: the first live render showed 75 words cannot carry 8 commitments as plain short
+#     sentences. The model compressed them into one 75-word semicolon chain, scoring 34-38 on
+#     Flesch-Kincaid against a 16.0 ceiling. Dial 2 carries up to 8 commitments and the band cannot
+#     vary by cell without becoming a confound, so one band must fit the largest set.
+#
+# 150 is DELIBERATELY UNVERIFIED: the researcher set it without a confirming re-render. What it
+# buys is headroom, not a measured fit. Two things are now untested and should be watched on the
+# first real sweep:
+#   - a dial-1 lever with 2 commitments may now write far BELOW the cap, so paragraph length can
+#     vary a lot between dials. Length is a stimulus property, so if dial-1 cells run ~60 words and
+#     dial-2 cells run ~140, dial is partly confounded with how much text a twin reads.
+#   - word_max no longer binds for small commitment sets, so the reading-grade gate is the only
+#     thing holding register. Watch it, not the band.
+word_max: 150
+bullets: false
+numbers: only where the GapSpec supplies them
+forbidden_terms: [Fairwork, principle, threshold, score, research, study, survey, twin]
+# Reading-grade band for the invariance gate (docs/02 §4.5 gate 3 names the gate but no numbers).
+# Flesch-Kincaid. Wide enough that ordinary policy prose passes, tight enough that one cell cannot
+# be markedly harder to read than another. CONFIG.
+#
+# SHOWN TO THE DESIGN AGENT from v2 (STYLE_KEYS_SHOWN). Both bounds, because gate 3 tests both.
+# These two keys are therefore no longer free to change: a change here changes the design prompt,
+# so it bumps style_version even though 16.0 is otherwise an ordinary CONFIG number.
+reading_grade_min: 4.0
+reading_grade_max: 16.0
+forbidden_intensifiers: [dramatically, finally, at last, revolutionary, unprecedented, historic]
+dial_zero_text: "No change from today."
+lever_order_in_text: fixed
+lever_order_to_twin: randomised

@@ -1,0 +1,141 @@
+# Google Form question -> what it becomes. docs/03 §6.
+#
+# Two columns: the key is the Form section and the question title joined by a pipe, the value is
+# the item_id or the field it lands in. The section qualifies the title because titles repeat —
+# H2_SAT1 asks SAT1's question again in Part 16, and Part 17 asks the same three questions six
+# times. The Apps Script sends the section with every answer for exactly that reason.
+#
+# Value prefixes:
+#   (none)        a survey_items.item_id, stored in survey_responses.value_num
+#   field:        a twins column (tenure_years is converted to tenure_months at intake)
+#   background:   twins.background — Part 3 extras and Part 4, which have no item_id (docs/01 §4.2)
+#   why:          a why-probe, stored as why_text on its anchor item (WHY_PROBE_ANCHOR)
+#   own_words:    Part 14, verbatim, onto twins.background.own_words
+#   consent:      consent:twin is statement 7 — the one that decides whether a twin is built
+#   meta:         the submission's own language
+#   check:        a data-quality device (Part 15's manipulation check), mirror-only
+#   screen:       Part 1 eligibility. Recorded in the data/temp mirror, which is the immutable
+#                 record of the submission; it is not a column and nothing is inferred from it.
+#
+# A question absent from this file raises at intake; nothing is dropped (CLAUDE.md rule 6).
+# Re-wording a Form question is an edit here, not a code change.
+
+version: v1
+map:
+  "PART 1 — A FEW QUICK CHECKS|Are you aged 18 years or above?": screen:age_18_plus
+  "PART 1 — A FEW QUICK CHECKS|Have you driven with Uber, by cab, auto rickshaw, or motorcycle, for at least three continuous months up to today?": screen:tenure_3_months
+  "PART 1 — A FEW QUICK CHECKS|Has the Uber Driver app, on your own device, given you trip requests in the last 30 days?": screen:active_30_days
+  "PART 1 — A FEW QUICK CHECKS|Can you read English, Hindi, or Marathi well enough to complete this questionnaire on your own?": screen:reads_survey_language
+  "PART 1 — A FEW QUICK CHECKS|Are you in India at present?": screen:in_india
+  "PART 1 — A FEW QUICK CHECKS|Are you a salaried employee on Uber's own payroll (for example ground or engineering staff)?": screen:uber_employee
+  "PART 1 — A FEW QUICK CHECKS|Have you taken part in an earlier stage of this research?": screen:earlier_stage
+  "PART 1 — A FEW QUICK CHECKS|Is your Uber account deactivated or suspended at present for a reason other than a voluntary pause?": screen:deactivated
+  "PART 2 — YOUR AGREEMENT|I have read and understood the information about this research on this sheet.": consent:statement_1
+  "PART 2 — YOUR AGREEMENT|I understand my participation is voluntary and I can withdraw at any time during the survey without giving a reason.": consent:statement_2
+  "PART 2 — YOUR AGREEMENT|I understand I can withdraw my responses within 14 days of completing the survey by writing to the principal investigator.": consent:statement_3
+  "PART 2 — YOUR AGREEMENT|I understand my responses will be anonymised and used only for academic research on algorithmic management of gig workers.": consent:statement_4
+  "PART 2 — YOUR AGREEMENT|I understand my data will be retained in encrypted form for five years and then destroyed.": consent:statement_5
+  "PART 2 — YOUR AGREEMENT|I confirm I am aged 18 years or above and meet the eligibility criteria set out in Section II.": consent:statement_6
+  "PART 2 — YOUR AGREEMENT|I agree that my survey answers, including my answers in my own words, may be used to build an anonymised computer model that answers research questions in the way I might. I understand that the model will be used only for this research and that I can ask for it to be deleted within 14 days of completing the survey.": consent:twin
+  "PART 2 — YOUR AGREEMENT|Do you agree to take part?": consent:participate
+  "PART 3 — ABOUT YOU AND YOUR WORK|Which Uber service do you drive for most?": field:service
+  "PART 3 — ABOUT YOU AND YOUR WORK|In which city do you usually drive?": field:city
+  "PART 3 — ABOUT YOU AND YOUR WORK|For how many years have you driven with Uber?": field:tenure_years
+  "PART 3 — ABOUT YOU AND YOUR WORK|In a typical week, how many hours do you work through platform apps?": field:hours_per_week
+  "PART 3 — ABOUT YOU AND YOUR WORK|From how many platform apps do you receive tasks at present?": background:platform_count
+  "PART 3 — ABOUT YOU AND YOUR WORK|Which other ride or delivery apps, if any, do you also use for work?": background:other_apps
+  "PART 3 — ABOUT YOU AND YOUR WORK|What is your age in completed years?": field:age
+  "PART 3 — ABOUT YOU AND YOUR WORK|How do you describe your gender?": field:gender
+  "PART 3 — ABOUT YOU AND YOUR WORK|In which language are you completing this survey?": meta:language
+  "PART 4 — YOUR BACKGROUND|How do you have the vehicle you drive?": background:vehicle_arrangement
+  "PART 4 — YOUR BACKGROUND|How many people depend on your earnings?": background:dependants
+  "PART 4 — YOUR BACKGROUND|Apart from platform work, what other income does your household have?": background:other_household_income
+  "PART 4 — YOUR BACKGROUND|What is the highest level of education you have completed?": background:education
+  "PART 4 — YOUR BACKGROUND|How many years did you drive for a living before joining Uber?": background:years_driving_before_uber
+
+  # Part 15 is a manipulation check: which story did the driver just read? A data-quality
+  # device like the attention checks, recorded in the mirror and never put to a twin (I10).
+  "PART 15 — IMAGINE A CHANGE|Which change did the story describe? Please tick one.": check:manipulation
+  "PART 6 — HOW THE APP GUIDES YOU|What makes you feel the app controls, or does not control, how you work?": why:WHY_CONTROL
+  "PART 9 — YOUR JOB|What is the main reason for your satisfaction rating?": why:WHY_SATISFACTION
+  "PART 13 — YOUR INCOME|Why is finding other work easy or hard for you?": why:WHY_OTHER_WORK
+  "PART 14 — YOUR WORK IN YOUR OWN WORDS|Describe your least difficult day driving with Uber. What happened, and what did you do?": own_words:OWN1
+  "PART 14 — YOUR WORK IN YOUR OWN WORDS|In your own words, how does the Uber app decide what a trip pays and which driver gets it?": own_words:OWN2
+  "PART 14 — YOUR WORK IN YOUR OWN WORDS|Tell us about a time you needed help from Uber, or your account was blocked or penalised. How was it handled?": own_words:OWN3
+  "PART 14 — YOUR WORK IN YOUR OWN WORDS|What do you and other drivers do when you have a problem with the platform?": own_words:OWN4
+  "PART 14 — YOUR WORK IN YOUR OWN WORDS|Who depends on your earnings, and where do you see yourself in a year or two?": own_words:OWN5
+
+  # --- the 73-item register, from data/reference/instrument.json (frozen) ---
+  "PART 5 — THE APP AND YOUR WORK|An automated system tracks me carefully to ensure I am completing my tasks.": AMQ1
+  "PART 5 — THE APP AND YOUR WORK|My daily tasks are assigned by an automated system.": AMQ2
+  "PART 5 — THE APP AND YOUR WORK|My work schedule is made by an automated system.": AMQ3
+  "PART 5 — THE APP AND YOUR WORK|The evaluation of my work performance is handled by an electronic system.": AMQ4
+  "PART 5 — THE APP AND YOUR WORK|A large part of my compensation is determined by an automated system.": AMQ5
+  "PART 5 — THE APP AND YOUR WORK|To show you are reading carefully, please select 2 for this statement.": AMQ6
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm assigns my tasks intelligently.": PAC1
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm provides normative instructions for my work according to the platform standard.": PAC2
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm provides me with considerable information support related to the completion of work tasks.": PAC3
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm provides me with real time feedback on performance information.": PAC4
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm tracks my location in real time.": PAC5
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm keeps track of my work progress.": PAC6
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm tracks my work attitude in real time.": PAC7
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm automatically evaluates the quality of my service.": PAC8
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm ranks me according to my performance.": PAC9
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm provides me a monetary incentive to work hard for a specific period.": PAC10
+  "PART 6 — HOW THE APP GUIDES YOU|The algorithm imposes a fine on me if I fail to comply with the platform's requirements.": PAC11
+  "PART 7 — HOW FAIR THE APP IS|Do you consider that the app's matching procedures are based on accurate information?": FAIR1
+  "PART 7 — HOW FAIR THE APP IS|Have you been able to express your views and feelings during the evaluation procedure?": FAIR2
+  "PART 7 — HOW FAIR THE APP IS|Are you able to appeal the rides assigned to you by the app?": FAIR3
+  "PART 7 — HOW FAIR THE APP IS|Do you consider that the app's matching procedures are free of bias?": FAIR4
+  "PART 8 — HOW CLEAR THE APP IS|I think I could understand the decision making process of platform algorithms very well.": CLAR1
+  "PART 8 — HOW CLEAR THE APP IS|I think I can see through platform algorithms' decision making process.": CLAR2
+  "PART 8 — HOW CLEAR THE APP IS|I think the decision making process of platform algorithms are clear and transparent.": CLAR3
+  "PART 9 — YOUR JOB|All in all, I am satisfied with my job.": SAT1
+  "PART 9 — YOUR JOB|In general, I don't like my job.": SAT2
+  "PART 9 — YOUR JOB|In general, I like working here.": SAT3
+  "PART 10 — STAYING WITH UBER|I hope this job will continue in the future.": CONT1
+  "PART 10 — STAYING WITH UBER|I hope my job will continue in the future.": CONT2
+  "PART 11 — WORKING AROUND THE APP|I do not enjoy working under the supervision of algorithms.": ALGO1
+  "PART 11 — WORKING AROUND THE APP|I experience the platform's algorithms as unfair.": ALGO2
+  "PART 11 — WORKING AROUND THE APP|I would rather have more human management than algorithmic management.": ALGO3
+  "PART 11 — WORKING AROUND THE APP|I deliberately change my behavior to get assigned better tasks by the platform's algorithm.": ALGO4
+  "PART 11 — WORKING AROUND THE APP|To show you are reading carefully, please select 6 for this statement.": ALGO5
+  "PART 12 — LEAVING UBER|I will probably look for a new job in the next year.": TURN1
+  "PART 12 — LEAVING UBER|I often think about quitting.": TURN2
+  "PART 12 — LEAVING UBER|How likely is it that you will actively look for a new job in the next year?": TURN3
+  "PART 13 — YOUR INCOME|I can easily get another job outside the platform economy if I want to.": DEP1
+  "PART 13 — YOUR INCOME|To maintain the standard of living I desire for myself, I must keep working via a platform.": DEP2
+  "PART 16 — IMAGINING THE STORY IS TRUE|Do you consider that the app's matching procedures are based on accurate information?": H2_FAIR1
+  "PART 16 — IMAGINING THE STORY IS TRUE|Have you been able to express your views and feelings during the evaluation procedure?": H2_FAIR2
+  "PART 16 — IMAGINING THE STORY IS TRUE|Are you able to appeal the rides assigned to you by the app?": H2_FAIR3
+  "PART 16 — IMAGINING THE STORY IS TRUE|Do you consider that the app's matching procedures are free of bias?": H2_FAIR4
+  "PART 16 — IMAGINING THE STORY IS TRUE|All in all, I am satisfied with my job.": H2_SAT1
+  "PART 16 — IMAGINING THE STORY IS TRUE|In general, I don't like my job.": H2_SAT2
+  "PART 16 — IMAGINING THE STORY IS TRUE|In general, I like working here.": H2_SAT3
+  "PART 16 — IMAGINING THE STORY IS TRUE|I do not enjoy working under the supervision of algorithms.": H2_ALGO1
+  "PART 16 — IMAGINING THE STORY IS TRUE|I experience the platform's algorithms as unfair.": H2_ALGO2
+  "PART 16 — IMAGINING THE STORY IS TRUE|I would rather have more human management than algorithmic management.": H2_ALGO3
+  "PART 16 — IMAGINING THE STORY IS TRUE|I deliberately change my behavior to get assigned better tasks by the platform's algorithm.": H2_ALGO4
+  "PART 16 — IMAGINING THE STORY IS TRUE|I will probably look for a new job in the next year.": H2_TURN1
+  "PART 16 — IMAGINING THE STORY IS TRUE|I often think about quitting.": H2_TURN2
+  "PART 16 — IMAGINING THE STORY IS TRUE|How likely is it that you will actively look for a new job in the next year?": H2_TURN3
+  "PART 16 — IMAGINING THE STORY IS TRUE|I hope this job will continue in the future.": H2_CONT1
+  "PART 16 — IMAGINING THE STORY IS TRUE|I hope my job will continue in the future.": H2_CONT2
+  "PART 17 — SIX VERSIONS — Version 1 of 6|Under this version, how fair would the app's decisions be for you?": H3_V1_FAIR
+  "PART 17 — SIX VERSIONS — Version 1 of 6|Under this version, how likely would you be to push back against or work around the app?": H3_V1_PUSH
+  "PART 17 — SIX VERSIONS — Version 1 of 6|Under this version, how likely would you be to keep driving with Uber?": H3_V1_KEEP
+  "PART 17 — SIX VERSIONS — Version 2 of 6|Under this version, how fair would the app's decisions be for you?": H3_V2_FAIR
+  "PART 17 — SIX VERSIONS — Version 2 of 6|Under this version, how likely would you be to push back against or work around the app?": H3_V2_PUSH
+  "PART 17 — SIX VERSIONS — Version 2 of 6|Under this version, how likely would you be to keep driving with Uber?": H3_V2_KEEP
+  "PART 17 — SIX VERSIONS — Version 3 of 6|Under this version, how fair would the app's decisions be for you?": H3_V3_FAIR
+  "PART 17 — SIX VERSIONS — Version 3 of 6|Under this version, how likely would you be to push back against or work around the app?": H3_V3_PUSH
+  "PART 17 — SIX VERSIONS — Version 3 of 6|Under this version, how likely would you be to keep driving with Uber?": H3_V3_KEEP
+  "PART 17 — SIX VERSIONS — Version 4 of 6|Under this version, how fair would the app's decisions be for you?": H3_V4_FAIR
+  "PART 17 — SIX VERSIONS — Version 4 of 6|Under this version, how likely would you be to push back against or work around the app?": H3_V4_PUSH
+  "PART 17 — SIX VERSIONS — Version 4 of 6|Under this version, how likely would you be to keep driving with Uber?": H3_V4_KEEP
+  "PART 17 — SIX VERSIONS — Version 5 of 6|Under this version, how fair would the app's decisions be for you?": H3_V5_FAIR
+  "PART 17 — SIX VERSIONS — Version 5 of 6|Under this version, how likely would you be to push back against or work around the app?": H3_V5_PUSH
+  "PART 17 — SIX VERSIONS — Version 5 of 6|Under this version, how likely would you be to keep driving with Uber?": H3_V5_KEEP
+  "PART 17 — SIX VERSIONS — Version 6 of 6|Under this version, how fair would the app's decisions be for you?": H3_V6_FAIR
+  "PART 17 — SIX VERSIONS — Version 6 of 6|Under this version, how likely would you be to push back against or work around the app?": H3_V6_PUSH
+  "PART 17 — SIX VERSIONS — Version 6 of 6|Under this version, how likely would you be to keep driving with Uber?": H3_V6_KEEP

@@ -1,0 +1,43 @@
+# The seed TwinConfig. ARCHITECTURE.md §4, docs/09 §4. Validated into models.twin.TwinConfig on
+# load, which forbids extras — a setting that does not exist there cannot be smuggled in per run,
+# and that is what keeps two sessions comparable.
+#
+# Frozen onto every session's `config` column, so a threshold change is visible in the data rather
+# than silently retroactive (docs/08 §2.2).
+
+# CONFIG, and the one genuinely open empirical question in the build.
+# **Set this from validity test 8 (the temperature sweep); do not pick it** (docs/02 §7.3).
+# 0.7 is a placeholder matching agents.default.yaml. The prototype used 1.0 with no evidence, which
+# is the highest-variance choice available.
+temperature: 0.7
+
+# docs/08 §2.1 — repeat the H3 gate and average, so one bad sample does not discard a good twin.
+# This is the dominant cost of the study: 18 calls per twin per repeat, so 3 repeats is 54 calls per
+# twin and ~27,000 calls at N=500. docs/10 counts it, not the sweep.
+quality_runs_per_twin: 3
+
+# Keep iff mae <= mae_max AND pct_within_1 >= pct_within_1_min. Both, never either.
+# Recorded on every quality run so a threshold change cannot be applied retroactively in silence.
+mae_max: 1.0
+pct_within_1_min: 0.80
+
+# A recorded field, NOT a UI control: there is no no-baseline arm (docs/03 §8). Anchoring a twin to
+# its own numbers is what keeps it recognisably its own driver, and the bound on that anchoring is
+# SHAM - 00000, reported with every cell.
+# The quality gate overrides this to false for its own rounds, because the human had no baseline
+# either (docs/08 §2.1 step 2).
+show_baseline: true
+
+# Which wording variant of the battery stems is used. Validity test 5 swaps it to show the result
+# does not depend on the phrasing.
+wording: A
+
+# --- NOT a TwinConfig field. Consumed by seed_db.py for the `orchestrator` app_config row. ---
+# seed_db.py (M1) reads this key out of THIS file to build the orchestrator config, so it lives here
+# even though it is not a property of the twin. load_twin_config() pops it by name before validating
+# the rest into TwinConfig, and asserts it matches settings.max_concurrency — the value is declared
+# in two places and the render-cache lesson (see style_contract.yaml) is that two declarations drift.
+#
+# The free Ollama Cloud tier permits ONE concurrent request. 1 is the tested default, not an edge
+# case; the pool exists so a paid plan becomes 3 or 10 without a code change (ARCHITECTURE.md §7.1).
+max_concurrency: 1

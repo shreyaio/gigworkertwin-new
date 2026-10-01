@@ -1,0 +1,82 @@
+[
+ {
+  "threshold_id": "1.1",
+  "threshold_name": "Ensures workers earn at least the local minimum wage after costs",
+  "lever": "L1",
+  "awarded_2026": 0,
+  "reason": "Both criteria are required. On-time payment is partly met and depends on which pay model applies; the wage floor is not met and is expressly disclaimed.",
+  "gate_threshold": null
+ },
+ {
+  "threshold_id": "1.2",
+  "threshold_name": "Ensures workers earn at least a local living wage after costs",
+  "lever": "L1",
+  "awarded_2026": 0,
+  "reason": "No evidence, and unreachable because 1.1 is not reached.",
+  "gate_threshold": "1.1"
+ },
+ {
+  "threshold_id": "2.1",
+  "threshold_name": "Mitigates task specific risk",
+  "lever": "L2",
+  "awarded_2026": 0,
+  "reason": "All three are required. Lone-working mitigation is partly met and is the strongest evidence in the corpus; equipment and training, and protection from accident costs, are both not met.",
+  "gate_threshold": null
+ },
+ {
+  "threshold_id": "2.2",
+  "threshold_name": "Ensures safe working conditions and a safety net",
+  "lever": "L2",
+  "awarded_2026": 0,
+  "reason": "All three are required. One is partly met, one has no evidence, one is not met. Unreachable in any case because 2.1 is not reached.",
+  "gate_threshold": "2.1"
+ },
+ {
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "lever": "L3",
+  "awarded_2026": 0,
+  "reason": "All six are required. Two are met outright — the contracting party and informed consent — and two are partly met. The consumer-status waiver alone withholds the point.",
+  "gate_threshold": null
+ },
+ {
+  "threshold_id": "3.2",
+  "threshold_name": "Ensures that no unfair contract terms are imposed",
+  "lever": "L3",
+  "awarded_2026": 0,
+  "reason": "All four are required and none is met. Unreachable in any case because 3.1 is not reached.",
+  "gate_threshold": "3.1"
+ },
+ {
+  "threshold_id": "4.1",
+  "threshold_name": "Provides due process for decisions affecting workers",
+  "lever": "L4",
+  "awarded_2026": 0,
+  "reason": "All four are required. One is met, two are partly met, and one is contradicted by the driver contract. The contradiction alone withholds the point.",
+  "gate_threshold": null
+ },
+ {
+  "threshold_id": "4.2",
+  "threshold_name": "Provides equity in the management process",
+  "lever": "L4",
+  "awarded_2026": 0,
+  "reason": "All five are required. Two are partly met, two have no evidence, one is not met. Unreachable because 4.1 is not reached.",
+  "gate_threshold": "4.1"
+ },
+ {
+  "threshold_id": "5.1",
+  "threshold_name": "Assures freedom of association and the expression of worker voice",
+  "lever": "L5",
+  "awarded_2026": 0,
+  "reason": "All three are required. One is partly met, one has no evidence at all, one is contradicted.",
+  "gate_threshold": null
+ },
+ {
+  "threshold_id": "5.2",
+  "threshold_name": "Supports democratic governance",
+  "lever": "L5",
+  "awarded_2026": 0,
+  "reason": "At least one is required. One is partly met and one has no evidence. Unreachable because 5.1 is not reached.",
+  "gate_threshold": "5.1"
+ }
+]

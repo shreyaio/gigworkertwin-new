@@ -1,0 +1,82 @@
+# CI. CLAUDE.md -> Testing: "The invariant suite (I1-I17) runs in CI."
+# No live LLM and no live DB, ever (docs/11 -> Ground rules).
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # `src` for the package, `.` for `config.settings`, which lives at the repo root and is
+      # imported by seed_db.py. Running a script by path puts the SCRIPT's directory on sys.path,
+      # not the working directory, so `src` alone fails with ModuleNotFoundError: config.
+      PYTHONPATH: src:.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # ARCHITECTURE.md section 8.2 rule 4. The fallback is 3.12 and taking it is a
+          # decision to record, not a drift to absorb.
+          python-version: "3.13"
+      # M9's contract test runs the Edge Function's rows.mjs under Node. ubuntu-latest ships a
+      # Node, but pinning it means the contract test cannot start failing because the image moved.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: pip install -r requirements.txt
+
+      # The layer table in ARCHITECTURE.md section 4. First, because a boundary violation
+      # invalidates the reasoning behind every test that follows it.
+      - name: layer boundaries
+        run: python -c "from importlinter.cli import lint_imports_command as c; c.main([])"
+
+      # The M0 portability gates: two thin entrypoints, eight routes, no `spaces` import.
+      - name: scaffold and portability
+        run: python -m pytest tests/test_m0_scaffold.py -q
+
+      # M1: the reference JSON is frozen, same sources in, same bytes out. Before the test
+      # suite, because if the frozen data moved then every number downstream moved with it.
+      - name: reference data is unchanged
+        run: python src/twinlab/ingest/build_reference.py --check
+
+      # M1: the reference tables seed idempotently and every docs/01 section 9 assertion holds.
+      # In-memory backend: no SUPABASE_* secrets exist in CI and none may be added.
+      - name: reference data seeds and asserts
+        run: python src/twinlab/ingest/seed_db.py
+
+      # M2 onward: the seventeen invariants, on their own, so a failure here is unmistakable.
+      # The suite accumulates — tests/test_invariants.py::DEFERRED names every invariant that has
+      # no test yet and the milestone that owns it, and a bookkeeping test fails if that drifts.
+      - name: invariants
+        run: python -m pytest tests/test_invariants.py -q
+
+      # M12: the golden PLS-SEM dataset (docs/07 §10). On its own and before the full suite,
+      # because it is the gate for every statistic in the paper: until it passes, no Statistics
+      # number is reportable and the UI carries the UNVALIDATED banner. It also proves the two
+      # wiring faults §10 names are caught — a construct bound to the wrong items, and a
+      # reverse-coded item not reversed before estimation — both of which produce plausible
+      # numbers and are invisible in any output.
+      - name: golden PLS-SEM dataset
+        run: python -m pytest tests/test_stats_golden.py -q
+
+      - name: full suite
+        run: python -m pytest tests/ -q
+
+      # M9: the Edge Function's generated copies of form_map.yaml and the item register must not
+      # drift from their sources. Beside build_reference.py --check for the same reason.
+      - name: edge function assets are unchanged
+        run: python tools/gen_edge_assets.py --check
+
+      # M9: "one contract, two implementations" (docs/04 §8). The Python and the Edge Function's
+      # rows.mjs must produce identical rows from apps_script/sample_payload.json. Node only —
+      # Deno is not needed, because rows.mjs is dependency-free ESM and index.ts imports it as is.
+      - name: intake contract (python vs edge function)
+        run: python -m pytest tests/test_m9_intake.py -q -k contract
+
+      # tools/ included since M12 added tools/gen_golden.py, which regenerates the pinned
+      # expected values and must stay lint-clean like anything else that can change a number.
+      - run: python -m ruff check src tests tools

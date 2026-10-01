@@ -1,0 +1,1028 @@
+[
+ {
+  "link_id": "L1-1.1-001__1.1.b",
+  "chunk_id": "L1-1.1-001",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-002__1.1.b",
+  "chunk_id": "L1-1.1-002",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-003__1.1.b",
+  "chunk_id": "L1-1.1-003",
+  "criterion_id": "1.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-004__1.1.b",
+  "chunk_id": "L1-1.1-004",
+  "criterion_id": "1.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-004__3.1.d",
+  "chunk_id": "L1-1.1-004",
+  "criterion_id": "3.1.d",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-005__1.1.b",
+  "chunk_id": "L1-1.1-005",
+  "criterion_id": "1.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-006__1.1.b",
+  "chunk_id": "L1-1.1-006",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-006__3.2.d",
+  "chunk_id": "L1-1.1-006",
+  "criterion_id": "3.2.d",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L1-1.1-007__1.1.b",
+  "chunk_id": "L1-1.1-007",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-008__1.1.b",
+  "chunk_id": "L1-1.1-008",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-009__1.1.b",
+  "chunk_id": "L1-1.1-009",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-010__1.1.b",
+  "chunk_id": "L1-1.1-010",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-010__2.2.c",
+  "chunk_id": "L1-1.1-010",
+  "criterion_id": "2.2.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-011__1.1.b",
+  "chunk_id": "L1-1.1-011",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-011__3.2.a",
+  "chunk_id": "L1-1.1-011",
+  "criterion_id": "3.2.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-012__1.1.a",
+  "chunk_id": "L1-1.1-012",
+  "criterion_id": "1.1.a",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-013__1.1.a",
+  "chunk_id": "L1-1.1-013",
+  "criterion_id": "1.1.a",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-014__1.1.a",
+  "chunk_id": "L1-1.1-014",
+  "criterion_id": "1.1.a",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L1-1.1-015__1.1.b",
+  "chunk_id": "L1-1.1-015",
+  "criterion_id": "1.1.b",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L1-1.1-016__1.1.b",
+  "chunk_id": "L1-1.1-016",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-017__1.1.b",
+  "chunk_id": "L1-1.1-017",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-018__1.1.b",
+  "chunk_id": "L1-1.1-018",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-020__1.1.b",
+  "chunk_id": "L1-1.1-020",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-021__1.1.b",
+  "chunk_id": "L1-1.1-021",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-021__3.2.a",
+  "chunk_id": "L1-1.1-021",
+  "criterion_id": "3.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-022__1.1.b",
+  "chunk_id": "L1-1.1-022",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-023__1.1.b",
+  "chunk_id": "L1-1.1-023",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-024__1.1.a",
+  "chunk_id": "L1-1.1-024",
+  "criterion_id": "1.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-025__1.1.b",
+  "chunk_id": "L1-1.1-025",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-026__1.1.a",
+  "chunk_id": "L1-1.1-026",
+  "criterion_id": "1.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-026__4.1.b",
+  "chunk_id": "L1-1.1-026",
+  "criterion_id": "4.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-027__1.1.a",
+  "chunk_id": "L1-1.1-027",
+  "criterion_id": "1.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-028__1.1.b",
+  "chunk_id": "L1-1.1-028",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-029__1.1.b",
+  "chunk_id": "L1-1.1-029",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-030__1.1.b",
+  "chunk_id": "L1-1.1-030",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-031__1.1.b",
+  "chunk_id": "L1-1.1-031",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-032__1.1.b",
+  "chunk_id": "L1-1.1-032",
+  "criterion_id": "1.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L1-1.1-033__1.1.a",
+  "chunk_id": "L1-1.1-033",
+  "criterion_id": "1.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L1-1.1-033__4.1.b",
+  "chunk_id": "L1-1.1-033",
+  "criterion_id": "4.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-010__1.1.a",
+  "chunk_id": "L3-3.1-010",
+  "criterion_id": "1.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.1-001__1.1.b",
+  "chunk_id": "L2-2.1-001",
+  "criterion_id": "1.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-001__2.1.b",
+  "chunk_id": "L2-2.1-001",
+  "criterion_id": "2.1.b",
+  "judgement": "SCOPE LIMITED"
+ },
+ {
+  "link_id": "L2-2.1-001__2.2.c",
+  "chunk_id": "L2-2.1-001",
+  "criterion_id": "2.2.c",
+  "judgement": "SCOPE LIMITED"
+ },
+ {
+  "link_id": "L2-2.1-002__2.1.a",
+  "chunk_id": "L2-2.1-002",
+  "criterion_id": "2.1.a",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L2-2.1-003__2.1.a",
+  "chunk_id": "L2-2.1-003",
+  "criterion_id": "2.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.1-003__2.1.b",
+  "chunk_id": "L2-2.1-003",
+  "criterion_id": "2.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L2-2.1-004__2.1.a",
+  "chunk_id": "L2-2.1-004",
+  "criterion_id": "2.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.1-004__2.1.b",
+  "chunk_id": "L2-2.1-004",
+  "criterion_id": "2.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L2-2.1-004__4.2.e",
+  "chunk_id": "L2-2.1-004",
+  "criterion_id": "4.2.e",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L2-2.1-005__2.1.a",
+  "chunk_id": "L2-2.1-005",
+  "criterion_id": "2.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-005__2.1.b",
+  "chunk_id": "L2-2.1-005",
+  "criterion_id": "2.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L2-2.1-006__2.1.a",
+  "chunk_id": "L2-2.1-006",
+  "criterion_id": "2.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-007__2.1.a",
+  "chunk_id": "L2-2.1-007",
+  "criterion_id": "2.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-008__2.1.a",
+  "chunk_id": "L2-2.1-008",
+  "criterion_id": "2.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-009__2.1.b",
+  "chunk_id": "L2-2.1-009",
+  "criterion_id": "2.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-010__2.1.b",
+  "chunk_id": "L2-2.1-010",
+  "criterion_id": "2.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-010__3.2.b",
+  "chunk_id": "L2-2.1-010",
+  "criterion_id": "3.2.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.1-011__2.1.b",
+  "chunk_id": "L2-2.1-011",
+  "criterion_id": "2.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.2-004__2.1.c",
+  "chunk_id": "L2-2.2-004",
+  "criterion_id": "2.1.c",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L2-2.2-009__2.1.c",
+  "chunk_id": "L2-2.2-009",
+  "criterion_id": "2.1.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.2-001__2.2.a",
+  "chunk_id": "L2-2.2-001",
+  "criterion_id": "2.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.2-002__2.2.a",
+  "chunk_id": "L2-2.2-002",
+  "criterion_id": "2.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.2-003__2.2.a",
+  "chunk_id": "L2-2.2-003",
+  "criterion_id": "2.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.2-005__2.2.a",
+  "chunk_id": "L2-2.2-005",
+  "criterion_id": "2.2.a",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L2-2.2-006__2.2.a",
+  "chunk_id": "L2-2.2-006",
+  "criterion_id": "2.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L2-2.2-007__2.1.c",
+  "chunk_id": "L2-2.2-007",
+  "criterion_id": "2.1.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.2-007__2.2.a",
+  "chunk_id": "L2-2.2-007",
+  "criterion_id": "2.2.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.2-008__2.1.c",
+  "chunk_id": "L2-2.2-008",
+  "criterion_id": "2.1.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L2-2.2-008__2.2.a",
+  "chunk_id": "L2-2.2-008",
+  "criterion_id": "2.2.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-008__2.2.c",
+  "chunk_id": "L3-3.1-008",
+  "criterion_id": "2.2.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.2-010__2.2.c",
+  "chunk_id": "L4-4.2-010",
+  "criterion_id": "2.2.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.2-010__3.2.d",
+  "chunk_id": "L4-4.2-010",
+  "criterion_id": "3.2.d",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.2-010__4.2.d",
+  "chunk_id": "L4-4.2-010",
+  "criterion_id": "4.2.d",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-001__3.1.b",
+  "chunk_id": "L3-3.1-001",
+  "criterion_id": "3.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-001__3.1.c",
+  "chunk_id": "L3-3.1-001",
+  "criterion_id": "3.1.c",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-001__3.1.d",
+  "chunk_id": "L3-3.1-001",
+  "criterion_id": "3.1.d",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-004__3.1.c",
+  "chunk_id": "L3-3.1-004",
+  "criterion_id": "3.1.c",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-006__3.1.b",
+  "chunk_id": "L3-3.1-006",
+  "criterion_id": "3.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-007__3.1.b",
+  "chunk_id": "L3-3.1-007",
+  "criterion_id": "3.1.b",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L3-3.1-012__3.1.a",
+  "chunk_id": "L3-3.1-012",
+  "criterion_id": "3.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-012__3.2.c",
+  "chunk_id": "L3-3.1-012",
+  "criterion_id": "3.2.c",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-013__3.1.a",
+  "chunk_id": "L3-3.1-013",
+  "criterion_id": "3.1.a",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-013__3.1.d",
+  "chunk_id": "L3-3.1-013",
+  "criterion_id": "3.1.d",
+  "judgement": "SCOPE LIMITED"
+ },
+ {
+  "link_id": "L3-3.1-014__3.1.c",
+  "chunk_id": "L3-3.1-014",
+  "criterion_id": "3.1.c",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-017__3.1.b",
+  "chunk_id": "L3-3.1-017",
+  "criterion_id": "3.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-017__3.1.e",
+  "chunk_id": "L3-3.1-017",
+  "criterion_id": "3.1.e",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-017__3.2.b",
+  "chunk_id": "L3-3.1-017",
+  "criterion_id": "3.2.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-019__3.1.e",
+  "chunk_id": "L3-3.1-019",
+  "criterion_id": "3.1.e",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-022__3.1.b",
+  "chunk_id": "L3-3.1-022",
+  "criterion_id": "3.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-022__3.1.e",
+  "chunk_id": "L3-3.1-022",
+  "criterion_id": "3.1.e",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-022__3.2.b",
+  "chunk_id": "L3-3.1-022",
+  "criterion_id": "3.2.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-023__3.1.b",
+  "chunk_id": "L3-3.1-023",
+  "criterion_id": "3.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-023__3.2.b",
+  "chunk_id": "L3-3.1-023",
+  "criterion_id": "3.2.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-025__3.1.a",
+  "chunk_id": "L3-3.1-025",
+  "criterion_id": "3.1.a",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-025__3.1.e",
+  "chunk_id": "L3-3.1-025",
+  "criterion_id": "3.1.e",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-025__3.2.a",
+  "chunk_id": "L3-3.1-025",
+  "criterion_id": "3.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-025__4.1.a",
+  "chunk_id": "L3-3.1-025",
+  "criterion_id": "4.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-001__3.1.f",
+  "chunk_id": "L4-4.2-001",
+  "criterion_id": "3.1.f",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-005__3.1.f",
+  "chunk_id": "L4-4.2-005",
+  "criterion_id": "3.1.f",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-006__3.1.f",
+  "chunk_id": "L4-4.2-006",
+  "criterion_id": "3.1.f",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-007__3.1.f",
+  "chunk_id": "L4-4.2-007",
+  "criterion_id": "3.1.f",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-014__3.1.f",
+  "chunk_id": "L4-4.2-014",
+  "criterion_id": "3.1.f",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-015__3.1.f",
+  "chunk_id": "L4-4.2-015",
+  "criterion_id": "3.1.f",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.2-016__3.1.f",
+  "chunk_id": "L4-4.2-016",
+  "criterion_id": "3.1.f",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-017__3.1.f",
+  "chunk_id": "L4-4.2-017",
+  "criterion_id": "3.1.f",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-005__3.2.a",
+  "chunk_id": "L3-3.1-005",
+  "criterion_id": "3.2.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-009__3.2.b",
+  "chunk_id": "L3-3.1-009",
+  "criterion_id": "3.2.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-015__3.2.b",
+  "chunk_id": "L3-3.1-015",
+  "criterion_id": "3.2.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-016__3.2.b",
+  "chunk_id": "L3-3.1-016",
+  "criterion_id": "3.2.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.1-018__3.2.c",
+  "chunk_id": "L3-3.1-018",
+  "criterion_id": "3.2.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-020__3.2.a",
+  "chunk_id": "L3-3.1-020",
+  "criterion_id": "3.2.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-021__3.2.b",
+  "chunk_id": "L3-3.1-021",
+  "criterion_id": "3.2.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-024__3.2.b",
+  "chunk_id": "L3-3.1-024",
+  "criterion_id": "3.2.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-024__5.1.c",
+  "chunk_id": "L3-3.1-024",
+  "criterion_id": "5.1.c",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-027__3.2.b",
+  "chunk_id": "L3-3.1-027",
+  "criterion_id": "3.2.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.2-001__3.2.b",
+  "chunk_id": "L3-3.2-001",
+  "criterion_id": "3.2.b",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L3-3.2-002__3.2.b",
+  "chunk_id": "L3-3.2-002",
+  "criterion_id": "3.2.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.2-003__3.2.b",
+  "chunk_id": "L3-3.2-003",
+  "criterion_id": "3.2.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L3-3.2-004__3.2.b",
+  "chunk_id": "L3-3.2-004",
+  "criterion_id": "3.2.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.2-005__3.2.b",
+  "chunk_id": "L3-3.2-005",
+  "criterion_id": "3.2.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.1-011__3.2.d",
+  "chunk_id": "L4-4.1-011",
+  "criterion_id": "3.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-021__3.2.a",
+  "chunk_id": "L4-4.1-021",
+  "criterion_id": "3.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-002__3.2.d",
+  "chunk_id": "L4-4.2-002",
+  "criterion_id": "3.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-002__4.2.d",
+  "chunk_id": "L4-4.2-002",
+  "criterion_id": "4.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-004__3.2.d",
+  "chunk_id": "L4-4.2-004",
+  "criterion_id": "3.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-008__3.1.f",
+  "chunk_id": "L4-4.2-008",
+  "criterion_id": "3.1.f",
+  "judgement": "SCOPE LIMITED"
+ },
+ {
+  "link_id": "L4-4.2-008__3.2.d",
+  "chunk_id": "L4-4.2-008",
+  "criterion_id": "3.2.d",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-009__3.2.d",
+  "chunk_id": "L4-4.2-009",
+  "criterion_id": "3.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-009__4.2.d",
+  "chunk_id": "L4-4.2-009",
+  "criterion_id": "4.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-012__3.2.d",
+  "chunk_id": "L4-4.2-012",
+  "criterion_id": "3.2.d",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-012__4.1.a",
+  "chunk_id": "L4-4.2-012",
+  "criterion_id": "4.1.a",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-013__3.2.d",
+  "chunk_id": "L4-4.2-013",
+  "criterion_id": "3.2.d",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.2-013__4.1.b",
+  "chunk_id": "L4-4.2-013",
+  "criterion_id": "4.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L3-3.1-011__3.2.b",
+  "chunk_id": "L3-3.1-011",
+  "criterion_id": "3.2.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L3-3.1-011__4.1.d",
+  "chunk_id": "L3-3.1-011",
+  "criterion_id": "4.1.d",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.1-001__4.1.a",
+  "chunk_id": "L4-4.1-001",
+  "criterion_id": "4.1.a",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L4-4.1-001__4.1.b",
+  "chunk_id": "L4-4.1-001",
+  "criterion_id": "4.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-002__4.1.b",
+  "chunk_id": "L4-4.1-002",
+  "criterion_id": "4.1.b",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L4-4.1-002__4.1.d",
+  "chunk_id": "L4-4.1-002",
+  "criterion_id": "4.1.d",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L4-4.1-003__4.1.b",
+  "chunk_id": "L4-4.1-003",
+  "criterion_id": "4.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.1-004__4.1.b",
+  "chunk_id": "L4-4.1-004",
+  "criterion_id": "4.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-004__4.1.c",
+  "chunk_id": "L4-4.1-004",
+  "criterion_id": "4.1.c",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.1-005__4.1.b",
+  "chunk_id": "L4-4.1-005",
+  "criterion_id": "4.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.1-010__4.1.b",
+  "chunk_id": "L4-4.1-010",
+  "criterion_id": "4.1.b",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L4-4.1-010__4.2.e",
+  "chunk_id": "L4-4.1-010",
+  "criterion_id": "4.2.e",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L4-4.1-019__4.1.a",
+  "chunk_id": "L4-4.1-019",
+  "criterion_id": "4.1.a",
+  "judgement": "SCOPE LIMITED"
+ },
+ {
+  "link_id": "L4-4.1-020__4.1.d",
+  "chunk_id": "L4-4.1-020",
+  "criterion_id": "4.1.d",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.1-022__4.1.a",
+  "chunk_id": "L4-4.1-022",
+  "criterion_id": "4.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-022__4.1.b",
+  "chunk_id": "L4-4.1-022",
+  "criterion_id": "4.1.b",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-003__4.1.b",
+  "chunk_id": "L4-4.2-003",
+  "criterion_id": "4.1.b",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-003__4.1.c",
+  "chunk_id": "L4-4.2-003",
+  "criterion_id": "4.1.c",
+  "judgement": "SUPPORTS"
+ },
+ {
+  "link_id": "L4-4.2-003__4.2.d",
+  "chunk_id": "L4-4.2-003",
+  "criterion_id": "4.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-011__3.2.d",
+  "chunk_id": "L4-4.2-011",
+  "criterion_id": "3.2.d",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.2-011__4.1.b",
+  "chunk_id": "L4-4.2-011",
+  "criterion_id": "4.1.b",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L4-4.1-009__4.2.a",
+  "chunk_id": "L4-4.1-009",
+  "criterion_id": "4.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-014__4.2.a",
+  "chunk_id": "L4-4.1-014",
+  "criterion_id": "4.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-015__4.2.a",
+  "chunk_id": "L4-4.1-015",
+  "criterion_id": "4.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-016__4.2.a",
+  "chunk_id": "L4-4.1-016",
+  "criterion_id": "4.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L4-4.1-017__4.2.e",
+  "chunk_id": "L4-4.1-017",
+  "criterion_id": "4.2.e",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L4-4.1-018__4.2.e",
+  "chunk_id": "L4-4.1-018",
+  "criterion_id": "4.2.e",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L5-5.1-001__5.1.a",
+  "chunk_id": "L5-5.1-001",
+  "criterion_id": "5.1.a",
+  "judgement": "SCOPE LIMITED"
+ },
+ {
+  "link_id": "L5-5.1-001__5.2.a",
+  "chunk_id": "L5-5.1-001",
+  "criterion_id": "5.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L5-5.1-002__5.1.a",
+  "chunk_id": "L5-5.1-002",
+  "criterion_id": "5.1.a",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L5-5.1-002__5.2.a",
+  "chunk_id": "L5-5.1-002",
+  "criterion_id": "5.2.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L5-5.1-003__4.1.a",
+  "chunk_id": "L5-5.1-003",
+  "criterion_id": "4.1.a",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L5-5.1-003__5.1.a",
+  "chunk_id": "L5-5.1-003",
+  "criterion_id": "5.1.a",
+  "judgement": "ASSERTED"
+ },
+ {
+  "link_id": "L5-5.1-004__5.1.c",
+  "chunk_id": "L5-5.1-004",
+  "criterion_id": "5.1.c",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L5-5.1-005__4.1.d",
+  "chunk_id": "L5-5.1-005",
+  "criterion_id": "4.1.d",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L5-5.1-005__5.1.c",
+  "chunk_id": "L5-5.1-005",
+  "criterion_id": "5.1.c",
+  "judgement": "CONTRADICTS"
+ },
+ {
+  "link_id": "L5-5.2-001__5.1.a",
+  "chunk_id": "L5-5.2-001",
+  "criterion_id": "5.1.a",
+  "judgement": "PARTIAL"
+ },
+ {
+  "link_id": "L5-5.2-001__5.2.a",
+  "chunk_id": "L5-5.2-001",
+  "criterion_id": "5.2.a",
+  "judgement": "PARTIAL"
+ }
+]

@@ -1,0 +1,86 @@
+# The layer table in ARCHITECTURE.md §4, as executable contracts.
+# Run by tests/test_m0_scaffold.py and in CI. A violation is a build failure, not a warning.
+
+[importlinter]
+root_package = twinlab
+include_external_packages = True
+
+[importlinter:contract:ui]
+name = ui/ may import services/ and models/, never db/ or agents/
+type = forbidden
+# DIRECT imports only. `ui/` may import `services/`, and `services/` may import `db/`, so
+# `ui -> services -> db` is the mediation this layer table exists to create, not a violation.
+# What is forbidden is a direct reach past the service layer; the companion test in
+# tests/test_m0_scaffold.py appends exactly that and proves it is rejected.
+allow_indirect_imports = True
+source_modules =
+    twinlab.ui
+forbidden_modules =
+    twinlab.db
+    twinlab.agents
+
+[importlinter:contract:api]
+name = api/ may import services/ and models/, never db/ or agents/
+type = forbidden
+# DIRECT imports only. `ui/` may import `services/`, and `services/` may import `db/`, so
+# `ui -> services -> db` is the mediation this layer table exists to create, not a violation.
+# What is forbidden is a direct reach past the service layer; the companion test in
+# tests/test_m0_scaffold.py appends exactly that and proves it is rejected.
+allow_indirect_imports = True
+source_modules =
+    twinlab.api
+forbidden_modules =
+    twinlab.db
+    twinlab.agents
+
+[importlinter:contract:services]
+name = services/ may import everything below it, never gradio or fastapi
+type = forbidden
+source_modules =
+    twinlab.services
+forbidden_modules =
+    gradio
+    fastapi
+
+[importlinter:contract:agents]
+name = agents/ may import models/, never db/ or ui/
+type = forbidden
+source_modules =
+    twinlab.agents
+forbidden_modules =
+    twinlab.db
+    twinlab.ui
+
+[importlinter:contract:db]
+name = db/ may import models/, never agents/ or ui/
+type = forbidden
+source_modules =
+    twinlab.db
+forbidden_modules =
+    twinlab.agents
+    twinlab.ui
+
+[importlinter:contract:supabase]
+name = supabase is imported in exactly one file, db/client.py
+type = forbidden
+# DIRECT imports only. The rule is about which FILE imports supabase, and the layer table
+# above allows services/ -> db/, so `services -> db.client -> supabase` is the intended chain,
+# not a violation. tests/test_m0_scaffold.py scans the source for the file-level claim, and
+# tests/test_m1_schema.py proves a direct import from services/ is still rejected.
+allow_indirect_imports = True
+source_modules =
+    twinlab.models
+    twinlab.ingest
+    twinlab.persona
+    twinlab.variant
+    twinlab.agents
+    twinlab.orchestrator
+    twinlab.analysis
+    twinlab.stats
+    twinlab.validity
+    twinlab.generator
+    twinlab.services
+    twinlab.api
+    twinlab.ui
+forbidden_modules =
+    supabase

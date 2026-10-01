@@ -1,0 +1,51 @@
+# The seed generator config. ARCHITECTURE.md §4, docs/11 M9.
+#
+# Synthetic data exercises the machinery and PROVES NOTHING about drivers (docs/08 §6.2). Every
+# surface that shows synthetic rows says so, and a validation set containing them carries a warning.
+#
+# NO LLM CALL IS EVER MADE HERE. A model-written survey would be unreproducible, would cost a call
+# per respondent, and would smuggle the model's own priors into the data the twins are built from.
+
+# Default batch size offered in the UI. The seed is supplied per batch, never defaulted, so two
+# batches cannot silently share one.
+default_count: 50
+
+# docs/06 §4's "answer noise": standard deviation of the Likert draw, in scale points. Answers are
+# a rounded normal about a respondent-level disposition, clamped to the item's own scale. At 1.1 --
+# the value before the §4 controls were bound -- a seven-point item's answers span most of the
+# scale from noise alone and the construct means the dashboard sets are barely visible in them.
+likert_sd: 0.3
+
+# docs/06 §4's "share failing attention checks". A respondent who fails is dropped by screening and
+# can never produce a twin, so this stays low; raise it to exercise the screening switch.
+attention_fail_share: 0.03
+
+# docs/06 §4's "shared overall mood": how much of a respondent's answer comes from one disposition
+# they carry across every construct, against a per-construct wobble. At 0.0 no correlation between
+# constructs survives and the batch cannot exercise PLS-SEM at all.
+shared_mood: 0.6
+
+# docs/06 §4's "how much drivers differ": the spread of that respondent-level disposition.
+disposition_spread: 1.0
+
+# docs/06 §4's "how strongly they react to each change", by lever. 0 = no reaction, 1 = normal,
+# 2 = strong. These are what make Parts 16 and 17 answer the CHANGE rather than repeat the
+# baseline. Keyed by lever id in the odometer's frozen order (ARCHITECTURE.md §5).
+lever_reactions:
+  L1: 2.0   # Pay
+  L2: 1.0   # Conditions
+  L3: 1.0   # Contracts
+  L4: 1.0   # Management (appeals)
+  L5: 1.0   # Representation (forum)
+
+# docs/06 §4's "drivers who need the money react more to a drivers' forum (captive voice)".
+captive_voice: true
+
+# How often the Part 15 manipulation check is answered correctly. Neither 1.0 nor 0.0: a batch where
+# mc_correct is constant cannot exercise the screening switch (docs/DECISIONS.md, M9/Post-M10).
+mc_correct_rate: 0.8
+
+# Completion seconds are drawn above the speeder threshold (480s, docs/01 §6.2) so a synthetic row is
+# not flagged as a speeder by construction. Raise the floor to generate speeders deliberately.
+completion_seconds_min: 520
+completion_seconds_max: 1800

@@ -1,0 +1,167 @@
+[
+ {
+  "criterion_id": "1.1.a",
+  "finding": "Partly met",
+  "reason": "Daily Pay and instant cash-out are real, dated commitments with a stated cadence, and they satisfy the on-time limb under the commission model. The in-full limb fails under the subscription model, where the driver collects from the rider and Uber expressly disclaims responsibility for short payment or non-payment. The corpus contains both models live at the same date and reconciles neither, so no single answer holds across all drivers."
+ },
+ {
+  "criterion_id": "1.1.b",
+  "finding": "Not met",
+  "reason": "Nothing in the corpus guarantees a wage floor, and the earnings page disclaims one in terms. The only earnings figure published is from 2017, net of Uber's fee but not of fuel, maintenance or insurance, and with no method. Meanwhile equipment, device, data, maintenance and insurance costs are contractually placed on the driver, and the only published treatment of waiting time excludes it. Footnote 4's two accepted forms of evidence are both absent."
+ },
+ {
+  "criterion_id": "1.2.a",
+  "finding": "No evidence found",
+  "reason": "No passage in the corpus addresses a living wage. The threshold is in any case unreachable while 1.1 is not."
+ },
+ {
+  "criterion_id": "2.1.a",
+  "finding": "Not met",
+  "reason": "In-app safety software is provided at no charge and is substantial, but it is not the equipment and training the rule names. Training is contractually required of the driver to obtain and fund, vehicle maintenance is the driver's cost, and the helmet feature verifies the driver's own equipment rather than supplying it."
+ },
+ {
+  "criterion_id": "2.1.b",
+  "finding": "Partly met",
+  "reason": "This is the best-evidenced criterion in the corpus. Emergency button, trip sharing, number masking, 24/7 incident support, audio recording and women-rider matching are concrete, described and free. Two contract clauses pull the other way: safety support is stated to be at Uber's sole discretion, and Uber declines to screen the users it sends drivers to meet alone."
+ },
+ {
+  "criterion_id": "2.1.c",
+  "finding": "Not met",
+  "reason": "On-trip accident insurance was announced in 2018 with no sum insured, insurer or claims process published. The binding contract requires the driver to carry insurance at their own cost, makes industrial-injury cover expressly optional at the driver's own risk, and warns that the driver's own policy may not respond while they are working."
+ },
+ {
+  "criterion_id": "2.2.a",
+  "finding": "Partly met",
+  "reason": "e-Shram support is a concrete, dated action aligned with the Code on Social Security, with a named portal and a stated incentive, though capped at 10,000 drivers. Uber Care brokers access to products the driver buys from third parties, over which Uber disclaims control. The COVID fund was a one-off. The contract places the safety net on the driver."
+ },
+ {
+  "criterion_id": "2.2.b",
+  "finding": "No evidence found",
+  "reason": "Nothing published states that absence for sickness, injury or family reasons will not affect ratings, tier status, priority or access."
+ },
+ {
+  "criterion_id": "2.2.c",
+  "finding": "Not met",
+  "reason": "The 12-hour driving cap is a genuine structural limit but comes from a global Help article with no India version located. Against it sit trip-count incentives within time windows, and acceptance-rate and cancellation-rate thresholds attached to tier benefits, both of which reward taking more work faster and penalise declining it."
+ },
+ {
+  "criterion_id": "3.1.a",
+  "finding": "Met",
+  "reason": "The Services Agreement names Uber India Systems Private Limited with its corporate identity number and registered office, and is expressly governed by the laws of India. Fully satisfied."
+ },
+ {
+  "criterion_id": "3.1.b",
+  "finding": "Partly met",
+  "reason": "Publication of the legal hub in eight languages is real and verifiable, and better than most of the corpus. But the operative clauses are dense legal drafting, and Uber's own help article tells drivers it cannot advise on the terms and that they should consider independent legal advice — which concedes that the terms are not comprehensible unaided."
+ },
+ {
+  "criterion_id": "3.1.c",
+  "finding": "Met",
+  "reason": "Acceptance is an express act, and unacknowledged terms are surfaced in the Driver app and block the driver from going online until accepted."
+ },
+ {
+  "criterion_id": "3.1.d",
+  "finding": "Partly met",
+  "reason": "Executed agreements are readable at any time under Contracts at drivers.uber.com, which satisfies the rule for drivers it covers. The published Services Agreement covers six car categories; no driver contract was located for Moto, Auto, Intercity, Hire or courier work, so for those drivers nothing is accessible."
+ },
+ {
+  "criterion_id": "3.1.e",
+  "finding": "Not met",
+  "reason": "The Services Agreement has the driver expressly agree they are not a consumer under the Consumer Protection Act, 2019 and are not entitled to remedies under it. It also contracts out of employment characterisation for labour, tax, social security and insurance purposes, and indemnifies Uber against social security contributions. These are clauses reverting prevailing legal frameworks, which the rule prohibits."
+ },
+ {
+  "criterion_id": "3.1.f",
+  "finding": "Partly met",
+  "reason": "The Privacy Notice is substantive: access, correction, deletion and restriction rights, a named Data Protection Officer, and a dedicated section explaining the automated processes, which is what footnote 10's AI limb asks for. Against that, the Services Agreement declares data generated by the driver's work to be Uber's property, location transmission is a condition of working, and the notice is a global document with no India version written to the DPDP Act."
+ },
+ {
+  "criterion_id": "3.2.a",
+  "finding": "Not met",
+  "reason": "Uber may modify the Agreement at any time, effective on publication, with no notice period at all. Uber Pro points and rewards are expressly forfeitable immediately on termination, and promotion terms including qualifying conditions may be changed or cancelled mid-period. Both limbs of the rule fail."
+ },
+ {
+  "criterion_id": "3.2.b",
+  "finding": "Not met",
+  "reason": "A broad exclusion of the losses a driver is most likely to suffer, a one-year claim window, a one-way indemnity, a waiver of consumer remedies, and an expressly asymmetric assignment right. Two clauses run the other way and are recorded: symmetric seven-day no-cause termination, and an express right to multi-app with no post-engagement restraint."
+ },
+ {
+  "criterion_id": "3.2.c",
+  "finding": "Not met",
+  "reason": "The Agreement gives the fleet partner sole responsibility for its drivers and states the fleet partner exercises sole control over them. A flow-down requiring driver compliance with Uber's terms exists, but no mechanism by which Uber monitors how a fleet partner treats those drivers. The standard's own definition places that responsibility on the platform."
+ },
+ {
+  "criterion_id": "3.2.d",
+  "finding": "Not met",
+  "reason": "Matching factors are named in general terms and the rating arithmetic is disclosed, which is real partial transparency. But the numeric standards governing tier status and prioritised dispatch are held inside the app and set from time to time, points are revocable on Uber's sole discretion, and ratings may be used in any manner without the driver's approval and with no obligation to verify them."
+ },
+ {
+  "criterion_id": "4.1.a",
+  "finding": "Partly met",
+  "reason": "Several real channels exist: in-app Help, a support call button, Greenlight appointments, and a grievance address in the Agreement. No published source states a time within which Uber replies, and the face-to-face route is limited by Uber's own wording to some cities."
+ },
+ {
+  "criterion_id": "4.1.b",
+  "finding": "Partly met",
+  "reason": "The deactivation limb is well evidenced: an in-app Review Center the driver initiates, evidence upload, and an express appeal right where deactivation follows an automated check. Uber also alerts drivers before logging them out for quality issues. Three limbs fail. Low-rating appeals cannot be brought because ratings are anonymous and Uber disclaims any duty to verify them. Fare disputes are sent to the rider. The appeal process is not documented in the Agreement, and no decision deadline is published."
+ },
+ {
+  "criterion_id": "4.1.c",
+  "finding": "Met",
+  "reason": "The Review Center is described as being for drivers rejected from the platform, and Uber confirms accounts remain deactivated while a review runs. The appeal survives loss of access."
+ },
+ {
+  "criterion_id": "4.1.d",
+  "finding": "Contradicted",
+  "reason": "Section 2.5 makes disparagement of Uber, and harm to Uber's brand, reputation or business as determined by Uber in its sole discretion, grounds for deactivation. The same brand-harm ground appears in the India Community Guidelines. This is not an absence of protection; it is a published policy pointing the other way."
+ },
+ {
+  "criterion_id": "4.2.a",
+  "finding": "Partly met",
+  "reason": "A Non-Discrimination Policy exists on the India legal hub and its wording covers all users. Every enforcement mechanism in the corpus runs against drivers as respondents. No published route lets a driver report discrimination against themselves, have it corrected, or have the person responsible penalised."
+ },
+ {
+  "criterion_id": "4.2.b",
+  "finding": "No evidence found",
+  "reason": "Nothing addresses accommodation for pregnancy, disability or religion for drivers. The published disability material concerns riders."
+ },
+ {
+  "criterion_id": "4.2.c",
+  "finding": "No evidence found",
+  "reason": "Nothing addresses under-representation among the driver pool or the removal of barriers to entry. The Women Rider Preference feature addresses safety for drivers already on the platform, not access to it."
+ },
+ {
+  "criterion_id": "4.2.d",
+  "finding": "Not met",
+  "reason": "Uber describes its matching factors in general terms, which is more than nothing. The standards governing access to prioritised work are unpublished and discretionary, and no published source claims that allocation or pay outcomes have been tested for inequity across groups. Facial recognition gates access to work with no differential error rates published."
+ },
+ {
+  "criterion_id": "4.2.e",
+  "finding": "Partly met",
+  "reason": "Riders can lose access for discriminatory or abusive conduct under a published policy with a stated consequence, which is genuine. The rating-exclusion filter, which would be the main protection, is claimed but never described: no criteria for a biased rider, no notification, no timeframe and no way for a driver to invoke it or confirm it ran."
+ },
+ {
+  "criterion_id": "5.1.a",
+  "finding": "Partly met",
+  "reason": "The Driver Advisory Council is real, documented, has an external partner and produced traceable product changes. It is not the mechanism this rule describes. Thirty-five drivers from six cities is not participation open to all workers; Uber filters candidates and tests them on their potential to contribute; and footnote 13 requires workers to help set the agenda and meet management regularly."
+ },
+ {
+  "criterion_id": "5.1.b",
+  "finding": "No evidence found",
+  "reason": "No passage in any Uber India source contains a statement of willingness to recognise or bargain with a trade union or independent workers' body. This is the most complete absence in the corpus."
+ },
+ {
+  "criterion_id": "5.1.c",
+  "finding": "Contradicted",
+  "reason": "Deactivation for disparagement of Uber, at Uber's sole discretion, places a driver's livelihood at risk for speaking out or expressing willingness to organise. Broad confidentiality further limits what drivers may share with one another or with a representative body."
+ },
+ {
+  "criterion_id": "5.2.a",
+  "finding": "Partly met",
+  "reason": "The Driver Advisory Council gives drivers a consultative voice that has demonstrably changed products. Members hold no vote, no board seat and no decision right, and the seat is in Uber's gift, so drivers do not play a meaningful role in governing the platform."
+ },
+ {
+  "criterion_id": "5.2.b",
+  "finding": "No evidence found",
+  "reason": "No document recognises an independent collective body, elected works council or trade union. The Driver Advisory Council is convened and selected by Uber and is therefore not independent within the meaning of this rule."
+ }
+]

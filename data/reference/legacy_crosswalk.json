@@ -1,0 +1,198 @@
+{
+ "crosswalk_version": "2.0",
+ "renames": [
+  {
+   "legacy_id": "PAF1",
+   "item_id": "FAIR1",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "PAF2",
+   "item_id": "FAIR2",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "PAF3",
+   "item_id": "FAIR3",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "PAF4",
+   "item_id": "FAIR4",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "PAT1",
+   "item_id": "CLAR1",
+   "note": "collected 1-7 in the prototype; canonically 1-5. Not poolable.",
+   "pattern": false
+  },
+  {
+   "legacy_id": "PAT2",
+   "item_id": "CLAR2",
+   "note": "collected 1-7 in the prototype; canonically 1-5. Not poolable.",
+   "pattern": false
+  },
+  {
+   "legacy_id": "PAT3",
+   "item_id": "CLAR3",
+   "note": "collected 1-7 in the prototype; canonically 1-5. Not poolable.",
+   "pattern": false
+  },
+  {
+   "legacy_id": "LOY1",
+   "item_id": "CONT1",
+   "note": "collected 1-7 in the prototype; canonically 1-5. Not poolable.",
+   "pattern": false
+  },
+  {
+   "legacy_id": "LOY2",
+   "item_id": "CONT2",
+   "note": "collected 1-7 in the prototype; canonically 1-5. Not poolable.",
+   "pattern": false
+  },
+  {
+   "legacy_id": "VOI1",
+   "item_id": "ALGO1",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "VOI2",
+   "item_id": "ALGO2",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "VOI3",
+   "item_id": "ALGO3",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "VOI4",
+   "item_id": "ALGO4",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "EXT1",
+   "item_id": "TURN1",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "EXT2",
+   "item_id": "TURN2",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "EXT3",
+   "item_id": "TURN3",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "ECD1",
+   "item_id": "DEP1",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "ECD2",
+   "item_id": "DEP2",
+   "note": null,
+   "pattern": false
+  },
+  {
+   "legacy_id": "AC1",
+   "item_id": "AMQ6",
+   "note": "attention check; never put to a twin (I10).",
+   "pattern": false
+  },
+  {
+   "legacy_id": "AC2",
+   "item_id": "ALGO5",
+   "note": "attention check; never put to a twin (I10).",
+   "pattern": false
+  },
+  {
+   "legacy_id": "post_{legacy_id}",
+   "item_id": "H2_{item_id}",
+   "note": "Part 16, all 16 items. H2_SAT2 inherits reverse_coded.",
+   "pattern": true
+  },
+  {
+   "legacy_id": "cj{v}_cj_fair",
+   "item_id": "H3_V{v}_FAIR",
+   "note": "Part 17, v = 1..6.",
+   "pattern": true
+  },
+  {
+   "legacy_id": "cj{v}_cj_resist",
+   "item_id": "H3_V{v}_PUSH",
+   "note": "Part 17, v = 1..6.",
+   "pattern": true
+  },
+  {
+   "legacy_id": "cj{v}_cj_stay",
+   "item_id": "H3_V{v}_KEEP",
+   "note": "Part 17, v = 1..6.",
+   "pattern": true
+  }
+ ],
+ "field_mappings": [
+  {
+   "legacy_field": "design",
+   "canonical": "version_code",
+   "note": "the prototype called a version code a \"design\"."
+  },
+  {
+   "legacy_field": "d_FAIR",
+   "canonical": "shift.fairness",
+   "note": "stored signed; direction is positive and the index, not the column, applies the flip"
+  },
+  {
+   "legacy_field": "d_TRAN",
+   "canonical": "shift.clarity",
+   "note": "stored signed; direction is positive and the index, not the column, applies the flip"
+  },
+  {
+   "legacy_field": "d_SATI",
+   "canonical": "shift.happiness",
+   "note": "stored signed; direction is positive and the index, not the column, applies the flip"
+  },
+  {
+   "legacy_field": "d_LOYA",
+   "canonical": "shift.staying",
+   "note": "stored signed; direction is positive and the index, not the column, applies the flip"
+  },
+  {
+   "legacy_field": "d_VOIC",
+   "canonical": "shift.pushback",
+   "note": "stored signed; direction is negative and the index, not the column, applies the flip"
+  },
+  {
+   "legacy_field": "d_EXIT",
+   "canonical": "shift.leaving",
+   "note": "stored signed; direction is negative and the index, not the column, applies the flip"
+  }
+ ],
+ "scale_changes": [
+  {
+   "blocks": [
+    "PAC",
+    "CLAR",
+    "CONT"
+   ],
+   "legacy_points": 7,
+   "canonical_points": 5,
+   "note": "legacy values for these blocks are NOT comparable to new ones and must not be pooled. The importer sets legacy_scale = true and the analysis dataset excludes them by default."
+  }
+ ]
+}

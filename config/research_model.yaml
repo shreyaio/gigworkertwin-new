@@ -1,0 +1,146 @@
+# The Research model page's researcher-supplied content. docs/06 §8.
+#
+# EVERYTHING THE CODEBASE OWNS IS NOT HERE. The nine constructs, their blocks, indicator counts,
+# scales and index signs come from the frozen register; the diagram comes from
+# stats/spec.py::STRUCTURAL_EDGES, which is the same object the estimator uses. Restating either
+# in this file would let the page disagree with the numbers.
+#
+# What IS here is the research prose only a researcher can write: the wording of the three research
+# questions, the hypotheses, the construct definitions and their source citations, the method
+# narrative, and the reference list.
+#
+# **Nothing in this file may be invented to fill a gap.** docs/06 §8.9 says it of the reference
+# list — "Never fabricate a reference" — and the page applies the same rule to every field below:
+# an empty string renders as an explicit "not supplied yet", never as a blank that reads as
+# "nothing to say". Leave a field empty until you have written it.
+#
+# Validated on load by services/research.py against models/research.py, which forbids extras — so
+# a typo'd key fails at boot rather than being silently ignored.
+
+# ---------------------------------------------------------------- §8.2 Research questions
+#
+# The three ids and titles are docs/06 §8.2's own. `question` and `contribution` are yours.
+# `hypotheses` lists hypothesis_ids from the block below; a reference to one that does not exist
+# fails on load.
+research_questions:
+  - rq_id: RQ1
+    title: Governance configurations
+    question: ""
+    hypotheses: []
+    contribution: ""
+  - rq_id: RQ2
+    title: Conditional responses under dependence
+    question: ""
+    hypotheses: []
+    contribution: ""
+  - rq_id: RQ3
+    title: Validated simulation as an instrument
+    question: ""
+    hypotheses: []
+    contribution: ""
+
+# ---------------------------------------------------------------- §8.5 Hypotheses
+#
+# `Hypothesis ID · Statement · Support`. `support` is one of "", "Supported",
+# "Partly supported", "Not supported", "Not yet tested". Empty means NOT YET TESTED and renders
+# as such — it is not the same claim as "Not supported".
+#
+# Empty until supplied. The structural model these would be tested against is frozen and
+# fingerprinted (docs/DECISIONS.md → M12); write hypotheses against that model, not around it.
+hypotheses: []
+
+# ---------------------------------------------------------------- §8.6 Research method
+#
+# `Part · What it involves`. The nine parts and their ORDER are docs/06 §8.6's and are fixed in
+# services/research.py::METHOD_PARTS — this file supplies the prose for each. Where the codebase
+# owns a fact about a part (a count, a code, a version), the page appends it beneath your prose as
+# "In this build", generated rather than typed, so the two can be checked against each other.
+method:
+  design: ""
+  sample: ""
+  measures: ""
+  experiment: ""
+  twin_reconstruction: ""
+  validation_before_use: ""
+  design_space: ""
+  analysis: ""
+  ethics_and_openness: ""
+
+# ---------------------------------------------------------------- §8.7 Constructs and definitions
+#
+# `Construct · Definition · Where it comes from`. Keyed by construct code; the nine codes and
+# their labels are generated from the frozen register, so only the two prose columns are here.
+# `source` is a CITATION — §8.9's rule applies to it in full.
+constructs:
+  EXPO: {definition: "", source: ""}
+  CTRL: {definition: "", source: ""}
+  FAIR: {definition: "", source: ""}
+  TRAN: {definition: "", source: ""}
+  SATI: {definition: "", source: ""}
+  LOYA: {definition: "", source: ""}
+  VOIC: {definition: "", source: ""}
+  EXIT: {definition: "", source: ""}
+  EDEP: {definition: "", source: ""}
+
+# ---------------------------------------------------------------- §8.8 Validation mapping
+#
+# `Technique · What it assesses · Where it is used · Paper section`.
+#
+# The ROW SET is generated from the application's own objects — the two holdouts, the two control
+# cells, the reference arm and all eight validity tests — so a technique cannot appear here that
+# the app does not run, and one it runs cannot be missing. `where_used` is generated too.
+#
+# `assesses` below is docs/08 §6.3's own wording, reproduced so it can be edited in one place.
+# `paper_section` is yours, and is empty until you have decided where each lands.
+validation_map:
+  h3_holdout:
+    assesses: "Twin fidelity on unseen stimuli — the instrument's calibration"
+    paper_section: ""
+  h2_holdout:
+    assesses: "Fidelity on the stimulus the human actually saw"
+    paper_section: ""
+  base_arm:
+    assesses: "Human response instability — the floor for any re-ask"
+    paper_section: ""
+  control_00000:
+    assesses: "Twin noise floor"
+    paper_section: ""
+  control_sham:
+    assesses: "Demand characteristics"
+    paper_section: ""
+  validity_1:
+    assesses: "Person-specificity — that twins are about their own driver"
+    paper_section: ""
+  validity_2:
+    assesses: "That change-shaped text alone does not move outcomes"
+    paper_section: ""
+  validity_3:
+    assesses: "That twins add information over naive prediction"
+    paper_section: ""
+  validity_4:
+    assesses: "That twins read the stimulus rather than pattern-matching approval"
+    paper_section: ""
+  validity_5:
+    assesses: "That effects are about the change, not the presentation"
+    paper_section: ""
+  validity_6:
+    assesses: "That twins use their own history"
+    paper_section: ""
+  validity_7:
+    assesses: "That findings are not an artefact of one model"
+    paper_section: ""
+  validity_8:
+    assesses: "Sampling variance, and the basis for the chosen setting"
+    paper_section: ""
+
+# ---------------------------------------------------------------- §8.9 Reference list
+#
+# Grouped by theme. **NEVER FABRICATE A REFERENCE** (docs/06 §8.9). An empty list renders an
+# empty state naming what is missing; an invented citation renders as a real one, which is the
+# whole reason the rule exists.
+#
+# Each row: {theme, citation, doi}. `doi` may be a DOI or a URL, and may be empty.
+references: []
+
+# Theme order for the grouped list. Themes not named here are appended alphabetically.
+reference_themes: []

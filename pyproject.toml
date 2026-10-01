@@ -1,0 +1,36 @@
+[project]
+name = "twinlab"
+version = "2.0.0"
+description = "Twin Lab — a researcher workbench for algorithmic-management counterfactuals on gig-driver digital twins"
+requires-python = ">=3.13"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+# tools/ holds one-shot generators whose payload is long literal survey text: the verbatim
+# wording is the point, so it is not reflowed to fit a line-length rule.
+[tool.ruff.lint.per-file-ignores]
+# UP031: the .gs template is percent-formatted because it is full of JS braces.
+"tools/*.py" = ["E501", "E402", "UP031"]
+
+# UP017 would rewrite `timezone.utc` to `datetime.UTC`, which is 3.11+. The probe runs on a
+# ZeroGPU image that serves Python 3.10 and ignores the Space card's `python_version`, so it
+# must stay 3.10-compatible while the rest of the project targets 3.13. docs/DECISIONS.md.
+"_probe/*.py" = ["UP017"]
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]

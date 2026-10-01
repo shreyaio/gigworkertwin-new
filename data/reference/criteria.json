@@ -1,0 +1,299 @@
+[
+ {
+  "criterion_id": "1.1.a",
+  "principle": 1,
+  "threshold_id": "1.1",
+  "threshold_name": "Ensures workers earn at least the local minimum wage after costs",
+  "threshold_point": "one point",
+  "satisfaction_rule": "BOTH",
+  "criterion_text": "Payment must be on time and in-full."
+ },
+ {
+  "criterion_id": "1.1.b",
+  "principle": 1,
+  "threshold_id": "1.1",
+  "threshold_name": "Ensures workers earn at least the local minimum wage after costs",
+  "threshold_point": "one point",
+  "satisfaction_rule": "BOTH",
+  "criterion_text": "Workers earn at least the local minimum wage, or the wage set by collective sectoral agreement (whichever is higher) in the place where they work, in their active hours, after costs.[4]"
+ },
+ {
+  "criterion_id": "1.2.a",
+  "principle": 1,
+  "threshold_id": "1.2",
+  "threshold_name": "Ensures workers earn at least a local living wage after costs",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ONE",
+  "criterion_text": "Workers earn at least a local living wage, or the wage set by collective sectoral agreement (whichever is higher) in the place where they work, in their active hours, after costs.[5][6]"
+ },
+ {
+  "criterion_id": "2.1.a",
+  "principle": 2,
+  "threshold_id": "2.1",
+  "threshold_name": "Mitigates task specific risk",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Adequate equipment and training are provided to protect workers' health and safety from task-specific risks.[7] These should be implemented at no additional cost to the worker."
+ },
+ {
+  "criterion_id": "2.1.b",
+  "principle": 2,
+  "threshold_id": "2.1",
+  "threshold_name": "Mitigates task specific risk",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The platform mitigates the risks of lone working by providing adequate support and designing processes with occupational safety and health in mind."
+ },
+ {
+  "criterion_id": "2.1.c",
+  "principle": 2,
+  "threshold_id": "2.1",
+  "threshold_name": "Mitigates task specific risk",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Platforms take meaningful steps to ensure that workers do not suffer significant costs as a result of accident, injury or disease resulting from work."
+ },
+ {
+  "criterion_id": "2.2.a",
+  "principle": 2,
+  "threshold_id": "2.2",
+  "threshold_name": "Ensures safe working conditions and a safety net",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Platform take meaningful steps towards the social protection of its workers."
+ },
+ {
+  "criterion_id": "2.2.b",
+  "principle": 2,
+  "threshold_id": "2.2",
+  "threshold_name": "Ensures safe working conditions and a safety net",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Where workers are unable to work for an extended period due to unexpected circumstances, their standing on the platform is not negatively impacted."
+ },
+ {
+  "criterion_id": "2.2.c",
+  "principle": 2,
+  "threshold_id": "2.2",
+  "threshold_name": "Ensures safe working conditions and a safety net",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The platform implements policies or practices that protect workers' safety from task-specific risks. (See footnote 7) In particular, the platform should ensure that pay is not structured in a way that incentivizes workers to take excessive levels of risk."
+ },
+ {
+  "criterion_id": "3.1.a",
+  "principle": 3,
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The party contracting with the worker must be identified in the contract, and subject to the law of the country/state/region in which the worker works."
+ },
+ {
+  "criterion_id": "3.1.b",
+  "principle": 3,
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The contract/terms & conditions are presented in full in clear and comprehensible language that all workers could be expected to understand."
+ },
+ {
+  "criterion_id": "3.1.c",
+  "principle": 3,
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Workers have to sign a contract and/or give informed consent to terms of conditions upon signing up for the platform."
+ },
+ {
+  "criterion_id": "3.1.d",
+  "principle": 3,
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The contracts/terms and conditions are easily accessible to workers in paper form, or via the app/platform interface at all times."
+ },
+ {
+  "criterion_id": "3.1.e",
+  "principle": 3,
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Contracts/terms & conditions do not include clauses that revert prevailing legal frameworks in the respective countries."
+ },
+ {
+  "criterion_id": "3.1.f",
+  "principle": 3,
+  "threshold_id": "3.1",
+  "threshold_name": "Provides clear and transparent terms and conditions",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Platforms take adequate, responsible and ethical data protection and management measures, laid out in a documented policy.[10]"
+ },
+ {
+  "criterion_id": "3.2.a",
+  "principle": 3,
+  "threshold_id": "3.2",
+  "threshold_name": "Ensures that no unfair contract terms are imposed",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Every worker is notified of proposed changes in clear and understandable language within a reasonable timeframe before changes come into effect; and the changes should not reverse existing accrued benefits and reasonable expectations on which workers have relied."
+ },
+ {
+  "criterion_id": "3.2.b",
+  "principle": 3,
+  "threshold_id": "3.2",
+  "threshold_name": "Ensures that no unfair contract terms are imposed",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The contract/terms and conditions neither include clauses which exclude liability for negligence nor unreasonably exempt the platform from liability for working conditions. The platform takes appropriate steps to ensure that the contract does not include clauses which prevent workers from effectively seeking redress for grievances which arise from the working relationship."
+ },
+ {
+  "criterion_id": "3.2.c",
+  "principle": 3,
+  "threshold_id": "3.2",
+  "threshold_name": "Ensures that no unfair contract terms are imposed",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "In case platform labour is mediated by subcontractors: The platform implements a reliable mechanism to monitor and ensure that the subcontractor is living up to the standards expected from the platform itself regarding working conditions."
+ },
+ {
+  "criterion_id": "3.2.d",
+  "principle": 3,
+  "threshold_id": "3.2",
+  "threshold_name": "Ensures that no unfair contract terms are imposed",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "In cases where algorithms are used to determine pricing, bonuses, ratings and/or allocate jobs, the data collected, and calculations used must be transparent and documented in a form available to workers in clear and comprehensible language that all workers could be expected to understand."
+ },
+ {
+  "criterion_id": "4.1.a",
+  "principle": 4,
+  "threshold_id": "4.1",
+  "threshold_name": "Provides due process for decisions affecting workers",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "There is an easily accessible channel for workers to communicate with a human representative of the platform and to effectively solve problems. This channel is documented in the contract and available on the platform interface. Platforms should respond to workers within a reasonable timeframe."
+ },
+ {
+  "criterion_id": "4.1.b",
+  "principle": 4,
+  "threshold_id": "4.1",
+  "threshold_name": "Provides due process for decisions affecting workers",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "There is a process for workers to meaningfully and effectively appeal low ratings, non-payment, payment issues, deactivations, and other penalties and disciplinary actions. This process is documented in a contract and available on the platform interface.[11]"
+ },
+ {
+  "criterion_id": "4.1.c",
+  "principle": 4,
+  "threshold_id": "4.1",
+  "threshold_name": "Provides due process for decisions affecting workers",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "In the case of deactivations, the appeals process must be available to workers who no longer have access to the platform."
+ },
+ {
+  "criterion_id": "4.1.d",
+  "principle": 4,
+  "threshold_id": "4.1",
+  "threshold_name": "Provides due process for decisions affecting workers",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Workers are not disadvantaged for voicing concerns or appealing disciplinary actions."
+ },
+ {
+  "criterion_id": "4.2.a",
+  "principle": 4,
+  "threshold_id": "4.2",
+  "threshold_name": "Provides equity in the management process",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The platform has an effective anti-discrimination policy laying out a clear process for reporting, correcting and penalising discrimination of workers on the platform on grounds such as race, social origin, caste, ethnicity, nationality, gender, sex, gender identity and expression, sexual orientation, disability, religion or belief, age or any other status.[12]"
+ },
+ {
+  "criterion_id": "4.2.b",
+  "principle": 4,
+  "threshold_id": "4.2",
+  "threshold_name": "Provides equity in the management process",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "The platform has measures in place to promote diversity, equality and inclusion on the platform. It takes practical measures to promote equality of opportunity for workers from disadvantaged groups, including reasonable accommodation for pregnancy, disability, and religion or belief."
+ },
+ {
+  "criterion_id": "4.2.c",
+  "principle": 4,
+  "threshold_id": "4.2",
+  "threshold_name": "Provides equity in the management process",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Where persons from a disadvantaged group (such as women) are significantly under-represented among a pool of workers, it seeks to identify and remove barriers to access by persons from that group."
+ },
+ {
+  "criterion_id": "4.2.d",
+  "principle": 4,
+  "threshold_id": "4.2",
+  "threshold_name": "Provides equity in the management process",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "If algorithms are used to determine access to work or remuneration or the type of work and pay scales available to workers seeking to use the platform, these are transparent and do not result in inequitable outcomes for workers from historically or currently disadvantaged groups."
+ },
+ {
+  "criterion_id": "4.2.e",
+  "principle": 4,
+  "threshold_id": "4.2",
+  "threshold_name": "Provides equity in the management process",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "It has mechanisms to reduce the risk of users discriminating against workers from disadvantaged groups in accessing and carrying out work."
+ },
+ {
+  "criterion_id": "5.1.a",
+  "principle": 5,
+  "threshold_id": "5.1",
+  "threshold_name": "Assures freedom of association and the expression of worker voice",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "There is a documented mechanism[13] for the expression of collective worker voice that allows ALL workers, regardless of employment status, to participate without risks."
+ },
+ {
+  "criterion_id": "5.1.b",
+  "principle": 5,
+  "threshold_id": "5.1",
+  "threshold_name": "Assures freedom of association and the expression of worker voice",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "There is a formal, written statement of willingness to recognise, and bargain with, a collective, independent body of workers or trade union, that is clearly communicated to all workers, and available on the platform interface.[14]"
+ },
+ {
+  "criterion_id": "5.1.c",
+  "principle": 5,
+  "threshold_id": "5.1",
+  "threshold_name": "Assures freedom of association and the expression of worker voice",
+  "threshold_point": "one point",
+  "satisfaction_rule": "ALL",
+  "criterion_text": "Freedom of association is not inhibited, and workers are not disadvantaged in any way for communicating their concerns, wishes and demands to the platform, or expressing willingness to form independent collective bodies of representation.[15][16]"
+ },
+ {
+  "criterion_id": "5.2.a",
+  "principle": 5,
+  "threshold_id": "5.2",
+  "threshold_name": "Supports democratic governance",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ANY",
+  "criterion_text": "Workers play a meaningful role in governing it."
+ },
+ {
+  "criterion_id": "5.2.b",
+  "principle": 5,
+  "threshold_id": "5.2",
+  "threshold_name": "Supports democratic governance",
+  "threshold_point": "one additional point",
+  "satisfaction_rule": "ANY",
+  "criterion_text": "In a written document available at all times on the platform interface, the platform publicly and formally recognises an independent collective body of workers, an elected works council, or trade union. This recognition is not exclusive and, when the legal framework allows, the platform should recognise any significant collective body seeking representation.[17]"
+ }
+]

@@ -1,0 +1,173 @@
+# The five agents, as seed `agent_configs` rows. docs/02 §1 and §2.
+#
+# Agent behaviour is data: a sixth agent is a row here plus a prompt file under
+# src/twinlab/agents/prompts/, and a one-line registration in SCHEMA_REGISTRY or TOOL_REGISTRY
+# only if it needs a new shape or a new tool.
+#
+# Three things in this file are enforced by registry.validate_config() and are not style choices:
+#   - output_mode is `tool` or `prompted`, NEVER `native`. Ollama Cloud accepts a JSON schema
+#     without error and does not enforce it (ARCHITECTURE.md §3.2, I13).
+#   - design and twin have tools: [] and react: false. A design agent that can fetch can pull
+#     another threshold's material into a render (I2); a twin that can fetch can read its own
+#     holdout answers (I6).
+#   - prompt_hash is NOT written here. It is computed from the resolved prompt file on load, so
+#     it always describes the text the agent is actually given (I11).
+#
+# Temperatures are docs/02 §7.1 and each has a reason. The twin's is the one open question:
+# set it from validity test 8, do not pick it (§7.3).
+
+agents:
+  - agent_id: manager
+    name: Manager
+    role: Owns the session. Routes, schedules, checkpoints, decides what runs next.
+    enabled: false          # M7 builds the session state machine its tools read.
+    model:
+      provider: ollama
+      name: gpt-oss:120b
+      temperature: 0.0      # routing must be reproducible
+      max_tokens: 1024
+    system_prompt: "file:manager_v1.md"
+    # docs/02 §2.1's eight schemas omit the Manager; these two are registered beside them.
+    input_schema: ManagerState
+    output_schema: ManagerDecision
+    output_mode: tool
+    # The only ReAct agent, and the only one with tools. They read and advance session state;
+    # that is all. They cannot choose what a dial means, change a panel, or skip a gate.
+    react: true
+    tools: [session_state, advance_cursor, record_decision]
+    context_sources: []
+    retry:
+      attempts: 1           # a Manager that guesses twice is worse than one that halts
+      backoff: none
+      repair_mode: none
+    instructions:
+      - "Write every decision to run_events with stage='control', so routing is inspectable."
+      - "Halt and surface the decision rather than guessing a route."
+
+  - agent_id: design
+    name: Design
+    role: Renders a decided commitment set into one driver-facing paragraph in Uber's voice.
+    enabled: true
+    model:
+      provider: ollama
+      name: gpt-oss:120b
+      # Needs to write naturally. Less risky than it looks: all 243 cells share 11 strings, so a
+      # paragraph is sampled ONCE per (lever, dial, style_version) and then frozen forever (I4),
+      # and the Checker gates it before any twin sees it.
+      temperature: 0.3
+      max_tokens: 512
+    system_prompt: "file:design_v1.md"
+    input_schema: LeverBrief
+    output_schema: LeverParagraph
+    output_mode: tool
+    react: false            # I2 — enforced in build_agent, not left to this file
+    tools: []               # I2
+    context_sources:
+      - kind: delta_spec
+        required: true
+      - kind: anchor_chunks
+        required: true
+      - kind: style_contract
+        required: true
+      - kind: do_not_say
+        required: true
+    retry:
+      attempts: 2           # re-render once, then the CELL fails and is logged
+      backoff: exponential
+      repair_mode: full
+    instructions:
+      - "Receives exactly four blocks and nothing else (docs/02 §4.1)."
+      - "No few-shot examples, ever — an example paragraph contains commitments, and any commitment in an example can bleed into a cell that does not include it (docs/02 §3.4)."
+
+  - agent_id: twin
+    name: Twin
+    role: Answers the battery as one driver, given that driver's persona and baseline.
+    enabled: true
+    model:
+      provider: ollama
+      name: gpt-oss:120b
+      # CONFIG, and the live empirical question. Validity test 8 sweeps temperature on the same
+      # twins and the same cell; set this from its result and record it. The prototype used 1.0
+      # with no evidence, which is the highest-variance choice available (docs/02 §7.3).
+      temperature: 0.7
+      max_tokens: 1024
+    system_prompt: "file:twin_v1.md"
+    input_schema: RoundPrompt
+    # The permissive transport shape (CLAUDE.md rule 4). The provider must never be handed
+    # TwinAnswerSet: Ollama Cloud does not enforce it, and pydantic-ai enforces it too early --
+    # a 36-item reply would raise before the repair ladder could ask for the missing item.
+    # The 37-item register contract is applied in Python, by run_answer_ladder.
+    output_schema: AnswerVector
+    output_mode: tool
+    react: false            # I6
+    tools: []               # I6
+    context_sources:
+      - kind: persona
+        required: true
+      - kind: scenario
+        required: true
+      - kind: baseline_answers
+        required: true
+      - kind: battery
+        required: true
+    retry:
+      attempts: 2           # one call plus one TARGETED repair, then failed for that cell only
+      backoff: exponential
+      repair_mode: targeted
+    instructions:
+      - "Receives no why-text, no open-ended answers, no version code, no dial digits and no holdout items (I8)."
+      - "No few-shot examples, ever — an example answer vector anchors the distribution and compresses the between-twin variance that IS the signal (docs/02 §3.4)."
+
+  - agent_id: checker
+    name: Checker
+    role: Decides whether one paragraph entails one commitment. The only model step in the gate.
+    enabled: true
+    model:
+      provider: ollama
+      name: gpt-oss:120b
+      temperature: 0.0      # a gate that answers differently on re-run is not a gate
+      max_tokens: 256
+    system_prompt: "file:checker_v1.md"
+    input_schema: CoverageProbe
+    output_schema: CoverageVerdict
+    output_mode: tool
+    react: false
+    tools: []
+    context_sources: []
+    retry:
+      attempts: 1           # an unparseable verdict counts as NOT entailed; it is not re-asked
+      backoff: none
+      repair_mode: none
+    instructions:
+      - "One call per commitment, with the commitment and the paragraph as the sole inputs."
+      - "Uncertainty fails closed: a call that cannot decide returns entailed=false."
+      - "Everything else in the gate is deterministic Python and never reaches this agent."
+
+  - agent_id: analyst
+    name: Analyst
+    role: Writes prose about numbers Python computed. Never produces a number.
+    enabled: true
+    model:
+      provider: ollama
+      name: gpt-oss:120b
+      temperature: 0.2      # readable prose; grounded anyway, so drift is bounded
+      max_tokens: 1024
+    system_prompt: "file:analyst_v1.md"
+    input_schema: AnalysisBundle
+    output_schema: AnalysisResult
+    output_mode: tool
+    # Lost its ReAct loop and its history tools in 2.0: run history is an unbounded surface
+    # through which a number it was not given can enter its prose (docs/02 §1, §4.4). It now
+    # receives one deterministically assembled bundle and nothing else.
+    react: false
+    tools: []
+    context_sources:
+      - kind: bundle
+        required: true
+    retry:
+      attempts: 2           # re-ask once quoting the offending sentence, then the template
+      backoff: linear
+      repair_mode: full
+    instructions:
+      - "Every numeric token in the prose is checked against the bundle before storage (I12)."
+      - "Two ungrounded attempts fall back to the deterministic template, prefixed so the reader knows. A cell is never left without a reading, and never given an ungrounded one."
