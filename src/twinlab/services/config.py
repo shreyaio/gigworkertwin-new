@@ -80,7 +80,13 @@ def startup_check() -> None:
 
     asyncio.run(_check_schema(backend))
     asyncio.run(refresh_twin_config(backend))
+    # WP-8 item 3. The same boundary the twin config uses: the stored `agent_configs` rows become
+    # the live config at boot, so a prompt or model edited in Agent Studio before a restart is what
+    # the runtime then uses. The stale-model correction runs **first**, so the live config is read
+    # from a repaired table rather than installing a bad row and then fixing the table behind it.
     asyncio.run(_correct_agent_models(backend))
+    asyncio.run(_refresh_agent_configs(backend))
+    asyncio.run(_check_style_version_row(backend))
     asyncio.run(_pause_interrupted(backend))
 
 
@@ -95,6 +101,10 @@ _REQUIRED_COLUMNS: dict[str, dict[str, str]] = {
     "runs": {"origin": "004_studio_origin.sql"},
     "studio_runs": {"is_latest_for_twin_version": "004_studio_origin.sql"},
     "sessions": {"purpose": "004_studio_origin.sql"},
+    # docs/DECISIONS.md 2026-10-07. `services/validity.append_result` now writes this on every
+    # row, so a database without it would fail on the first validity test — after the test's own
+    # calls, for tests 4-8. Caught here instead, at boot, before anything is spent.
+    "validity_results": {"version_code": "006_validity_version_code.sql"},
 }
 
 
@@ -123,6 +133,61 @@ async def _check_schema(backend: DbBackend) -> None:
                     "restart. Nothing is broken and no evidence is at risk — the code writes this "
                     "column and Postgres would reject the write."
                 )
+
+
+async def _check_style_version_row(backend: DbBackend) -> None:
+    """Warn when `app_config['style']` disagrees with `settings.style_version`. WP-9 item 2.
+
+    The row is read by **nothing** — grep-confirmed, and `variant/render.load_style_contract`
+    reads the YAML file — so it is inert. That is exactly why it is dangerous: it is a second,
+    wrong declaration of the render cache key sitting in the evidence database, and it will
+    mislead the first person who inspects it. On 2026-10-01 it said `v1` while the app ran `v2`;
+    it now says `v1` while the app runs `v3`.
+
+    A warning rather than a refusal, because nothing reads it and a stale row cannot produce a
+    wrong stimulus. `ingest/seed_db.py` writes it from `style_contract.yaml`, so a reseed corrects
+    it; the warning is what makes a researcher notice it needs one.
+    """
+    try:
+        rows = await backend.select("app_config", [("eq", "key", "style")], limit=1)
+    except Exception as exc:  # noqa: BLE001 — a config hygiene check must not block boot
+        log.warning("could not check app_config['style']: %r", exc)
+        return
+    if not rows:
+        return
+    stored = rows[0].get("value") or {}
+    declared = str(stored.get("style_version") or "") if isinstance(stored, dict) else ""
+    if declared and declared != settings.style_version:
+        log.warning(
+            "app_config['style'].style_version is %r but the app runs %r. Nothing reads that row "
+            "— the contract is read from config/style_contract.yaml — so no stimulus "
+            "is affected, but it is a wrong declaration of the render cache key sitting in the "
+            "evidence database. Re-run ingest/seed_db.py to correct it.",
+            declared,
+            settings.style_version,
+        )
+
+
+async def _refresh_agent_configs(backend: DbBackend) -> None:
+    """Install the stored `agent_configs` rows as the runtime's live config at boot. WP-8 item 3.
+
+    Failures are logged and swallowed, exactly as :func:`refresh_twin_config`'s are: a database
+    that cannot be reached must not stop the UI booting, and the YAML seed is a defined state to
+    fall back to. A stored row that does not *validate* is handled per agent inside
+    `registry.live_agent_configs`, so one bad row costs one agent its edit, not the boot.
+    """
+    from twinlab.services.agent_config import refresh_agent_configs
+
+    try:
+        configs = await refresh_agent_configs(backend=backend)
+    except Exception as exc:  # noqa: BLE001 — never block boot on a config read
+        log.warning("could not read the live agent configs: %r", exc)
+        return
+    disabled = sorted(a for a, cfg in configs.items() if not cfg.enabled)
+    if disabled:
+        # Worth a line at boot: from M19 these switches gate the runtime, so a researcher who
+        # left one off weeks ago should not rediscover it from a missing reading.
+        log.info("agents switched off in Agent Studio: %s", ", ".join(disabled))
 
 
 async def _correct_agent_models(backend: DbBackend) -> None:

@@ -128,13 +128,36 @@ def build_metric_bars(
             f"On the index this is {direction}."
         )
 
+    # `ARCHITECTURE.md` §5.2: the demand floor "is reported **alongside every live cell**", and a
+    # cell whose shift is smaller than it "is **not interpretable**". So there are three states
+    # here, not two, and the third one used to render as silence:
+    #
+    #   * below the floor  -> not interpretable, said plainly;
+    #   * above the floor  -> says so, with the number it cleared;
+    #   * floor not measured -> says THAT, rather than nothing.
+    #
+    # The third matters because silence is indistinguishable from "it cleared the floor", which is
+    # the reading a researcher will take. `session_floor` returns `None` when either control is
+    # missing and is right not to assume one — but an unstated floor is an unstated limitation,
+    # which is the same defect WP-10 fixed for the baseline column (I17's spirit).
+    label = "demand floor (SHAM − 00000)" if floor_kind == "demand" else "noise floor (00000)"
     floor_note = None
-    if tested and floor is not None and index_value is not None and index_value <= floor:
-        label = "demand floor (SHAM − 00000)" if floor_kind == "demand" else "noise floor (00000)"
-        floor_note = (
-            f"This index ({index_value:.3f}) does not clear the {label} of {floor:.3f}, "
-            "so it is not interpretable as an effect."
-        )
+    if tested and index_value is not None:
+        if floor is None:
+            floor_note = (
+                f"The {label} has not been measured for this session, so there is nothing to "
+                "say whether this index is larger than the movement a null stimulus produces. "
+                "It is not yet interpretable as an effect."
+            )
+        elif index_value <= floor:
+            floor_note = (
+                f"This index ({index_value:.3f}) does not clear the {label} of {floor:.3f}, "
+                "so it is not interpretable as an effect."
+            )
+        else:
+            floor_note = (
+                f"This index ({index_value:.3f}) clears the {label} of {floor:.3f}."
+            )
 
     return MetricBars(
         rows=rows,

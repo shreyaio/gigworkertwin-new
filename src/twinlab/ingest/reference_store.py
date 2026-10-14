@@ -32,6 +32,7 @@ from twinlab.models.reference import (
     Threshold,
     construct_code_for,
 )
+from twinlab.models.twin import BatteryItem
 
 EXPECTED_COUNTS: dict[str, int] = {
     "criteria": 33,
@@ -278,6 +279,32 @@ class ReferenceData:
         if scale_id is None:
             raise KeyError(f"{item_id} has no scale")
         return self.scales[scale_id].points
+
+    def scale_anchors(self, item_id: str) -> tuple[str, ...]:
+        """One label per scale point, low to high, as the human read them on the Form.
+
+        Raises on an item with no scale, exactly as :meth:`scale_points` does: an item shown to a
+        twin without its anchors is shown on a scale whose direction the twin has to guess, and
+        guessing it wrong is not a failure the twin can report (`CLAUDE.md` rule 7).
+        `_check_anchors` has already proved the length matches ``points`` at load time.
+        """
+        scale_id = self.items[item_id].scale_id
+        if scale_id is None:
+            raise KeyError(f"{item_id} has no scale, so it has no anchors")
+        return tuple(self.scales[scale_id].anchors)
+
+    def battery_item(self, item_id: str) -> BatteryItem:
+        """The item as a twin is shown it: stem, range and anchors, all from the frozen register.
+
+        The **one** place a `BatteryItem` is built, so no caller can assemble a round that quietly
+        omits the anchors. `docs/DECISIONS.md`, 2026-10-12.
+        """
+        item = self.items[item_id]
+        return BatteryItem(
+            stem=item.stem,
+            points=self.scale_points(item_id),
+            anchors=self.scale_anchors(item_id),
+        )
 
     def anchor_chunks(self, gap_ids: list[str]) -> list[Chunk]:
         """Chunks for the anchor sources of these gaps: voice, and what not to re-announce."""

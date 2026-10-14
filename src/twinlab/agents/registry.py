@@ -208,25 +208,46 @@ def validate_config(cfg: AgentConfig, *, require_schema: bool = True) -> AgentCo
 def resolve_model(model: ModelRef) -> Any:
     """ModelRef → a pydantic-ai model object. Imported lazily.
 
-    Ollama Cloud speaks the OpenAI wire format, so both providers resolve through
-    `OpenAIProvider` against `settings.ollama_base_url`.
+    Both live providers speak the OpenAI wire format and resolve through `OpenAIProvider`, but
+    **against different endpoints**, and the provider on the `ModelRef` is what decides which.
+
+    Until 2026-10-08 `openai` and `ollama` both resolved against `settings.ollama_base_url` with
+    `settings.ollama_api_key`. Selecting `openai` in Agent Studio therefore changed nothing: the
+    call went to Ollama Cloud, with the Ollama key, and the run recorded a provider it had never
+    reached. That is a silent misattribution in the evidence, so `openai` now **refuses** rather
+    than falling back — `docs/DECISIONS.md` 2026-10-08.
+
+    A second *model* does not need a second provider: validity test 7 compares two model names on
+    one endpoint, and `mistral-large-4` or `deepseek-v4-pro:0813` are reachable by name with
+    nothing configured. `openai` is for a genuinely different endpoint.
     """
     if model.provider == "mock":
         raise ConfigError(
             "the 'mock' provider has no live model: install a StubModelClient with "
             "`set_client()` instead"
         )
-    if model.provider in ("ollama", "openai"):
-        from pydantic_ai.models.openai import OpenAIChatModel
-        from pydantic_ai.providers.openai import OpenAIProvider
+    if model.provider not in ("ollama", "openai"):
+        raise ConfigError(f"unsupported provider {model.provider!r}")
 
-        return OpenAIChatModel(
-            model.name,
-            provider=OpenAIProvider(
-                base_url=settings.ollama_base_url, api_key=settings.ollama_api_key
-            ),
-        )
-    raise ConfigError(f"unsupported provider {model.provider!r}")
+    if model.provider == "openai":
+        base_url, api_key = settings.openai_base_url, settings.openai_api_key
+        if not base_url:
+            raise ConfigError(
+                "provider 'openai' has no OPENAI_BASE_URL, so there is no endpoint to send it "
+                "to. It is not defaulted to the Ollama one: that is what made this setting a "
+                "no-op that recorded a provider the call never reached. Set OPENAI_BASE_URL and "
+                "OPENAI_API_KEY, or use provider 'ollama' — every model that endpoint serves, "
+                "Mistral and DeepSeek included, is reachable there by name."
+            )
+    else:
+        base_url, api_key = settings.ollama_base_url, settings.ollama_api_key
+
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    return OpenAIChatModel(
+        model.name, provider=OpenAIProvider(base_url=base_url, api_key=api_key)
+    )
 
 
 def build_agent(
@@ -491,6 +512,61 @@ def get_client() -> ModelClient:
     return _client
 
 
+#: `base_url` → the model ids that endpoint serves, or ``None`` when it could not be asked.
+#: Process-level and never invalidated: a provider's catalogue does not change inside a session,
+#: and this is consulted on a UI readiness path that must not issue a request per repaint.
+_SERVED_MODELS: dict[str, frozenset[str] | None] = {}
+
+
+async def served_model_names(*, timeout: float = 5.0) -> frozenset[str] | None:
+    """Model ids the configured endpoint serves, or ``None`` if it could not be listed.
+
+    **``None`` is "not known", never "none served".** Every caller treats it as "cannot check"
+    and proceeds, because a provider listing that is slow or blocked must not be able to stop a
+    validity test the researcher is entitled to run. The only thing this buys is catching a typo
+    before it costs a round of calls, and a check that can produce a false refusal costs more than
+    the typo does.
+
+    Cached for the life of the process, including the ``None``: a readiness line is repainted on
+    every change of the session or version dropdown, and one GET per repaint is a request storm
+    against the same endpoint the sweep is queueing on.
+    """
+    # No key means mock mode: there is no endpoint to ask and nothing in CI may reach one
+    # (`CLAUDE.md`, Testing). Not cached — the key can be set without restarting the process.
+    if not settings.ollama_api_key:
+        return None
+
+    base = settings.ollama_base_url.rstrip("/")
+    if base in _SERVED_MODELS:
+        return _SERVED_MODELS[base]
+
+    names: frozenset[str] | None = None
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=timeout) as http:
+            response = await http.get(
+                f"{base}/models",
+                headers={"Authorization": f"Bearer {settings.ollama_api_key}"},
+            )
+            response.raise_for_status()
+            served = response.json().get("data") or []
+        names = frozenset(str(m["id"]) for m in served if m.get("id"))
+        # An endpoint that answers with an empty catalogue is indistinguishable here from one
+        # that answered something this code cannot read. Neither supports refusing a model name.
+        names = names or None
+    except Exception as exc:  # noqa: BLE001 — never block on a provider listing
+        log.info("could not list models at %s (%r); model names will not be checked", base, exc)
+
+    _SERVED_MODELS[base] = names
+    return names
+
+
+def reset_served_models() -> None:
+    """Drop the cached catalogue. Test hook; the application does not call it."""
+    _SERVED_MODELS.clear()
+
+
 def set_client(client: ModelClient | None) -> None:
     """Install a client. Tests install :class:`StubModelClient`; the app does not call this."""
     global _client
@@ -517,3 +593,131 @@ def default_agent_configs() -> dict[str, AgentConfig]:
         validate_config(cfg)
         configs[cfg.agent_id] = cfg
     return configs
+
+
+# --------------------------------------------------------------- the live config (M19 WP-8)
+
+#: `agent_id` → the stored `agent_configs` row's fields. **Pushed in** by
+#: `services.agent_config.refresh_agent_configs`, never read from here: `agents/` may not import
+#: `db/` (`ARCHITECTURE.md` §4), and `variant/` importing `services/` would invert the layering,
+#: so the service does the reading and this module does the merging.
+#:
+#: Empty means "nothing stored", and every call site then gets the YAML seed — which is what the
+#: whole runtime did until M19 WP-8.
+_LIVE: dict[str, dict] = {}
+
+#: `agent_id` → the `agent_configs.version` the live config came from. Frozen onto every session
+#: as `sessions.config["agent_versions"]`, which is `ARCHITECTURE.md` §1.1's "frozen onto every
+#: run that used them" satisfied in the data rather than in a docstring.
+_LIVE_VERSIONS: dict[str, int] = {}
+
+
+class AgentDisabled(ConfigError):
+    """A disabled agent's config was requested at a call site that needs it to run.
+
+    `AgentConfig.enabled` gated **nothing** before M19 WP-8 — a grep across `src/` found exactly
+    one read, `ui/components/domain.py`, which paints a pill. Setting the Results Analyst to
+    disabled changed a badge, and the analyst was still called.
+
+    Each call site turns this into its own defined outcome rather than a generic failure, because
+    "disabled" means something different per agent: the analyst has a deterministic template to
+    fall back to, the design agent and the twin do not, and the Checker may not be disabled at all
+    (I3).
+    """
+
+
+def set_live_agent_configs(
+    rows: dict[str, dict], versions: dict[str, int] | None = None
+) -> None:
+    """Install the stored `agent_configs` rows as the process override. WP-8.
+
+    Called only by `services.agent_config.refresh_agent_configs`. Takes plain dicts rather than
+    `AgentConfig`s so an invalid stored row can be rejected **per agent** at merge time, with a
+    fallback to the seed for that agent only, instead of taking down the whole refresh.
+    """
+    global _LIVE, _LIVE_VERSIONS
+    _LIVE = {str(k): dict(v) for k, v in rows.items()}
+    _LIVE_VERSIONS = {str(k): int(v) for k, v in (versions or {}).items()}
+
+
+def reset_live_agent_configs() -> None:
+    """Drop the override. Test hook; the application does not call it."""
+    set_live_agent_configs({}, {})
+
+
+def live_agent_versions() -> dict[str, int]:
+    """`agent_id → agent_configs.version` for every stored row.
+
+    Only agents with a stored row appear: an agent running on the YAML seed has no version to
+    record, and writing `1` for it would be indistinguishable from a stored version 1.
+    """
+    return dict(_LIVE_VERSIONS)
+
+
+def live_agent_configs() -> dict[str, AgentConfig]:
+    """The agent configs **actually in force**: the stored rows over the YAML seed. WP-8.
+
+    The twin-config precedence applied to agents (`docs/09` §4): the YAML is the *seed*, the
+    stored row is what the researcher chose in Agent Studio, and the stored row wins. Until M19
+    WP-8 every call site read :func:`default_agent_configs` directly, so Agent Studio's edits were
+    saved, versioned, audited — and read by nothing except Agent Studio.
+
+    That was a documented holding position (`services.agent_config.in_force` still explains it)
+    and it is not compatible with `ARCHITECTURE.md` §1.1, which is one of the three principles the
+    product is built on: *"Models, prompts, thresholds, weights, run limits, wording variants,
+    sample sizes and agent behaviour are all editable from the frontend by someone with no
+    engineering background, versioned on write, and frozen onto every run that used them."*
+
+    **A stored row that will not validate falls back to the seed for that agent only**, logged
+    once at WARNING. That is the behaviour `services.agent_config.load_agent` already had, for the
+    same reason: the seed is a defined state, and raising here would take down every call site in
+    the runtime rather than one screen.
+
+    `validate_config` runs on every merged config, so I2 and I6 cannot be weakened by a stored
+    row: a tool on `design` or `twin`, or `output_mode: native`, is refused here exactly as it is
+    on save.
+    """
+    out = dict(default_agent_configs())
+    for agent_id, stored in _LIVE.items():
+        seeded = out.get(agent_id)
+        merged = {**(seeded.model_dump() if seeded else {}), **stored}
+        try:
+            cfg = AgentConfig(
+                **{k: v for k, v in merged.items() if k in AgentConfig.model_fields}
+            )
+            _, digest = resolve_prompt(cfg)
+            cfg = cfg.model_copy(update={"prompt_hash": digest})
+            validate_config(cfg)
+        except Exception as exc:  # noqa: BLE001 — one bad row must not break every call site
+            log.warning(
+                "stored agent_configs row for %r does not validate (%s); %s",
+                agent_id,
+                exc,
+                "falling back to the seeded config for that agent only"
+                if seeded
+                else "and there is no seeded config to fall back to, so it is ignored",
+            )
+            continue
+        out[agent_id] = cfg
+    return out
+
+
+def live_agent(agent_id: str) -> AgentConfig:
+    """One agent's live config, **refusing a disabled one**. WP-8 item 4.
+
+    Raises :class:`AgentDisabled` rather than handing back a config the caller would run anyway.
+    Call sites with a defined non-model path catch it; the ones without fail loudly, which is
+    correct — a disabled twin means nothing can be asked, and asking it anyway would make the
+    toggle a lie in the other direction.
+    """
+    configs = live_agent_configs()
+    if agent_id not in configs:
+        raise ConfigError(f"no agent {agent_id!r}")
+    cfg = configs[agent_id]
+    if not cfg.enabled:
+        raise AgentDisabled(
+            f"{cfg.name} ({agent_id}) is switched off in Agent Studio, so it cannot be run. "
+            "Switch it back on there, or use a path that does not need it."
+        )
+    return cfg
+

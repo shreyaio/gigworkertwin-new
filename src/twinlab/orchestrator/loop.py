@@ -29,6 +29,7 @@ from config.settings import settings
 from twinlab.db.client import DbBackend, get_backend
 from twinlab.db.repositories import (
     AnswerRepo,
+    ControlAnswerRepo,
     PanelRepo,
     RunRepo,
     SessionRepo,
@@ -48,8 +49,12 @@ from twinlab.orchestrator.panel import draw_panel
 
 log = logging.getLogger(__name__)
 
-#: The two control cells, in the order a fresh session runs them. **Exactly two, ever**
-#: (`CLAUDE.md` rule 9). They run before the sweep and consume no iteration.
+#: The two control cells, in the order a fresh session records them. **Exactly two, ever**
+#: (`CLAUDE.md` rule 9). They consume no iteration.
+#:
+#: **Nobody is asked here.** Since RESEARCHER 2026-10-05 each twin answers both controls once per
+#: config, inside the quality gate (`docs/08` §2.4). A session records each control from its panel's
+#: stored answers, under its own config fingerprint, so a session costs its version calls only.
 CONTROL_CELLS: tuple[str, ...] = (CONTROL_CODE, SHAM_CODE)
 
 
@@ -124,9 +129,10 @@ class SessionRunner:
             await self.stage_reconstruction(session, panel)
 
             if session.cursor_index is None:
-                # Fresh session: the controls first, and they consume no iteration.
+                # Fresh session: the two control floors, assembled from the panel's stored answers.
+                # They consume no iteration and no model call.
                 for code in CONTROL_CELLS:
-                    await self.execute_run(session, code, panel)
+                    await self.stage_control_floor(session, code, panel)
                     if self.stop_requested:
                         return await self._pause(parent)
                 session.cursor_index = index_from_code(session.start_code)
@@ -243,6 +249,74 @@ class SessionRunner:
             parent, "ok", label=f"reconstruction ({len(panel)} twins)",
             payload={"twins_n": len(panel)},
         )
+
+    # ---------------------------------------------------------------- control floors
+
+    async def stage_control_floor(
+        self, session: Session, code: str, panel: list[PanelMember]
+    ) -> Any:
+        """Record one control cell from the panel's stored answers. No model call. `docs/08` §2.4.
+
+        Every panel twin must already hold this control under **this session's** config
+        fingerprint. A missing one is refused, not asked for here: the draw only admits twins with
+        both controls under the live config (`services/config_match.qualified_twin_ids`), so a gap
+        means the config or the gate changed underneath the session, and that is for the researcher
+        to resolve by running the quality test again (I14, I15).
+        """
+        run = await self.runs.get_or_create(self.session_id, code)
+        if run.status == "completed":
+            await self.events.emit(
+                stage="control", label=f"{code} floor already recorded", status="skipped",
+                run_id=run.run_id, payload={"version_code": code},
+            )
+            return run
+
+        if not panel:
+            # I15: a floor over zero twins is a failure, never an index of 0.000.
+            raise OrchestratorError(f"{code} floor over an empty panel is a failure (I15)")
+        fingerprint = str(session.config.get("config_fingerprint") or "")
+        if not fingerprint:
+            raise OrchestratorError(
+                f"session {self.session_id[:8]} has no config fingerprint, so its {code} floor "
+                "cannot be matched to a quality test. Start a new session."
+            )
+
+        parent = await self.events.emit(
+            stage="control", label=f"{code} floor (from the quality test)", run_id=run.run_id,
+            payload={"version_code": code, "config_fingerprint": fingerprint},
+        )
+        await self.runs.set_status(run.run_id, "running")
+        controls = ControlAnswerRepo(self.db)
+        for member in panel:
+            stored = await controls.get(member.twin_id, code, fingerprint)
+            if stored is None:
+                raise OrchestratorError(
+                    f"twin {member.twin_id} has no {code} answer under config {fingerprint}. The "
+                    "quality test has to be run again for this config before a session can use "
+                    "this panel."
+                )
+            await self.answers.record(
+                run_id=run.run_id,
+                twin_id=member.twin_id,
+                answers={k: int(v) for k, v in dict(stored["answers"]).items()},
+                lever_order=[int(x) for x in stored["lever_order"]],
+                seed=int(stored["seed"]),
+                wording=str(stored["wording"]),
+                model=str(stored["model"]),
+                prompt_version=stored.get("prompt_version"),
+                retries=int(stored.get("retries") or 0),
+            )
+
+        metrics, index_value, prose = await self._analyse_run(run.run_id, code, parent)
+        completed = await self.runs.complete(
+            run.run_id, twins_n=len(panel), metrics=metrics,
+            index_value=index_value, analysis=prose,
+        )
+        await self.events.set_status(
+            parent, "ok", label=f"{code} floor ({len(panel)} twins)",
+            payload={"version_code": code, "twins_n": len(panel), "index": index_value},
+        )
+        return completed
 
     # ---------------------------------------------------------------- per-code
 

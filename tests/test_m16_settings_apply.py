@@ -15,6 +15,8 @@ DB; `_override` is process state, so every test restores it.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from twinlab.orchestrator.budget import quality_budget
@@ -49,21 +51,24 @@ async def test_the_seed_is_what_runs_when_nothing_is_stored(backend):
 
 
 async def test_saving_quality_runs_per_twin_changes_the_budget_card(backend):
-    """§5.2's own test, as a test. 18 calls per twin at 3 repeats, 6 at 1.
+    """§5.2's own test, as a test. 3 calls per twin at 3 repeats, 1 at 1.
 
     This is the number on the confirm card a researcher presses OK on, so if the save does not
-    reach it they authorise one budget and spend another.
+    reach it they authorise one budget and spend another. The per-twin cost fell from 18 to 3 in
+    M19 WP-3 (one call per repeat, all six Part-17 versions in it); what this test is about is
+    that **the saved value reaches the card**, which is unchanged.
     """
     await refresh_twin_config(backend)
     seeded = load_twin_config().quality_runs_per_twin
     assert seeded == 3, "the seed is 3; this test's arithmetic below assumes it"
-    assert quality_budget(twins=1, repeats=seeded).calls == 18
+    # Three H3 repeats plus the two control answers (RESEARCHER 2026-10-05).
+    assert quality_budget(twins=1, repeats=seeded).calls == 3 + 2
 
     version = await save_settings("twin", {"quality_runs_per_twin": 1}, backend=backend)
     live = await refresh_twin_config(backend)
 
     assert live.quality_runs_per_twin == 1, "the save did not reach the live config"
-    assert quality_budget(twins=1, repeats=live.quality_runs_per_twin).calls == 6
+    assert quality_budget(twins=1, repeats=live.quality_runs_per_twin).calls == 1 + 2
     assert twin_config_version() == version, (
         "the version the config came from must be recordable on the evidence row"
     )
@@ -82,6 +87,67 @@ async def test_a_save_only_changes_the_key_it_names(backend):
     assert live.quality_runs_per_twin == 2
     assert live.mae_max == 0.5, "the second save deleted a threshold the first one set"
     assert live.pct_within_1_min == 0.9
+
+
+async def test_the_settings_screen_cannot_write_show_baseline(backend):
+    """`docs/03` §321 — a researcher-set default held in `app_config`, **not a UI control**.
+
+    The Settings tab builds a full `TwinConfig` to validate what the researcher typed, and that
+    model necessarily carries a `show_baseline`. It must not reach the database: before this, the
+    value came from a `load_twin_config()` evaluated when the Blocks were **built**, which is
+    before anything has read `app_config`, so it was the YAML seed. Any Save therefore wrote the
+    seed's `show_baseline` over the stored one — which is how `false` could sit in the YAML while
+    `app_config` went on running `true`.
+
+    The guarantee is structural rather than careful: `save_settings` merges, so a key the screen
+    never sends is a key it can never clobber. This test pins the key list the screen sends.
+    """
+    from twinlab.ui.pages import lab as lab_page
+
+    source = inspect.getsource(lab_page._settings_tab)
+    assert '"show_baseline"' not in source.split("EDITABLE = (")[1].split(")")[0], (
+        "the Settings screen listed show_baseline as editable; it is set in app_config only"
+    )
+
+    # The database holds False; a save of an unrelated field must leave it there.
+    await backend.upsert(
+        "app_config",
+        [{"key": "twin", "value": {"show_baseline": False}, "version": 3}],
+        on_conflict="key",
+    )
+    assert (await refresh_twin_config(backend)).show_baseline is False
+
+    await save_settings("twin", {"temperature": 0.7}, backend=backend)
+    live = await refresh_twin_config(backend)
+
+    assert live.temperature == 0.7, "the save did not reach the live config"
+    assert live.show_baseline is False, (
+        "a Settings save flipped show_baseline; the twin would see its own numbers again and the "
+        "00000 control would go back to echoing them (docs/DECISIONS.md 2026-10-07)"
+    )
+
+
+async def test_the_settings_screen_repaints_every_control_from_app_config(backend):
+    """The screen must show what is in force, not the seed it was built with.
+
+    A settings screen displaying `config/twin.default.yaml` while the database holds something
+    else is the same lie as a read-only control that looks editable, and it is what sent a
+    researcher to hand-edit the YAML — unversioned, unaudited, and outside the `config_version`
+    that `twin_quality_runs` records.
+    """
+    from twinlab.ui.pages import lab as lab_page
+
+    source = inspect.getsource(lab_page._settings_tab)
+    assert "load_once(" in source and "_refresh" in source, (
+        "the Settings tab paints its controls once at build time and never re-reads app_config"
+    )
+    # Every editable control, plus the read-only show_baseline display, is repainted by it.
+    wired = source[source.index("load_once("):]
+    for control in (
+        "temperature", "wording", "quality_runs", "mae_max", "pct_min", "panel_size",
+        "baseline_shown",
+    ):
+        assert control in wired, f"{control} is not repainted from the live config"
 
 
 async def test_a_stored_config_that_cannot_run_raises_rather_than_falling_back(backend):

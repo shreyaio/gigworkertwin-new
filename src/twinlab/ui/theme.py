@@ -32,6 +32,7 @@ ROUTES: tuple[tuple[str, str], ...] = (
 ROUTE_ACCENTS: dict[str, str] = {
     "/": "blue",
     "/survey": "blue",
+    "/take": "blue",
     "/lab": "green",
     "/generator": "purple",
     "/studio": "orange",
@@ -39,6 +40,13 @@ ROUTE_ACCENTS: dict[str, str] = {
     "/statistics": "indigo",
     "/research": "red",
 }
+
+#: Driver-facing routes. Real URLs (`ui/app.py` builds them with `demo.route()`), deliberately
+#: absent from :data:`ROUTES` — a driver sent the questionnaire link must not be given a strip of
+#: links into the researcher's application, and the nav strip is built from ROUTES alone.
+PARTICIPANT_ROUTES: tuple[tuple[str, str], ...] = (
+    ("Your work with Uber", "/take"),
+)
 
 APP_TITLE = "Twin Lab"
 APP_SUBTITLE = "Uber Driver Study with Digital Twins"
@@ -656,6 +664,25 @@ table.tl-grid td{ padding:0; }
 .tl-agent-kind-ai{ background:var(--tl-ok-tint); color:var(--tl-ok); }
 .tl-agent-kind-rules{ background:var(--tl-info-tint); color:var(--tl-accent-dark); }
 
+/* M19 WP-8 item 6. Each agent's two steps: the deterministic one and the one that costs a model
+   call. The Policy Designer is why this exists -- choosing what changes is a frozen lookup with
+   no model in it (I1), and the card previously showed one undifferentiated "renders" line. */
+.tl-agent-steps{ margin:var(--tl-s2) 0 0; display:flex; flex-direction:column; gap:var(--tl-s1); }
+.tl-agent-step{ font-size:var(--tl-fs-sm); color:var(--tl-grey-700); line-height:1.45; }
+.tl-agent-step .tl-pill{ margin-right:var(--tl-s1); vertical-align:baseline; }
+/* The Checker's switch is absent rather than shown and refused, so the reason has to be on the
+   card: a control that is simply missing with no explanation is its own kind of lie. */
+.tl-agent-locked{
+  margin:var(--tl-s2) 0 0; padding:var(--tl-s1) var(--tl-s2);
+  background:var(--tl-info-tint); border-left:3px solid var(--tl-accent);
+  font-size:var(--tl-fs-xs); color:var(--tl-grey-700);
+}
+/* The config version actually in force. Blue, matching the other provenance chips: this is a
+   "where did this come from" badge, not a status. */
+.tl-pill-blue{ background:var(--tl-info-tint); color:var(--tl-accent-dark); }
+/* The validity cards' readiness line (WP-6 item 5). */
+.tl-validity-ready{ font-size:var(--tl-fs-xs); color:var(--tl-grey-700); margin:var(--tl-s1) 0; }
+
 .tl-budget-warnings{ margin:var(--tl-s2) 0 0; padding-left:var(--tl-s4); }
 .tl-budget-warning{ color:#8A5A00; }
 
@@ -1173,5 +1200,223 @@ textarea:focus-visible{ outline:2px solid var(--tl-accent); outline-offset:2px; 
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{ animation-duration:.01ms !important;
                         transition-duration:.01ms !important; }
+}
+
+/* ===================================================================== the hosted survey
+   The driver-facing questionnaire (/take). A different reader from every other page in this
+   application: one person on a phone, once, who is not a researcher and has no nav strip. So the
+   page is a single narrow column, the type is larger than the researcher screens, and the only
+   two controls always on screen are Back and Continue.
+
+   docs/05 is a researcher design system; where the two disagree the driver wins here, because a
+   mis-tapped rating is a data defect and a cramped researcher table is an inconvenience. */
+
+.tl-survey{ max-width:720px; margin:0 auto; padding:0 var(--tl-s4) 7rem; }
+.tl-survey .tl-sv-kicker{
+  display:flex; justify-content:space-between; align-items:baseline;
+  font-size:var(--tl-fs-sm); font-weight:600; color:var(--tl-grey-700);
+  padding-top:var(--tl-s4);
+}
+.tl-survey .tl-sv-kicker span:last-child{ font-weight:400; color:var(--tl-grey-500); }
+
+/* The progress rail: one dot per stop, filled up to the current one. A bar alone cannot say
+   "nine stops" and the reference screens show both, so both are drawn. */
+.tl-sv-rail{ display:flex; align-items:center; gap:0; margin:var(--tl-s2) 0 var(--tl-s3); }
+.tl-sv-rail .dot{
+  width:11px; height:11px; border-radius:50%; flex:0 0 auto;
+  background:var(--tl-white); border:2px solid var(--tl-grey-300);
+}
+.tl-sv-rail .dot.done{ background:var(--tl-accent); border-color:var(--tl-accent); }
+.tl-sv-rail .seg{ height:2px; flex:1 1 auto; background:var(--tl-grey-300); }
+.tl-sv-rail .seg.done{ background:var(--tl-accent); }
+.tl-sv-underline{ height:3px; background:var(--tl-grey-200); border-radius:2px; overflow:hidden; }
+.tl-sv-underline i{ display:block; height:3px; background:var(--tl-orange); border-radius:2px; }
+
+.tl-survey h1.tl-sv-title{
+  font-family:var(--tl-font-head); font-size:1.75rem; line-height:1.25;
+  margin:var(--tl-s2) 0 var(--tl-s2); color:var(--tl-grey-900);
+}
+.tl-survey .tl-sv-part{
+  font-size:var(--tl-fs-sm); color:var(--tl-grey-500); margin-top:var(--tl-s3);
+}
+.tl-survey .tl-sv-intro{ color:var(--tl-grey-700); line-height:1.6; margin-bottom:var(--tl-s3); }
+.tl-survey .tl-sv-body p{ color:var(--tl-grey-700); line-height:1.65; margin:0 0 var(--tl-s2); }
+.tl-survey .tl-sv-body h3{
+  font-size:1rem; margin:var(--tl-s4) 0 var(--tl-s2);
+  padding-left:var(--tl-s2); border-left:3px solid var(--tl-accent);
+}
+.tl-sv-callout{
+  background:var(--tl-white); border:1px solid var(--tl-grey-300);
+  border-radius:var(--tl-r-md); padding:var(--tl-s3) var(--tl-s4); margin:var(--tl-s3) 0;
+}
+.tl-sv-callout strong{ display:block; margin-bottom:var(--tl-s2); }
+.tl-sv-callout ul{ margin:0; padding-left:1.1rem; }
+.tl-sv-callout li{ color:var(--tl-accent-dark); margin:var(--tl-s1) 0; }
+
+/* A block heading, and the scale note that governs the items under it. The note is stated once
+   per block because that is how the instrument reads on paper; repeating it under every item
+   would be a different questionnaire to answer. */
+.tl-sv-block{ margin:var(--tl-s5) 0 var(--tl-s2); }
+.tl-sv-block h2{
+  font-family:var(--tl-font-head); font-size:1.15rem; margin:0 0 var(--tl-s1);
+  color:var(--tl-grey-900);
+}
+.tl-sv-block .note{ font-size:var(--tl-fs-sm); color:var(--tl-grey-500); }
+.tl-sv-block .lever{ margin:var(--tl-s1) 0; color:var(--tl-grey-700); line-height:1.55; }
+
+/* One question, one card. Gradio wraps every component in its own div, so the card is drawn on
+   the Group and the inner wrappers are flattened rather than fought with. */
+.tl-survey .tl-q{
+  background:var(--tl-white); border:1px solid var(--tl-grey-300);
+  border-radius:var(--tl-r-md); padding:var(--tl-s3) var(--tl-s4);
+  margin-bottom:var(--tl-s3); box-shadow:none;
+}
+.tl-survey .tl-q .tl-q-stem{
+  font-size:1rem; color:var(--tl-grey-900); line-height:1.5; margin-bottom:var(--tl-s2);
+}
+.tl-survey .tl-q .tl-q-anchors{
+  display:flex; justify-content:space-between; gap:var(--tl-s2);
+  font-size:var(--tl-fs-xs); color:var(--tl-grey-500);
+}
+.tl-survey .tl-q .tl-q-help{ font-size:var(--tl-fs-xs); color:var(--tl-grey-500); }
+
+/* Likert, drawn as a row of numbered boxes. Gradio has no button-group control, so this is a
+   radio restyled — docs/05's rule is to degrade the styling and never the content, and the
+   content here is "N boxes, one per scale point, numbered and selectable". */
+.tl-survey .tl-likert .wrap,
+.tl-survey .tl-likert > div:last-child{
+  display:grid !important; grid-auto-flow:column; grid-auto-columns:1fr;
+  gap:var(--tl-s2); align-items:stretch;
+}
+.tl-survey .tl-likert label{
+  display:flex !important; align-items:center; justify-content:center;
+  min-height:44px; margin:0 !important; padding:var(--tl-s2) 0 !important;
+  border:1px solid var(--tl-grey-300) !important; border-radius:var(--tl-r-sm) !important;
+  background:var(--tl-white) !important; cursor:pointer; font-weight:500;
+  font-variant-numeric:tabular-nums;
+}
+.tl-survey .tl-likert label:hover{ border-color:var(--tl-accent) !important; }
+.tl-survey .tl-likert label.selected,
+.tl-survey .tl-likert label:has(input:checked){
+  background:var(--tl-accent) !important; border-color:var(--tl-accent) !important;
+  color:var(--tl-white) !important;
+}
+.tl-survey .tl-likert label.selected span,
+.tl-survey .tl-likert label:has(input:checked) span{ color:var(--tl-white) !important; }
+.tl-survey .tl-likert input[type="radio"]{ position:absolute; opacity:0; width:0; height:0; }
+.tl-survey .tl-likert span{ font-size:1rem; }
+
+/* Yes/No and the consent ticks: wide boxes and a full-width row, not a cramped inline pair. */
+.tl-survey .tl-yesno .wrap,
+.tl-survey .tl-yesno > div:last-child{
+  display:grid !important; grid-template-columns:1fr 1fr; gap:var(--tl-s3);
+}
+.tl-survey .tl-yesno label{
+  display:flex !important; align-items:center; gap:var(--tl-s2);
+  min-height:48px; margin:0 !important; padding:0 var(--tl-s3) !important;
+  border:1px solid var(--tl-grey-300) !important; border-radius:var(--tl-r-sm) !important;
+  background:var(--tl-white) !important; cursor:pointer;
+}
+.tl-survey .tl-yesno label:has(input:checked){
+  border-color:var(--tl-accent) !important; background:var(--tl-accent-tint) !important;
+}
+.tl-survey .tl-consent label{
+  display:flex !important; align-items:flex-start; gap:var(--tl-s3);
+  padding:var(--tl-s3) var(--tl-s4) !important; line-height:1.5;
+  border:1px solid var(--tl-grey-300) !important; border-radius:var(--tl-r-sm) !important;
+  background:var(--tl-white) !important;
+}
+.tl-survey .tl-consent label span{ color:var(--tl-accent-dark); }
+.tl-survey .tl-choice label{
+  display:flex !important; align-items:center; gap:var(--tl-s2);
+  min-height:44px; padding:0 var(--tl-s3) !important; margin:0 0 var(--tl-s2) !important;
+  border:1px solid var(--tl-grey-300) !important; border-radius:var(--tl-r-sm) !important;
+  background:var(--tl-white) !important; cursor:pointer;
+}
+.tl-survey .tl-choice label:has(input:checked){
+  border-color:var(--tl-accent) !important; background:var(--tl-accent-tint) !important;
+}
+
+/* The footer is sticky because the reference screens fix it: on a phone the driver must be able
+   to leave a long stop without scrolling to its end. */
+.tl-sv-footer{
+  position:sticky; bottom:0; z-index:40;
+  background:var(--tl-white); border-top:1px solid var(--tl-grey-300);
+  padding:var(--tl-s3) var(--tl-s4); margin:var(--tl-s4) calc(-1 * var(--tl-s4)) 0;
+  display:flex; gap:var(--tl-s3); align-items:center;
+}
+.tl-sv-footer .tl-sv-back button{
+  background:var(--tl-white) !important; color:var(--tl-grey-700) !important;
+  border:1px solid var(--tl-grey-300) !important; border-radius:var(--tl-r-pill) !important;
+  min-width:96px;
+}
+.tl-sv-footer .tl-sv-next{ flex:1 1 auto; }
+.tl-sv-footer .tl-sv-next button{
+  background:var(--tl-accent) !important; color:var(--tl-white) !important;
+  border:none !important; border-radius:var(--tl-r-pill) !important;
+  min-height:52px; font-size:1.05rem; font-weight:600;
+}
+.tl-sv-footer .tl-sv-next button:hover{ background:var(--tl-accent-dark) !important; }
+
+.tl-sv-error{
+  background:#FDECEC; border:1px solid var(--tl-bad); color:#8A1C1C;
+  border-radius:var(--tl-r-sm); padding:var(--tl-s3) var(--tl-s4); margin:var(--tl-s3) 0;
+  line-height:1.5;
+}
+.tl-sv-done{
+  background:var(--tl-white); border:1px solid var(--tl-grey-300);
+  border-radius:var(--tl-r-md); padding:var(--tl-s5);
+}
+.tl-sv-done .ref{
+  font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:1.15rem;
+  letter-spacing:.02em; background:var(--tl-grey-100); border:1px dashed var(--tl-grey-300);
+  border-radius:var(--tl-r-sm); padding:var(--tl-s3); margin:var(--tl-s3) 0; word-break:break-all;
+}
+
+@media (max-width:560px){
+  .tl-survey{ padding:0 var(--tl-s3) 7rem; }
+  .tl-survey h1.tl-sv-title{ font-size:1.45rem; }
+  /* Seven boxes do not fit a phone in one row, so the Likert row wraps rather than shrinking the
+     tap targets below 44px. A mis-tap is a data defect, not a cosmetic problem. */
+  .tl-survey .tl-likert .wrap,
+  .tl-survey .tl-likert > div:last-child{
+    grid-auto-flow:row; grid-template-columns:repeat(4, 1fr);
+  }
+  .tl-survey .tl-yesno .wrap,
+  .tl-survey .tl-yesno > div:last-child{ grid-template-columns:1fr; }
+}
+
+/* A why-probe is a continuation of the rating above it, not a question in its own right: it
+   joins the card above by losing its top border and its gap, and its wording is quiet. The
+   driver should read "rate this, and optionally say why", not "answer two questions". */
+.tl-survey .tl-q-why{
+  margin-top:calc(-1 * var(--tl-s3) - 1px);
+  border-top-left-radius:0; border-top-right-radius:0;
+  border-top:1px dashed var(--tl-grey-300);
+  padding-top:var(--tl-s2);
+}
+.tl-survey .tl-q-why-stem{
+  font-size:var(--tl-fs-sm); color:var(--tl-grey-500); font-weight:500;
+  margin-bottom:var(--tl-s1);
+}
+.tl-survey .tl-q-why textarea{ font-size:var(--tl-fs-sm); }
+
+/* A consent statement is its own tick-box label; the card would be a second box around it. */
+.tl-survey .tl-q-bare{
+  background:transparent; border:none; padding:0; margin-bottom:var(--tl-s3); box-shadow:none;
+}
+
+/* A numeric answer is a text box (see ui/pages/survey_take.py), so it is narrowed here rather
+   than stretching a four-character answer across the whole column. */
+.tl-survey .tl-numbox input{ max-width:220px; }
+
+/* The Part 15/16 stimulus. Set apart as a quotation because it is the one thing on the page the
+   driver is asked to treat as true rather than to answer — and because which story appears here
+   is the experiment (docs/01 section 5). */
+.tl-survey .tl-sv-story{
+  border-left:4px solid var(--tl-accent); background:var(--tl-accent-tint);
+  border-radius:0 var(--tl-r-sm) var(--tl-r-sm) 0;
+  padding:var(--tl-s3) var(--tl-s4); margin:var(--tl-s3) 0;
+  color:var(--tl-grey-900); line-height:1.6; font-size:1.02rem;
 }
 """

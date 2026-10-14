@@ -35,8 +35,12 @@ FALLBACK_PREFIX = (
 
 #: The bundle's blocks, in the order `docs/02` §4.4 lists them. The analyst sees the same bundle in
 #: the same order as the Results side panel, so the researcher can read input and output together.
+#:
+#: The labels are the ones `agents/prompts/analyst_v1.md` names in its INPUTS. The prompt is the
+#: researcher's spec, and a label it names that the bundle does not carry is a block the model is
+#: told to read and cannot find.
 BLOCK_ORDER: tuple[str, ...] = (
-    "CELL", "TOLD", "SCENARIO", "NUMBERS", "INTERACTIONS", "FLOOR",
+    "CODE", "TOLD", "TEXT", "NUMBERS", "COMBINATIONS", "FLOOR",
 )
 
 
@@ -93,11 +97,11 @@ def build_user_prompt(bundle: AnalysisBundle) -> str:
     ]
 
     blocks = {
-        "CELL": f"version_code {bundle.version_code}, score {bundle.fairwork_score} of 10",
+        "CODE": f"version_code {bundle.version_code}, score {bundle.fairwork_score} of 10",
         "TOLD": "\n".join(told) or "(nothing changes in this cell)",
-        "SCENARIO": "\n\n".join(bundle.scenario_text),
+        "TEXT": "\n\n".join(bundle.scenario_text),
         "NUMBERS": "\n".join(numbers),
-        "INTERACTIONS": "\n".join(interactions) or "(none computable for this cell)",
+        "COMBINATIONS": "\n".join(interactions) or "(none computable for this cell)",
         "FLOOR": (
             f"sham floor = {bundle.sham_floor}"
             if bundle.sham_floor is not None

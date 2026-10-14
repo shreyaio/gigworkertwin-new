@@ -265,10 +265,19 @@ Rules that matter, each traceable to a defect:
 4. Your earlier answers were given **before** this change. Change them only where the change would
    actually change this person's view.
 5. Use nothing beyond the persona, the scenario and the baseline.
-6. **Each item has its own range, stated beside it.** A 5-point item never takes 6 or 7.
+6. **Each item has its own range and its own anchors, stated beside it.** A 5-point item never
+   takes 6 or 7, and the line names what each end of the range — and its midpoint — mean in words.
 
 Rule 6 is stated in the prompt *and* enforced in Python (I13), because the prototype's prompt said
 "1 to 7" for every item and its 5-point blocks were silently wrong.
+
+**The anchors are part of rule 6, not an addition to it** (2026-10-12, `docs/DECISIONS.md`). A
+range alone does not say which direction it runs in, and the human read a radio row labelled at
+every point. For `agree5` and `agree7` the convention covers the gap; for `fair7` and `likely7`,
+which reach a twin only through the H3 holdout, it does not — `likely7` has no negative end at all,
+so its point 4 is "Moderately likely" rather than a neutral midpoint. `models.twin.BatteryItem`
+carries stem, points and anchors together and refuses a count that does not match the range;
+`ReferenceData.battery_item` is the only place one is built, so no round can omit them.
 
 `# IF YOU CANNOT`: answer every item anyway; there is no item a person cannot answer. Refusal is
 recorded as a failure for that cell, never as a neutral 4.

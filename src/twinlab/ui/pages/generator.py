@@ -38,6 +38,95 @@ def _warning_html() -> str:
     return f'<div class="tl-note tl-note-warn">{esc(SYNTHETIC_WARNING)}</div>'
 
 
+def _clipping_note(pinned: list) -> str:
+    """The `v7` pre-flight note: which sliders this batch would pin to the end of the scale.
+
+    Says so explicitly when nothing is pinned, rather than rendering nothing: an absent note and a
+    clean spec would look identical, and the researcher could not tell whether the check ran
+    (`CLAUDE.md` rule 7). The shares are already formatted in the service layer.
+
+    A note, never a block: a batch two-fifths on the fairness floor may be exactly what the
+    researcher wants, and nothing here prevents generating it.
+    """
+    if not pinned:
+        return (
+            '<div class="tl-note tl-note-info">'
+            "No construct piles up at an end of the scale in this batch. Drivers will differ by "
+            "as much as the spread dials say."
+            "</div>"
+        )
+    worst = ", ".join(f"{esc(c.label)} ({esc(c.share)})" for c in pinned)
+    return (
+        '<div class="tl-note tl-note-warn">'
+        f"<b>Before you generate:</b> {worst} would land on the very end of the scale for that "
+        "share of the batch. Those respondents are identical to each other on that construct "
+        "however high the spread dials are set, so the batch is less individual than the dials "
+        "suggest — and a wrong-person test has that much less room to work in. Move the slider "
+        "away from the end, or lower the between-driver spread."
+        "</div>"
+    )
+
+
+def _salience_note(mix: list) -> str:
+    """The `v10` pre-flight note: which change this batch's drivers would care about most.
+
+    `salience_spread` is centred on the reaction sliders, so the batch's mean salience per lever
+    is whatever the researcher set — the condition that keeps the draw from being a re-weighting
+    fitted to a twin pass rate. The consequence worth seeing before the calls are spent is that
+    spreading a pay weight of 2.0 against four of 1.0 still leaves most of the batch weighting
+    pay highest. Every persona then *states* that weighting, which is the repair, but the batch
+    does not contain drivers who want different things.
+
+    Says so explicitly when no lever is weighted at all, rather than rendering nothing, for the
+    same reason `_clipping_note` does (`CLAUDE.md` rule 7).
+
+    A note, never a block.
+    """
+    from twinlab.services.generator import SALIENCE_NOTICE_SHARE
+
+    if not mix:
+        return (
+            '<div class="tl-note tl-note-info">'
+            "No reaction slider is above zero, so no driver in this batch has a change that "
+            "matters most to them and none of their answers will move under Part 16 or Part 17. "
+            "That is the no-reaction null; raise a reaction slider to leave it."
+            "</div>"
+        )
+    spread = ", ".join(f"{esc(s.label)} {esc(s.share)}" for s in mix)
+    top = mix[0]
+    if top.share_value < SALIENCE_NOTICE_SHARE:
+        return (
+            '<div class="tl-note tl-note-info">'
+            f"Which change matters most, across the batch: {spread}. Drivers differ in what they "
+            "care about, and each one says so in their own words."
+            "</div>"
+        )
+    return (
+        '<div class="tl-note tl-note-warn">'
+        f"<b>Before you generate:</b> {esc(top.share)} of this batch would care most about "
+        f"{esc(top.label)} ({spread}). Every persona will say so, which is what a twin needs in "
+        "order to rank the six versions — but the batch carries almost no difference between "
+        "drivers on <i>what</i> they want, so nothing here lets a twin tell two drivers apart by "
+        "it. Widen how much drivers differ in which change matters, or move the reaction sliders "
+        "closer together."
+        "</div>"
+    )
+
+
+def _filled(values: dict[str, object], key: str, label: str) -> object:
+    """A dashboard box's value, or a sentence naming the box that is empty.
+
+    A `gr.Number` sends ``None`` when its box is cleared. Passing that to `int()` raised
+    ``int() argument must be ... not 'NoneType'`` on the screen, which names no control. Refusing
+    here, rather than substituting a default, is deliberate: an empty seed defaulted silently would
+    make the batch look reproducible when it is not (`docs/09` §2).
+    """
+    value = values[key]
+    if value is None or value == "":
+        raise ValueError(f"'{label}' is empty. Type a number in that box; nothing is defaulted.")
+    return value
+
+
 def _spec_from_controls(values: dict[str, object]) -> object:
     """Build a `GeneratorSpec` from the dashboard. All logic is in the service layer."""
     from twinlab.models.view import GENERATOR_CITIES, GENERATOR_SERVICES
@@ -48,22 +137,34 @@ def _spec_from_controls(values: dict[str, object]) -> object:
         default_spec,
     )
 
+    def num(key: str, label: str) -> float:
+        return float(_filled(values, key, label))  # type: ignore[arg-type]
+
+    def whole(key: str, label: str) -> int:
+        return int(_filled(values, key, label))  # type: ignore[arg-type]
+
     return default_spec(
-        int(values["seed"]),  # type: ignore[arg-type]
-        count=int(values["count"]),  # type: ignore[arg-type]
+        whole("seed", "Seed (same seed, same data)"),
+        count=whole("count", "How many surveys"),
         name=str(values["name"]),
-        attention_fail_share=float(values["attention_fail_share"]),  # type: ignore[arg-type]
+        attention_fail_share=num("attention_fail_share", "Share failing attention checks"),
         city_weights={c: float(values[f"city:{c}"]) for c in GENERATOR_CITIES},  # type: ignore[arg-type]
         service_weights={
             s: float(values[f"svc:{s}"]) for s in GENERATOR_SERVICES  # type: ignore[arg-type]
         },
-        age_range=(int(values["age_lo"]), int(values["age_hi"])),  # type: ignore[arg-type]
-        tenure_months_range=(int(values["ten_lo"]), int(values["ten_hi"])),  # type: ignore[arg-type]
-        hours_per_week_range=(int(values["hrs_lo"]), int(values["hrs_hi"])),  # type: ignore[arg-type]
-        woman_share=float(values["woman_share"]),  # type: ignore[arg-type]
-        multi_app_share=float(values["multi_app_share"]),  # type: ignore[arg-type]
-        vehicle_loan_share=float(values["vehicle_loan_share"]),  # type: ignore[arg-type]
-        need_money=float(values["need_money"]),  # type: ignore[arg-type]
+        age_range=(whole("age_lo", "Youngest age"), whole("age_hi", "Oldest age")),
+        tenure_months_range=(
+            whole("ten_lo", "Fewest months on Uber"),
+            whole("ten_hi", "Most months on Uber"),
+        ),
+        hours_per_week_range=(
+            whole("hrs_lo", "Fewest hours a week"),
+            whole("hrs_hi", "Most hours a week"),
+        ),
+        woman_share=num("woman_share", "Share of women"),
+        multi_app_share=num("multi_app_share", "Use other apps too"),
+        vehicle_loan_share=num("vehicle_loan_share", "Car or bike on a loan"),
+        need_money=num("need_money", "Need the money (1 to 7)"),
         sentiment=str(values["sentiment"]),
         # Absolute 1-7 targets, not offsets: §4's caption is "average answer on a 1 to 7 scale".
         construct_targets={
@@ -280,6 +381,18 @@ def render_generator(badge: str | None = None) -> None:
                 value=False,
                 visible=False,
             )
+            # The other answer to the same refusal: take the synthetic test sessions as well, so
+            # every twin goes and nothing is left pointing at a twin that no longer exists.
+            # Shown only when the pre-flight found a session that is synthetic through and
+            # through — a session mixing these twins with real drivers is refused either way.
+            purge_sessions = gr.Checkbox(
+                label=(
+                    "Also delete their test sessions, runs and validity results "
+                    "(clears everything — these results are synthetic-contaminated)"
+                ),
+                value=False,
+                visible=False,
+            )
             with gr.Row():
                 confirm_go = gr.Button("Delete them", elem_classes=["tl-btn-danger"])
                 gr.Button("Cancel").click(
@@ -293,18 +406,27 @@ def render_generator(badge: str | None = None) -> None:
             return _spec_from_controls(dict(zip(order, values, strict=True)))
 
         def _preview(*values: object) -> str:
-            """Derives only. `docs/06` §4: *Preview 3 drivers* inserts nothing."""
-            from twinlab.services.generator import preview
+            """Derives only. `docs/06` §4: *Preview 3 drivers* inserts nothing.
+
+            Carries the `v7` and `v10` pre-flight notes above the three rows. Three
+            respondents cannot show that a fifth of the batch shares one construct's floor, nor
+            that five-sixths of it would care most about the same lever, and finding either out
+            after a sweep costs the sweep (`docs/DECISIONS.md`, 2026-10-12 and 2026-10-13).
+            """
+            from twinlab.services.generator import clipping, preview, salience
 
             try:
-                rows = preview(_spec(values))
+                spec = _spec(values)
+                rows = preview(spec)
+                pinned = clipping(spec)
+                mix = salience(spec)
             except Exception as exc:  # noqa: BLE001 — the screen must say why, not show zeros.
                 from ..components import error_state
 
                 return error_state(
                     "Could not derive a preview.", type(exc).__name__, str(exc)[:200]
                 )
-            return data_table(
+            return _clipping_note(pinned) + _salience_note(mix) + data_table(
                 ["Id", "City", "Service", "Arm", "Age", "Gender", "Hours", "Months", "Mean"],
                 [
                     [
@@ -349,7 +471,13 @@ def render_generator(badge: str | None = None) -> None:
                 return error_state("Nothing was stored.", type(exc).__name__, str(exc)[:300])
             line = (
                 f"Stored batch {result['batch_id']}: {result['submissions']:,} surveys, "
-                f"{result['answers']:,} answers and {result['raw_objects']:,} raw objects."
+                f"{result['answers']:,} answers and {result['raw_objects']:,} raw objects. "
+                # The seed, named on screen. It is already on `synthetic_batches.seed`, so the
+                # batch is reproducible either way — but `docs/09` §2 makes a batch reproducible
+                # from `(seed, count, spec)` and a researcher asked to record the seed should not
+                # have to go and look it up.
+                f"Seed {result['seed']}, {result['count']} requested — this batch "
+                "regenerates from that seed and these settings."
             )
             return f'<div class="tl-note tl-note-ok">{esc(line)}</div>' + await _counts()
 
@@ -378,24 +506,53 @@ def render_generator(badge: str | None = None) -> None:
                 f"too. **{counts.real:,} real surveys are not touched, and no run, answer or "
                 "frozen panel is touched.**"
             )
+            purgeable = pre.get("purgeable_session_ids") or []
+            mixed = pre.get("mixed_session_ids") or []
             if held:
                 reasons = ", ".join(sorted(pre["blocked"]))
                 line += (
                     f"\n\n**{len(held)} of {len(pre['twin_ids'])} synthetic twins cannot go**: "
                     f"they are referenced by `{reasons}`. Deleting them would change a stored "
-                    f"result. Tick the box to delete the other {len(going)} and keep these."
+                    f"result. Tick the first box to delete the other {len(going)} and keep these."
+                )
+            real_at_risk = pre.get("real_twins_at_risk") or []
+            if purgeable:
+                rows = {s["session_id"]: s for s in pre["dependent_sessions"]}
+                named = ", ".join(
+                    f"*{rows[s]['name']}* ({rows[s]['runs_n']} run(s))" for s in purgeable[:4]
+                )
+                line += (
+                    f"\n\nOr tick the second box to clear everything: {len(purgeable)} test "
+                    f"session(s) — {named} — hold these twins, so their runs and validity "
+                    "verdicts go with them. Every one of those results was computed over "
+                    "synthetic twins, and synthetic data proves nothing about drivers "
+                    "(`docs/08` §6.2), so there is no reportable result in the set."
+                )
+            if mixed:
+                # Deliberately **not** offered here. *Delete all synthetic surveys* means
+                # synthetic, so this screen never puts a real driver's rows at risk whatever is
+                # ticked. A session that mixes the two is handled one twin at a time in
+                # Twin Lab → Twins, where the researcher picks the rows themselves.
+                line += (
+                    f"\n\n**{len(mixed)} of those session(s) also hold {len(real_at_risk)} real "
+                    f"twin(s)** ({', '.join(real_at_risk[:4])}), so they are left alone and the "
+                    "synthetic twins on them stay too. This screen only ever deletes synthetic "
+                    "rows. To clear those, select the twins yourself in **Twin Lab → Twins**."
                 )
             return (
                 gr.update(visible=True),
                 line,
                 gr.update(visible=bool(held), value=False),
+                gr.update(visible=bool(purgeable), value=False),
             )
 
-        async def _do_delete(skip: bool) -> tuple[object, str, str]:
+        async def _do_delete(skip: bool, purge: bool) -> tuple[object, str, str]:
             from twinlab.services.generator import DeleteBlocked, delete_all_synthetic
 
             try:
-                removed = await delete_all_synthetic(skip_blocked=bool(skip))
+                removed = await delete_all_synthetic(
+                    skip_blocked=bool(skip), purge_sessions=bool(purge)
+                )
             except DeleteBlocked as exc:
                 # The sentence, **not** the traceback, and exactly once (§3.4 step 3 and §3.3).
                 return gr.update(visible=True), f"**Nothing was deleted.** {exc}", await _counts()
@@ -404,6 +561,19 @@ def render_generator(badge: str | None = None) -> None:
                 f"{removed['twins']:,} twins and {removed.get('studio_runs', 0):,} Twin Studio "
                 "runs."
             )
+            purged = removed.get("purged") or {}
+            if purged:
+                # Said out loud, itemised. A withdrawal of stored results is not something the
+                # screen should report as a bare success.
+                line += (
+                    f" **Also cleared {purged.get('sessions', 0):,} synthetic test session(s)**: "
+                    + ", ".join(
+                        f"{n:,} {table.replace('_', ' ')}"
+                        for table, n in sorted(purged.items())
+                        if table != "sessions"
+                    )
+                    + "."
+                )
             if removed.get("blocked"):
                 line += (
                     f" **{len(removed['blocked'])} twin(s) kept** because deleting them would "
@@ -413,9 +583,13 @@ def render_generator(badge: str | None = None) -> None:
 
         preview_button.click(_preview, inputs=inputs, outputs=preview_table)
         generate_button.click(_generate, inputs=inputs, outputs=status)
-        delete_button.click(_ask_delete, outputs=[confirm, confirm_line, keep_blocked])
+        delete_button.click(
+            _ask_delete, outputs=[confirm, confirm_line, keep_blocked, purge_sessions]
+        )
         confirm_go.click(
-            _do_delete, inputs=keep_blocked, outputs=[confirm, confirm_line, status]
+            _do_delete,
+            inputs=[keep_blocked, purge_sessions],
+            outputs=[confirm, confirm_line, status],
         )
 
         # The counts are the only network work on this page and they happen off the render

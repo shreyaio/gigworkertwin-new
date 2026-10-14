@@ -128,9 +128,22 @@ def test_the_diagram_is_the_estimator_structural_model() -> None:
         assert (MODERATED, intention) in edges
         assert (MODERATOR, intention) in edges
         assert (INTERACTION_CONSTRUCT, intention) in edges
+    # Every arm gets its own path to the two antecedent targets, so the diagram shows three
+    # arrows where the old composite showed one (`AUDIT_PROTOTYPE_PARITY` §A2).
+    from twinlab.stats.spec import ANTECEDENT_TARGETS, arm_constructs
+
+    arms = arm_constructs()
+    assert len(arms) == 3, "three non-reference arms"
+    for arm in arms:
+        for target in ANTECEDENT_TARGETS:
+            assert (arm.code, target) in edges, f"{arm.code} has no path to {target}"
+
     # The fingerprint is the same string every analysis run records (docs/07 §9).
     assert view.model_fingerprint == build_model_spec().fingerprint()
-    assert view.model_fingerprint == "7c7fd73a12a4ec48"
+    # Pinned twice on purpose: the line above catches a drifting view, this one catches a drifting
+    # MODEL. It moved on 2026-10-11 when the arm composite became three single-indicator
+    # constructs, and it must be edited deliberately, never to make a test pass.
+    assert view.model_fingerprint == "081db1a0f8a2a2e0"
 
 
 def test_the_page_renders_from_structured_data_not_prose() -> None:

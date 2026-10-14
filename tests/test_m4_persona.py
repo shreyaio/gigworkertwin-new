@@ -450,7 +450,8 @@ def test_an_unknown_why_probe_or_own_words_id_is_rejected():
         _response(whys={"WHY_SOMETHING": "text"})
     with pytest.raises(ValueError, match="unknown own-words"):
         _response(own_words={"OWN9": "text"})
-    assert len(WHY_PROBE_IDS) == 3 and len(OWN_WORDS_IDS) == 5
+    # One probe per battery item since 2026-10-08, plus Part 14's five own-words fields.
+    assert len(WHY_PROBE_IDS) == 37 and len(OWN_WORDS_IDS) == 5
 
 
 def test_an_absent_optional_field_is_skipped_without_error():
@@ -493,7 +494,7 @@ def test_the_clause_count_and_items_used_are_reported():
     """The passage is auditable: what went in is recorded beside the hash."""
     passage = _built()
     assert passage.clause_count >= 37
-    assert passage.template_version == "v1"
+    assert passage.template_version == "v2"
     assert passage.twin_id == "UBR-TEST"
 
 

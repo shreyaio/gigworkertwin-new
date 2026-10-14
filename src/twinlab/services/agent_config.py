@@ -25,7 +25,9 @@ write their own row.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
 from typing import Any
 
 from config.settings import settings
@@ -90,6 +92,22 @@ WEIGHT_METRICS: tuple[str, ...] = (
 STUDIO_AGENT_ORDER: tuple[str, ...] = ("twin", "design", "checker", "analyst", "manager")
 
 
+#: Agents whose `enabled` switch may not be turned off, and why. WP-8 item 4.
+#:
+#: The Checker's coverage probe is what makes I3 enforceable: disabling it would let an unverified
+#: stimulus reach a twin, and a probe that did not run must never look like one that passed. That
+#: is not a preference to be weighed against convenience, so the save is **refused** rather than
+#: the UI merely hiding the toggle — `CLAUDE.md` rule 1, and the refusal has to hold for an API
+#: wrapper and a direct service call too.
+UNDISABLEABLE: dict[str, str] = {
+    "checker": (
+        "the Quality Checker cannot be switched off. Its coverage probe is what enforces I3 — "
+        "every render is verified before any twin sees it — and a probe that did not run must "
+        "never look like one that passed."
+    ),
+}
+
+
 class AgentConfigError(RuntimeError):
     """Any refusal to change an agent's configuration."""
 
@@ -100,6 +118,54 @@ class AgentFrozen(AgentConfigError):
     Freezing is what makes a sweep's configuration stable. Editing underneath a live session would
     split one sweep across two sets of instructions with nothing in the data to show it.
     """
+
+
+# ------------------------------------------------- the live config (M19 WP-8)
+
+
+async def refresh_agent_configs(
+    backend: DbBackend | None = None,
+) -> dict[str, AgentConfig]:
+    """Re-read `agent_configs` and install it as the runtime's live config. WP-8.
+
+    Mirrors :func:`services.config.refresh_twin_config` exactly, including its failure policy: a
+    read that fails is logged and swallowed, because an unreachable database must not stop a UI
+    tick and the YAML seed is a defined state to fall back to. A stored row that does not
+    *validate* is handled per agent by `registry.live_agent_configs`, not here.
+
+    The merging lives in `agents/registry.py` and the reading lives here, because `agents/` may
+    not import `db/` (`ARCHITECTURE.md` §4) and `variant/` importing `services/` would invert the
+    layering. So this function reads rows and pushes them down; nothing below the service layer
+    touches the database.
+
+    Called at boot (`services.config.startup_check`) and before every session, gate and Studio ask
+    (`services.runs.session_config`) — the same boundaries the twin config uses, so an edit saved
+    in Agent Studio governs the next thing the researcher starts and nothing already running.
+    """
+    from twinlab.agents.registry import live_agent_configs, set_live_agent_configs
+
+    db = backend or get_backend()
+    try:
+        rows = await db.select("agent_configs", None)
+    except Exception as exc:  # noqa: BLE001 — never block a UI tick on a config read
+        log.warning("could not read agent_configs: %r", exc)
+        return live_agent_configs()
+
+    known = set(AgentConfig.model_fields)
+    fresh: dict[str, dict[str, Any]] = {}
+    versions: dict[str, int] = {}
+    for row in rows:
+        agent_id = str(row.get("agent_id") or "")
+        if not agent_id:
+            continue
+        fresh[agent_id] = {k: v for k, v in row.items() if k in known}
+        versions[agent_id] = int(row.get("version") or 1)
+    set_live_agent_configs(fresh, versions)
+    log.info(
+        "live agent configs: %s",
+        ", ".join(f"{a}=v{versions[a]}" for a in sorted(versions)) or "none stored",
+    )
+    return live_agent_configs()
 
 
 # ------------------------------------------------------------------ reading
@@ -188,52 +254,108 @@ async def agent_view(
             or force["model_name"] != cfg.model.name
             or abs(float(force["temperature"]) - float(cfg.model.temperature)) > 1e-9
         ),
+        # WP-8 item 5. The twin's temperature is owned by `app_config['twin']` (Twin Lab →
+        # Settings), because that is what a session freezes onto its `config` column and what
+        # validity test 8 sets. The box is therefore read-only on this screen and carries the
+        # sentence saying why — the state that must not survive is a control showing a number the
+        # runtime silently discards.
+        "temperature_read_only": cfg.agent_id == "twin",
+        "temperature_note": (
+            "The twin's temperature is set in Twin Lab → Settings, because it is frozen onto "
+            "every session and is the subject of validity test 8."
+            if cfg.agent_id == "twin"
+            else ""
+        ),
+        # WP-8 item 4. The Checker's switch is removed rather than shown and refused on save.
+        "can_disable": cfg.agent_id not in UNDISABLEABLE,
+        "cannot_disable_reason": UNDISABLEABLE.get(cfg.agent_id, ""),
+        # WP-8 item 7. "saved version 4 · in force since …" needs the version actually running.
+        "live_version": force.get("version"),
     }
 
 
 def in_force(agent_id: str) -> dict[str, Any]:
-    """What this agent is **actually run with**, and where each value comes from. §5.5 item 3.
+    """What this agent is **actually run with**, and where each value comes from.
 
-    Agent Studio showed the Twin Interviewer on *Mistral / mistral-small-latest / temperature 1*
-    from a stale `agent_configs` row, while the twin ran on `gpt-oss:120b` at 0.25. Two separate
-    causes, and this function reports both rather than papering over either:
+    **Rewritten in M19 WP-8.** Until then this function existed to report a gap: Agent Studio
+    showed the Twin Interviewer on *Mistral / mistral-small-latest / temperature 1* from a stale
+    `agent_configs` row, while the twin ran on `gpt-oss:120b` at 0.25, because every call site
+    constructed its agent from `config/agents.default.yaml` and the stored row was read by nothing
+    but Agent Studio. The gap is now closed — `registry.live_agent_configs` merges the stored row
+    over the seed and the five runtime call sites read it — so this reports the live config rather
+    than explaining why the screen disagrees with it.
 
-    * **The model and provider come from `config/agents.default.yaml`.** Every agent is constructed
-      from `agents/registry.default_agent_configs()` at the call site — `twin_runtime`,
-      `variant/render.py`, `variant/checker.py` — so a `agent_configs` row's model is not read by
-      the runtime at all. The stored row is the *editable record*; the YAML is what runs.
-    * **The twin's temperature comes from `app_config['twin']`**, via
+    One value still comes from somewhere else, deliberately:
+
+    * **The twin's temperature comes from `app_config['twin']`** (Twin Lab → Settings), via
       `twin_runtime.twin_agent_config`, because that is the value a session freezes onto its
-      `config` column and reports with its results (`docs/09` §4). It overrides both the row and the
-      YAML, and it is the live subject of validity test 8.
+      `config` column and reports with its results (`docs/09` §4), and because it is the live
+      subject of validity test 8. One value, one place: Agent Studio's twin temperature box is
+      read-only and says so, rather than showing a number that is silently discarded (WP-8 item
+      5).
 
-    This is deliberately a **report**, not a rewiring. Which file the twin's model is read from is a
-    reproducibility property frozen onto every run (I11); changing it mid-study is a research
-    decision, not a screen fix. See `docs/DECISIONS.md`, 2026-10-01.
+    Everything else — model, provider, prompt, output mode, retry policy, `enabled` — is the
+    stored row when there is one and the seed otherwise.
     """
-    from twinlab.agents.registry import default_agent_configs
+    from twinlab.agents.registry import (
+        default_agent_configs,
+        live_agent_configs,
+        live_agent_versions,
+    )
     from twinlab.services.config import load_twin_config
 
-    seeded = default_agent_configs().get(agent_id)
-    if seeded is None:
+    live = live_agent_configs().get(agent_id)
+    if live is None:
         return {
             "provider": "",
             "model_name": "",
             "temperature": 0.0,
-            "source": f"no seeded config for {agent_id!r}",
+            "enabled": False,
+            "version": None,
+            "source": f"no config for {agent_id!r}",
         }
-    source = "config/agents.default.yaml"
-    temperature = float(seeded.model.temperature)
+
+    from twinlab.agents.registry import resolve_prompt
+
+    versions = live_agent_versions()
+    stored_version = versions.get(agent_id)
+    seeded = default_agent_configs().get(agent_id)
+    # The **resolved** text is compared, not the reference. The seed says `file:twin_v1.md` and a
+    # saved row holds the text itself, so comparing references would call an unchanged prompt
+    # "different" the moment it was saved.
+    prompt_differs = seeded is not None and resolve_prompt(seeded)[0] != resolve_prompt(live)[0]
+    # Which file or row each value came from, as a sentence a researcher can act on. The honest
+    # distinction is "a stored row won" versus "nothing is stored, so the seed is running".
+    if stored_version is not None:
+        source = f"agent_configs v{stored_version} (Agent Studio)"
+    else:
+        source = "config/agents.default.yaml (nothing saved in Agent Studio yet)"
+
+    temperature = float(live.model.temperature)
     if agent_id == "twin":
         temperature = float(load_twin_config().temperature)
         source = (
-            "config/agents.default.yaml for the model; app_config['twin'] (Twin Lab → Settings) "
-            "for the temperature"
+            f"{source} for the model and prompt; app_config['twin'] "
+            "(Twin Lab → Settings) for the temperature"
         )
     return {
-        "provider": seeded.model.provider,
-        "model_name": seeded.model.name,
+        "provider": live.model.provider,
+        "model_name": live.model.name,
         "temperature": temperature,
+        "enabled": live.enabled,
+        "version": stored_version,
+        #: True when a stored row is being used and it differs from the seed — which is the state
+        #: a researcher most needs to see, because it means "this is not the shipped default".
+        "differs_from_seed": bool(
+            seeded is not None
+            and (
+                seeded.model.name != live.model.name
+                or seeded.model.provider != live.model.provider
+                or prompt_differs
+                or seeded.output_mode != live.output_mode
+                or seeded.enabled != live.enabled
+            )
+        ),
         "source": source,
     }
 
@@ -305,16 +427,33 @@ async def save_agent(
     out-of-allow-list tool or a prompt missing its six-section skeleton is refused here rather
     than at the next run (`docs/02` §2, I13).
     """
-    from twinlab.agents.registry import validate_config
+    from twinlab.agents.registry import resolve_prompt, validate_config
 
     db = backend or get_backend()
     before = await load_agent(agent_id, backend=db)
     await _refuse_if_frozen_and_running(before, db, what="saving")
 
     merged = before.model_dump()
+    # `model` is merged field-by-field rather than replaced. A caller that sends three of
+    # `ModelRef`'s five fields means "change these three", but a wholesale replacement would hand
+    # the other two to `ModelRef`'s defaults — silently resetting a stored `max_tokens` to 2048 and
+    # a stored `seed` to `None`. Nobody asked for that, and a reset seed is a provenance loss (I11).
+    # It is also what lets Agent Studio omit the twin's temperature and have the row keep its own.
+    changes = dict(changes)
+    if isinstance(changes.get("model"), dict):
+        changes["model"] = {**merged["model"], **changes["model"]}
     merged.update(changes)
     merged["version"] = before.version + 1
     after = validate_config(AgentConfig(**merged), require_schema=False)
+    # WP-8 item 4. `enabled` gates the runtime from M19, so switching an agent off is now a real
+    # action with a real consequence — and for one agent the consequence is not permitted.
+    if not after.enabled and agent_id in UNDISABLEABLE:
+        raise AgentConfigError(UNDISABLEABLE[agent_id])
+    # The skeleton is checked **here**, not left to the next run. `live_agent_configs` falls back
+    # to the seed for an agent whose row does not validate, so a prompt missing a section would be
+    # saved with "Saved." and then silently ignored by every session: the screen would say one
+    # thing and the study would run another. Refused at save, the researcher sees why.
+    resolve_prompt(after)
 
     fields = [f for f in changed_fields(before, after) if f != "version"]
     await db.upsert("agent_configs", [_row(after)], on_conflict="agent_id")
@@ -327,6 +466,9 @@ async def save_agent(
         action="saved",
         actor=actor,
     )
+    # Installed into this process now, not at the next session. The Test buttons and the Studio
+    # read the live config, so a save they cannot see would make the screen lie until a restart.
+    await refresh_agent_configs(db)
     return after
 
 
@@ -363,6 +505,7 @@ async def restore_agent(
         action="restored",
         actor=actor,
     )
+    await refresh_agent_configs(db)
     return after
 
 
@@ -391,6 +534,7 @@ async def set_frozen(
         action="frozen" if frozen else "unfrozen",
         actor=actor,
     )
+    await refresh_agent_configs(db)
     return after
 
 
@@ -555,101 +699,144 @@ async def history(
 # ------------------------------------------------------------------ the plan
 
 
+#: Agent Studio's model-calling tests, by job id. A test is a model call, and CLAUDE.md rule 12
+#: keeps a model call off a Gradio handler's synchronous path, so each one runs as a background task
+#: and the screen reads the finished result back. The job holds its task, as `studio._RENDERS` does:
+#: asyncio keeps only a weak reference to a running task.
+_TEST_JOBS: dict[str, dict[str, Any]] = {}
+
+
+def _refuse_sham(version_code: str) -> None:
+    """The three tests take a real version code. SHAM has five briefs of its own and no dial row."""
+    from twinlab.orchestrator.odometer import SHAM_CODE, validate_code
+
+    validate_code(version_code)
+    if version_code == SHAM_CODE:
+        raise AgentConfigError(
+            "SHAM has its own five briefs and no dial board row, so this test does not take it. "
+            "Test a real version code."
+        )
+
+
+def _with_prompt(cfg: AgentConfig, prompt_text: str | None) -> AgentConfig:
+    """The live config, with the prompt in the box swapped in when it was edited.
+
+    The swap is held to the same six-section skeleton as a saved prompt, so an edit that a save
+    would refuse is refused here too, rather than tested under a prompt no run would ever use.
+    """
+    from twinlab.agents.registry import resolve_prompt
+
+    edited = (prompt_text or "").strip()
+    if not edited or edited == resolve_prompt(cfg)[0].strip():
+        return cfg
+    swapped = cfg.model_copy(update={"system_prompt": edited})
+    resolve_prompt(swapped)
+    return swapped
+
+
+def start_agent_test(
+    agent_id: str,
+    *,
+    twin_id: str | None,
+    version_code: str,
+    prompt_text: str,
+) -> str:
+    """Start one model-calling test in the background and return its job id. CLAUDE.md rule 12."""
+    job_id = uuid.uuid4().hex
+    _TEST_JOBS[job_id] = {"agent_id": agent_id, "status": "running", "view": None}
+    task = asyncio.create_task(
+        _run_test(job_id, agent_id, twin_id, version_code, prompt_text)
+    )
+    _TEST_JOBS[job_id]["task"] = task
+    return job_id
+
+
+async def _run_test(
+    job_id: str,
+    agent_id: str,
+    twin_id: str | None,
+    version_code: str,
+    prompt_text: str,
+) -> None:
+    job = _TEST_JOBS[job_id]
+    try:
+        if agent_id == "twin":
+            if not twin_id:
+                raise AgentConfigError("No twin selected.")
+            view = await twin_test_view(twin_id, version_code, edited_prompt=prompt_text)
+        elif agent_id == "design":
+            view = await design_test_view(version_code, prompt_text=prompt_text)
+        else:
+            raise AgentConfigError(f"{agent_id} has no model test on this screen")
+    except Exception as exc:  # noqa: BLE001 — a failed test is a result the screen names, not a crash
+        log.warning("agent test for %s failed: %r", agent_id, exc)
+        job.update(status="failed", view={"error": f"{type(exc).__name__}: {exc}"[:400]})
+        return
+    job.update(status="done", view=view)
+
+
+def agent_test_result(job_id: str) -> dict[str, Any]:
+    """The state of one test job: ``running``, ``done``, ``failed``, or ``unknown``."""
+    job = _TEST_JOBS.get(job_id)
+    if job is None:
+        return {"status": "unknown", "agent_id": None, "view": None}
+    return {"status": job["status"], "agent_id": job["agent_id"], "view": job["view"]}
+
+
 async def checker_test_view(
-    twin_id: str, *, backend: DbBackend | None = None
+    version_code: str, *, backend: DbBackend | None = None
 ) -> dict[str, Any]:
-    """Agent Studio's *Quality Checker* view. `docs/06` §6's table. **Reads; never re-runs.**
+    """Agent Studio's *Quality Checker* view: the codebook policy beside the design agent's framing.
 
-    Everything here comes off the twin's latest H3 `twin_quality_runs` row and its driver's own
-    `survey_answers`. Agent Studio is not the execution engine: re-scoring here would be a second
-    verdict beside the stored one, and two disagreeing verdicts is worse than none.
-
-    The completeness and scale checks are the output contract's, restated over what was stored
-    (I13): every expected holdout item present, each answer inside **its own** range.
+    Reads only. No model is called and nothing is judged here. Each area shows the commitments the
+    codebook says this version carries (`variant/lookup`), beside the paragraph the design agent
+    actually rendered for that area (the stored render). Whether the Checker passed the render is
+    recorded on the render itself and is not restated on this screen.
     """
     from twinlab.ingest.reference_store import reference
-    from twinlab.services.config import load_twin_config
-    from twinlab.services.twin_runtime import driver_answers
-    from twinlab.services.validity import H2_ANSWERS_KEY
+    from twinlab.models.reference import LEVER_BY_POSITION
+    from twinlab.orchestrator.odometer import dials
+    from twinlab.services.dials import dial_board
+    from twinlab.variant.lookup import commitments_for_lever, lookup
 
+    _refuse_sham(version_code)
     db = backend or get_backend()
-    ref = reference()
-    # The live thresholds, so the `must be …` captions below cannot disagree with the gate a twin
-    # was actually judged by (§5.3).
-    cfg = load_twin_config()
-    rows = await db.select(
-        "twin_quality_runs",
-        [
-            ("eq", "twin_id", twin_id),
-            ("eq", "is_latest", True),
-            ("eq", "holdout_set", "H3"),
-        ],
-        limit=1,
-    )
-    if not rows:
-        return {"twin_id": twin_id, "has_run": False}
+    out: dict[str, Any] = {"version_code": version_code, "rendered": False, "rows": []}
+    row = await VariantRepo(db).get(version_code, settings.style_version)
+    if row is None:
+        return out
+    out["rendered"] = True
 
-    row = rows[0]
-    twin_answers = {
-        k: int(v) for k, v in ((row.get("detail") or {}).get(H2_ANSWERS_KEY) or {}).items()
-    }
-    human = await driver_answers(twin_id, db)
-    expected = ref.holdout_h3_item_ids
+    stored = dict(row.get("paragraphs") or {})
+    spec = lookup(version_code, reference())
+    per_lever = dials(version_code)
+    names = {lever.lever: lever.lever_name for lever in dial_board(version_code).told}
 
-    missing = [i for i in expected if i not in twin_answers]
-    out_of_range = [
-        i for i, v in twin_answers.items()
-        if i in ref.items and not 1 <= v <= ref.scale_points(i)
-    ]
-    comparison = [
-        {
-            "item_id": i,
-            "question": ref.items[i].stem,
-            "driver": human.get(i),
-            "twin": twin_answers.get(i),
-            # `None` where either side is absent: an item only one of them answered is not
-            # scored, and showing a difference against a blank would invent one (`docs/08` §2.2).
-            "error": (
-                None if i not in human or i not in twin_answers
-                else abs(human[i] - twin_answers[i])
-            ),
-        }
-        for i in expected
-    ]
-    return {
-        "twin_id": twin_id,
-        "has_run": True,
-        "complete": not missing,
-        "missing": missing,
-        "in_scale": not out_of_range,
-        "out_of_range": out_of_range,
-        "mae": None if row.get("mae") is None else float(row["mae"]),
-        "pct_within_1": (
-            None if row.get("pct_within_1") is None else float(row["pct_within_1"])
-        ),
-        "items_n": int(row.get("items_n") or 0),
-        "repeats": int(row.get("repeats") or 0),
-        "kept": row.get("kept"),
-        "model": str(row.get("model") or ""),
-        "correlations": dict(row.get("correlations") or {}),
-        "comparison": comparison,
-        # `ARCHITECTURE_UPDATE.md` §5.3: the two threshold rows carry their `must be …` caption, and
-        # the caption is the LIVE config rather than a number written into the screen — the gate a
-        # twin was judged by is `app_config`'s, and a hard-coded 1.0 beside a changed threshold
-        # would
-        # be the screen disagreeing with the data.
-        #
-        # The decision is the **AND** of both (`validity/quality.h3_verdict`, validation-plan D-4),
-        # which is stated here so the panel can show the conjunction rather than imply either/or.
-        "mae_max": float(cfg.mae_max),
-        "pct_within_1_min": float(cfg.pct_within_1_min),
-        # Plain prose, no markdown: this is rendered into HTML through `esc`, so `**and**` would
-        # appear with its asterisks. The emphasis is carried by the sentence instead.
-        "decision_rule": (
-            f"Keep only if average error is {cfg.mae_max} or less AND at least "
-            f"{cfg.pct_within_1_min * 100:.0f}% of answers are within 1 point. Both, never either."
-        ),
-    }
+    rows: list[dict[str, Any]] = []
+    for lever in LEVER_BY_POSITION:
+        if per_lever[lever] == 0:
+            rows.append(
+                {"lever": names[lever], "policy": [], "framed": "", "status": "fixed", "reason": ""}
+            )
+            continue
+        entry = stored.get(lever)
+        if isinstance(entry, dict):
+            text = str(entry.get("text", ""))
+            status = str(entry.get("status", "ok"))
+            reason = str(entry.get("reason", ""))
+        else:
+            text, status, reason = str(entry or ""), "ok", ""
+        rows.append(
+            {
+                "lever": names[lever],
+                "policy": [c for _, c in sorted(commitments_for_lever(spec, lever).items())],
+                "framed": text,
+                "status": status,
+                "reason": reason,
+            }
+        )
+    out["rows"] = rows
+    return out
 
 
 async def twin_test_view(
@@ -659,28 +846,17 @@ async def twin_test_view(
     edited_prompt: str | None = None,
     backend: DbBackend | None = None,
 ) -> dict[str, Any]:
-    """Agent Studio's *Twin Interviewer* view. `docs/06` §6, `ARCHITECTURE_UPDATE.md` §5.1.
+    """Agent Studio's *Twin Interviewer* view: what the driver said, and what the twin said.
 
-    Two defects are fixed here, and the second is the one that mattered.
+    Always these two columns for this twin and this version, whatever the prompt box holds. The
+    twin is asked once, with the prompt in the box (the saved one when nothing was edited), against
+    the stored, Checker-passed variant for ``version_code``. The driver's answers are the twin's
+    baseline, and are shown beside its answers so the two can be read against each other.
 
-    **The panel was showing its input instead of its result.** Its answers table was headed *"what
-    this twin's driver answered"* and listed the baseline — the survey vector the twin is anchored
-    on. The screenshot asks for *"Some of the 37 answers it gave"*: the **twin's** output. So the
-    twin's answer vector is returned as ``answers`` and the driver's value stays as a second column,
-    the way the Checker panel shows the two side by side.
-
-    **The comparison was transposed.** It returned one row per metric with `Saved / Your edit /
-    Difference` columns; the screenshot has one row **per instruction variant** — the saved prompt
-    and the edit — with ``Answer checked?``, the six metrics and ``A reason it gave``. So each
-    variant is now a row carrying its own pass/fail verdict and its own rationale. The verdict is
-    the contract/range one `run_answer_ladder` already computes; nothing new is judged here.
-
-    The stimulus is the **stored, Checker-passed variant** for ``version_code``. There is no path
-    here that renders one: an unverified variant never reaches a twin (I3), including on a test
-    screen. `services/studio.start_render` is where a variant is produced.
+    There is no path here that renders a variant: an unverified variant never reaches a twin (I3),
+    including on a test screen. `services/studio.start_render` is where a variant is produced.
     """
     from twinlab.agents.registry import resolve_prompt
-    from twinlab.analysis.metrics import score
     from twinlab.ingest.reference_store import reference
     from twinlab.models.reference import LEVER_BY_POSITION
     from twinlab.services.twin_runtime import (
@@ -692,200 +868,124 @@ async def twin_test_view(
 
     db = backend or get_backend()
     ref = reference()
+    driver = await driver_answers(twin_id, db)
     out: dict[str, Any] = {
         "twin_id": twin_id,
         "version_code": version_code,
-        "metrics": list(ref.metrics),
-        # One row per instruction variant. Empty until a run happens.
-        "variants": [],
-        # `item_id → (stem, the twin's answer, the driver's answer)`. The TWIN's answers are the
-        # subject; the driver's is the comparison column.
-        "answers": [],
+        "items": [
+            {
+                "item_id": i,
+                "question": ref.items[i].stem,
+                "points": ref.scale_points(i),
+                "driver": driver.get(i),
+                "twin": None,
+            }
+            for i in ref.battery_item_ids
+        ],
+        "twin_checked": False,
         "note": "",
     }
 
-    baseline = await driver_answers(twin_id, db)
-    # Rendered before any model call, so the table is populated even when the test cannot run — and
-    # so a twin with no driver (a hand-built one) shows an EMPTY column rather than zeros (I17,
-    # §4.5).
-    out["answers"] = [
-        {
-            "item_id": i,
-            "question": ref.items[i].stem,
-            "twin": None,
-            "driver": baseline.get(i),
-        }
-        for i in ref.battery_item_ids
-    ]
-
+    # The prompt in the box, or the saved one when the box is empty. Both are the same text when
+    # nothing was edited, so the two columns never change shape with the prompt.
     saved = await load_agent("twin", backend=db)
-    edited = (edited_prompt or "").strip()
-    # Compared against the **resolved** prompt, which is what the textarea holds. `system_prompt` is
-    # the unresolved `file:twin.md` reference, so comparing against it meant an untouched box always
-    # looked edited — and the panel would run the same prompt twice and present it as a comparison.
-    saved_resolved, _ = resolve_prompt(saved)
-    saved_text = saved_resolved.strip()
-    # Both prompts are run when they differ; only the saved one when they do not. Either way the
-    # twin IS asked, which is what makes this a test of the agent rather than a view of its input.
-    prompts: dict[str, str] = {"saved": saved_resolved}
-    if edited and edited != saved_text:
-        prompts["your edit"] = edited
-    else:
-        out["note"] = (
-            "The prompt in the box is the saved one, so there is one row below rather than two. "
-            "Edit it above and press Test this agent to run the same twin on both."
-        )
+    prompt = (edited_prompt or "").strip() or resolve_prompt(saved)[0].strip()
 
-    _row_ = await VariantRepo(db).get(version_code, settings.style_version)
-    if _row_ is None:
+    stored_row = await VariantRepo(db).get(version_code, settings.style_version)
+    if stored_row is None:
         out["note"] = (
             f"{version_code} has never been rendered, so there is no verified stimulus to put a "
             "prompt to. Render it in Twin Studio, or ask the twins for it on the Dial board."
         )
         return out
-    if not (dict(_row_.get("checker") or {})).get("passed"):
-        out["note"] = (
-            f"{version_code} did not pass the Checker, so it must not reach a twin (I3)."
-        )
+    if not (dict(stored_row.get("checker") or {})).get("passed"):
+        out["note"] = f"{version_code} did not pass the Checker, so it must not reach a twin (I3)."
         return out
 
-    stored = dict(_row_.get("paragraphs") or {})
+    stored = dict(stored_row.get("paragraphs") or {})
     paragraphs = {}
     for lever in LEVER_BY_POSITION:
         entry = stored.get(lever)
         paragraphs[lever] = entry.get("text", "") if isinstance(entry, dict) else str(entry or "")
 
-    complete_baseline = all(i in baseline for i in ref.battery_item_ids)
-    first: dict[str, int] | None = None
-    for which, prompt_text in prompts.items():
-        row: dict[str, Any] = {
-            "which": which,
-            # The contract/range verdict the ladder computed, as a pass/fail — the screenshot's
-            # `Answer checked?` column. False means the twin did not produce 37 valid integers after
-            # its one targeted repair, which is a real failure and never coerced into a pass.
-            "checked": False,
-            "reason": "",
-            "scores": {},
-            "retries": None,
-        }
-        try:
-            answers, telemetry = await ask_items(
-                twin_id=twin_id,
-                paragraphs=paragraphs,
-                items=battery_for(ref),
-                baseline=baseline,
-                seed=round_seed("agent-studio", twin_id, version_code),
-                show_baseline=True,
-                version_code=version_code,
-                system_prompt=prompt_text,
-                backend=db,
-            )
-        except Exception as exc:  # noqa: BLE001 — a failed variant is a ROW, not a dead screen
-            # Deliberately not an early return. The saved prompt failing and the edit succeeding is
-            # exactly the comparison this screen exists to show, and bailing out hid it.
-            row["reason"] = f"{type(exc).__name__}: {exc}"[:300]
-            out["variants"].append(row)
-            continue
+    from twinlab.services.config import load_twin_config
 
-        row["checked"] = True
-        row["reason"] = str(telemetry.get("rationale") or "")
-        row["retries"] = telemetry.get("retries")
-        row["scores"] = {m: round(score(answers, m, ref), 2) for m in ref.metrics}
-        if first is None:
-            first = answers
-        out["variants"].append(row)
-
-    if first is not None:
-        for entry in out["answers"]:
-            entry["twin"] = first.get(entry["item_id"])
-    # The driver's six scores, for the row the table puts underneath. `None` when the driver left
-    # part of the battery blank: a metric is never computed over a subset (`docs/07` §2.3).
-    out["driver_scores"] = (
-        {m: round(score(baseline, m, ref), 2) for m in ref.metrics}
-        if complete_baseline
-        else {}
-    )
-    if not out["note"]:
-        out["note"] = (
-            "Same twin, same cell, one call per prompt. This is a test of one agent and writes "
-            "nothing — it is not a run and does not appear in Results."
+    try:
+        answers, _telemetry = await ask_items(
+            twin_id=twin_id,
+            paragraphs=paragraphs,
+            items=battery_for(ref),
+            baseline=driver,
+            seed=round_seed("agent-studio", twin_id, version_code),
+            # Live config, not hard-coded (`docs/DECISIONS.md`, 2026-10-07): this preview must run
+            # under the same elicitation the sweep actually uses, or it previews an instrument the
+            # study is not running — the "Driver said" column still shows `driver` for comparison
+            # either way, independent of whether the model itself was shown it.
+            show_baseline=load_twin_config().show_baseline,
+            version_code=version_code,
+            system_prompt=prompt,
+            backend=db,
         )
+    except Exception as exc:  # noqa: BLE001 — a failed twin is a note on the screen, not a dead screen
+        # False means the twin did not produce a valid answer set after its one targeted repair.
+        # Its column stays *Not tested*: a failed answer is never coerced into a number (I13).
+        out["note"] = f"The twin did not give a valid answer: {type(exc).__name__}: {exc}"[:400]
+        return out
+
+    for item in out["items"]:
+        item["twin"] = answers.get(item["item_id"])
+    out["twin_checked"] = True
     return out
 
 
 async def design_test_view(
-    version_code: str, *, backend: DbBackend | None = None
+    version_code: str, *, prompt_text: str | None = None, backend: DbBackend | None = None
 ) -> dict[str, Any]:
-    """Agent Studio's *Policy Designer* view. `docs/06` §6, `ARCHITECTURE_UPDATE.md` §5.2.
+    """Agent Studio's *Policy Designer* view: what the design agent writes for this version now.
 
-    Three things the panel got wrong, and this is where each is fixed.
+    Runs the design agent once per lever, with the prompt in the box when it was edited, on the
+    same brief the render path builds (`variant/render.build_brief`). It shows the paragraph and
+    whether it came back as a paragraph or a refusal.
 
-    1. **`Text used` showed the wrong string.** It joined `lever.bullets`, which is `told_summary` —
-       the **researcher-facing** bullet list that `variant/lookup.py` is explicit *a twin never
-       sees*. The screenshot's column holds the **rendered paragraph** ("You can now reach a human
-       representative and appeal low ratings…"). Showing the bullets there is not a cosmetic slip:
-       it makes the two artefacts look interchangeable on the one screen whose job is to show what
-       the design agent produced, and `docs/03` §4.3 keeps them apart on purpose. Both are returned
-       now, in separate columns.
-    2. **Both wordings.** Wording is a real experimental factor (validity test 5), so the paragraphs
-       are returned per wording — ``A`` as rendered, ``B`` as the same five paragraphs in reverse
-       order, which is exactly what `twin_runtime.ask_items(reverse_order=True)` shows a twin. It is
-       derived from the stored paragraphs, never re-rendered: `docs/09` §2 says what the twins saw
-       is what is shown.
-    3. **Versions it would test next.** A `Version | Why` table, from the odometer — read-only, and
-       it starts nothing.
+    **It writes nothing.** The paragraphs are not stored in the render cache, so a test cannot
+    change what a twin is shown (I4). A paragraph already in the cache keeps its text: see the
+    decision log on the design prompt and the cache.
     """
-    from twinlab.orchestrator.odometer import (
-        CONTROL_CODE,
-        advance,
-        code_from_index,
-        index_from_code,
-    )
+    from twinlab.agents.registry import get_client, live_agent
+    from twinlab.ingest.reference_store import reference
+    from twinlab.models.reference import LEVER_BY_POSITION
+    from twinlab.orchestrator.odometer import dials
     from twinlab.services.dials import dial_board
-    from twinlab.services.lab import scenario_paragraphs
+    from twinlab.variant.lookup import lookup
+    from twinlab.variant.render import band_for, build_brief, load_style_contract, run_design
 
-    db = backend or get_backend()
-    board = dial_board(version_code)
-    rendered = await scenario_paragraphs(version_code, backend=db)
+    _refuse_sham(version_code)
+    cfg = _with_prompt(live_agent("design"), prompt_text)
+    ref = reference()
+    style = load_style_contract()
+    spec = lookup(version_code, ref)
+    per_lever = dials(version_code)
+    names = {lever.lever: lever.lever_name for lever in dial_board(version_code).told}
+    client = get_client()
 
-    # Positional, because `scenario_paragraphs` returns the five paragraphs in lever order and
-    # `board.told` is in the same order. A lever with no rendered paragraph gets an empty string
-    # rather than a neighbour's text.
-    levers: list[dict[str, Any]] = []
-    for position, lever in enumerate(board.told):
-        levers.append(
-            {
-                "lever": lever.lever,
-                "lever_name": lever.lever_name,
-                "dial": lever.dial,
-                # What the TWIN is shown. The subject of this panel.
-                "paragraph": rendered[position] if position < len(rendered) else "",
-                # The researcher-facing bullet summary. Never fed to a model (`docs/03` §4.3).
-                "bullets": [b.text for b in lever.bullets],
-            }
-        )
-
-    return {
-        "version_code": version_code,
-        "fairwork_text": board.fairwork_text,
-        "levers": levers,
-        # Wording A is the rendered order; wording B is the reversed one validity test 5 uses.
-        # Empty when nothing has been rendered, so the panel says so rather than showing two
-        # identical empty blocks.
-        "wordings": (
-            {"A": list(rendered), "B": list(reversed(rendered))} if rendered else {}
-        ),
-        "next_versions": [
-            {"code": code, "why": why}
-            for code, why in _next_versions(
-                version_code,
-                advance=advance,
-                code_from_index=code_from_index,
-                index_from_code=index_from_code,
-                control=CONTROL_CODE,
+    rows: list[dict[str, Any]] = []
+    for lever in LEVER_BY_POSITION:
+        if per_lever[lever] == 0:
+            rows.append(
+                {"lever": names[lever], "dial": 0, "text": "", "status": "fixed",
+                 "reason": "Dial 0 is the fixed text, which is never generated (I5).",
+                 "words": None, "band": None}
             )
-        ],
-    }
+            continue
+        brief = build_brief(spec, lever, ref, style)
+        paragraph = await run_design(cfg, brief, client)
+        low, high = band_for(len(brief.commitments), style)
+        rows.append(
+            {"lever": names[lever], "dial": per_lever[lever], "text": paragraph.text,
+             "status": paragraph.status, "reason": paragraph.reason,
+             "words": len(paragraph.text.split()), "band": [low, high]}
+        )
+    return {"version_code": version_code, "rows": rows}
 
 
 def _next_versions(
@@ -1020,7 +1120,9 @@ def manager_log_preview(version_code: str) -> list[StatusRow]:
 
 
 __all__ = [
+    "agent_test_result",
     "checker_test_view",
+    "start_agent_test",
     "PROVIDERS",
     "correct_stale_models",
     "in_force",

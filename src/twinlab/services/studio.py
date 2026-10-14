@@ -681,6 +681,7 @@ async def variant_status(
     """
     from twinlab.orchestrator import budget as budget_calc
     from twinlab.services.runs import budget_view
+    from twinlab.services.twin_runtime import _levers_with_budget, paragraph_pool
 
     db = backend or get_backend()
     row = await VariantRepo(db).get(version_code, settings.style_version)
@@ -688,11 +689,22 @@ async def variant_status(
     cached = await db.count(
         "lever_paragraphs", [("eq", "style_version", settings.style_version)]
     )
+    # WP-2 item 3. A stored row that did **not** pass used to be a dead end on this screen: the
+    # Studio showed the failure and offered nothing, because `render_and_check` short-circuited on
+    # it. It is now retryable within the durable paragraph budget, so the screen must say how much
+    # of that budget is left — "retry" with nothing to spend is a button that cannot work.
+    retryable: list[str] = []
+    if row is not None and not report.get("passed"):
+        retryable = await _levers_with_budget(version_code, paragraph_pool(backend=db))
     return {
         "version_code": version_code,
         "exists": row is not None,
         "passed": bool(report.get("passed")),
         "notes": str(report.get("notes") or ""),
+        #: Non-dial-0 levers of this code that still have their one re-render. Empty while a
+        #: stored failure stands means pressing again would make no model call and change nothing.
+        "retryable_levers": retryable,
+        "can_retry": bool(retryable),
         "rendering": rendering(version_code),
         # The ten lever paragraphs are shared by all 243 cells, so a code is usually free to render
         # once a few of its neighbours have been. That is the cache being visible, per `docs/10` §7.
@@ -798,7 +810,7 @@ async def _render_body(
     )
     try:
         variant, report = await render_and_check(
-            version_code, settings.style_version, backend=db
+            version_code, settings.style_version, backend=db, events=log_
         )
     except Exception as exc:  # noqa: BLE001 — the reason must reach the log, not just the console
         await log_.emit(
@@ -888,6 +900,24 @@ async def ask_studio(
     )
 
     db = backend or get_backend()
+    # RESEARCHER 2026-10-05. Nothing asks a twin under a config the quality test has not validated.
+    # The check is that the live config has at least one qualified twin, not that this twin is one:
+    # a hand-built twin has no driver, so it can never pass the gate, and the Studio must still
+    # reach it once the config is validated.
+    from twinlab.services.config_match import (
+        current_config,
+        current_fingerprint,
+        qualified_twin_ids,
+    )
+
+    live_fp = await current_fingerprint(db)
+    if not await qualified_twin_ids(live_fp, db):
+        live = await current_config(db)
+        raise StudioError(
+            f"The twin quality test has not been run for the current config ({live['model']} at "
+            f"temperature {float(live['temperature']):g}). Run it on the Agents tab first; nothing "
+            "asks a twin under a config that has not been validated."
+        )
     ref = reference()
     asked = [q.strip() for q in (questions or []) if q.strip()]
     if len(asked) > MAX_QUESTIONS:
@@ -914,6 +944,8 @@ async def ask_studio(
     answers: dict[str, int] | None = None
     rationale = ""
     if include_battery:
+        from twinlab.services.config import load_twin_config
+
         try:
             answers, telemetry = await ask_items(
                 twin_id=twin_id,
@@ -921,7 +953,10 @@ async def ask_studio(
                 items=battery_for(ref),
                 baseline=baseline,
                 seed=seed,
-                show_baseline=True,
+                # Live config, not hard-coded: a Studio ask puts the live instrument to one twin,
+                # and a hard-coded True would silently diverge from what the sweep actually shows
+                # once `show_baseline` differs from it (`docs/DECISIONS.md`, 2026-10-07).
+                show_baseline=load_twin_config().show_baseline,
                 version_code=None if sandbox else version_code,
                 backend=db,
             )

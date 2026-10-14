@@ -29,6 +29,7 @@ from __future__ import annotations
 import math
 import re
 
+from twinlab.models.analysis import NoiseFloor
 from twinlab.models.reference import LEVER_BY_POSITION, LEVER_NAMES
 from twinlab.models.validity import (
     AblatedPersona,
@@ -66,16 +67,23 @@ TEST_DETAIL: dict[int, str] = {
     5: "Shows the same version code twice — lever order reversed, then wording variant B — and "
        "measures the difference between the two presentations.",
     6: "Re-runs the twin with the fairness items removed from its persona and measures how far "
-       "its fairness answers move.",
-    7: "Re-runs a sample of twins on a second model, same cell and same personas, and compares "
-       "the per-twin index and every metric's sign.",
+       "its fairness answers move, against a same-persona retest of the same twin.",
+    7: "Asks the same twins the same cell on both models, same personas, and compares the "
+       "per-twin index and every metric's sign.",
     8: "Runs the same twins on the same cell at three temperatures and reports the spread. This "
        "is what sets the twin temperature; it is measured, not chosen.",
 }
 
 #: `docs/08` §4's table, as calls **per twin**, so a budget is `factor x N`. Tests 1 and 3 are
 #: **zero**, and `docs/11` M13 requires that to be asserted on the call counter rather than stated.
-CALLS_PER_TWIN: dict[int, int] = {1: 0, 2: 1, 3: 0, 4: 1, 5: 2, 6: 1, 7: 1, 8: 3}
+#:
+#: Test 7 is **2**, not 1 (2026-10-08). `docs/08` §4 read "run a sample of twins on a different
+#: model", which sounds like one extra round — but the implementation cannot reuse the sweep's
+#: stored answers for model A: they were given under a different seed, possibly a different
+#: wording, and `second_model` compares a *paired* per-twin index that is only paired if both
+#: sides were asked the same way in the same test. So it asks **both** models, and the confirm
+#: card must say so. It said 1, so a researcher approved N calls and spent 2N.
+CALLS_PER_TWIN: dict[int, int] = {1: 0, 2: 1, 3: 0, 4: 1, 5: 2, 6: 3, 7: 2, 8: 3}
 
 #: `docs/08` §4 test 1: the gap must reach half a scale point before it is a pass.
 WRONG_PERSON_GAP_MIN = 0.5
@@ -193,12 +201,17 @@ def inconclusive(number: int, why: str, *, twins_n: int = 0) -> ValidityOutcome:
     )
 
 
-def _floor_or_inconclusive(number: int, noise_floor: float | None) -> ValidityOutcome | None:
+def _floor_or_inconclusive(number: int, noise_floor: NoiseFloor | None) -> ValidityOutcome | None:
     """The shared guard for every test judged against the `00000` floor (`docs/07` §6).
 
     A floor that was never measured is not assumed. `docs/07` §6 computes both floors per session
     from that session's own panel and never pools them across sessions, so there is no fallback
     value that would be about these twins.
+
+    Since 2026-10-07 the floor is a :class:`~twinlab.models.analysis.NoiseFloor` carrying two
+    levels, and **each test below selects the level matching its own statistic** rather than the
+    caller choosing for it: whether a figure is a mean of absolutes or an absolute of a mean is a
+    property of the test, so it is decided beside the test's own docstring.
     """
     if noise_floor is None:
         return inconclusive(
@@ -216,6 +229,7 @@ def wrong_person(
     *,
     own_errors: dict[str, float],
     other_errors: dict[str, float],
+    between_person_distance: float | None = None,
     model: str = "",
 ) -> ValidityOutcome:
     """Test 1. **The most important of the eight.** `docs/08` §4 test 1.
@@ -230,6 +244,14 @@ def wrong_person(
     * `PASS` — mean gap at least 0.5 points **and** its 95% interval excludes zero.
     * `CHECK` — gap positive but the interval includes zero.
     * `FAIL` — gap at or below zero: the twin is no more about its own driver than a stranger's.
+
+    ``between_person_distance`` is the mean distance between the paired drivers' own answer
+    vectors, and it is **reported, never used in the verdict**. It is the gap a flawless twin would
+    score — ``mae_own = 0`` leaves ``gap = mae_other``, which cannot exceed how far apart the two
+    humans are. The fixed 0.5-point threshold reads very differently against a sample whose drivers
+    sit 3 points apart and one whose drivers sit 0.8 apart, and without this number on the row there
+    is no way to tell those cases apart after the fact. Changing the threshold itself is a research
+    decision and is not taken here.
     """
     twins = sorted(set(own_errors) & set(other_errors))
     if not twins:
@@ -272,6 +294,15 @@ def wrong_person(
             "gap_sd": gap.sd,
             "gap_ci_lower": gap.ci_lower,
             "gap_ci_upper": gap.ci_upper,
+            # Reported, never thresholded. See the docstring.
+            "between_person_distance": (
+                None if between_person_distance is None else round(between_person_distance, 4)
+            ),
+            "gap_share_of_distance": (
+                None
+                if not between_person_distance
+                else round(gap.mean / between_person_distance, 4)
+            ),
         },
         verdict=verdict,
         headline=headline,
@@ -287,7 +318,7 @@ def placebo_change(
     *,
     sham_shifts: dict[str, float],
     per_twin_abs_move: dict[str, float],
-    noise_floor: float | None,
+    noise_floor: NoiseFloor | None,
     median_live_shift: float | None = None,
     model: str = "",
     temperature: float | None = None,
@@ -300,6 +331,10 @@ def placebo_change(
     * `PASS` — mean |shift| within the `00000` noise floor: change-shaped text alone moves nobody.
     * `CHECK` — above the floor but under half the median live-cell shift.
     * `FAIL` — comparable to a live cell: the twins are reacting to *a change being announced*.
+
+    Judged against :attr:`NoiseFloor.cell`. ``sham_shifts`` holds one **mean over twins** per
+    metric, so the statistic is an absolute-of-a-mean, and the cell level is the floor built the
+    same way.
     """
     blocked = _floor_or_inconclusive(2, noise_floor)
     if blocked is not None:
@@ -308,27 +343,28 @@ def placebo_change(
     if not sham_shifts or not per_twin_abs_move:
         return inconclusive(2, "no twin answered the SHAM cell")
 
+    floor = noise_floor.cell
     mean_abs = sum(abs(v) for v in sham_shifts.values()) / len(sham_shifts)
     moved = sum(1 for v in per_twin_abs_move.values() if abs(v) > MOVED_THRESHOLD)
     share_moved = moved / len(per_twin_abs_move)
     half_live = None if median_live_shift is None else abs(median_live_shift) / 2
 
-    if mean_abs <= noise_floor:
+    if mean_abs <= floor:
         verdict = "PASS"
         headline = (
             f"SHAM moves the metrics {mean_abs:.3f} on average, within the "
-            f"{noise_floor:.3f} noise floor."
+            f"{floor:.3f} noise floor."
         )
     elif half_live is None:
         verdict = "CHECK"
         headline = (
-            f"SHAM moves {mean_abs:.3f}, above the {noise_floor:.3f} floor; no live cell has "
+            f"SHAM moves {mean_abs:.3f}, above the {floor:.3f} floor; no live cell has "
             "completed, so there is nothing to call it comparable to."
         )
     elif mean_abs < half_live:
         verdict = "CHECK"
         headline = (
-            f"SHAM moves {mean_abs:.3f}, above the {noise_floor:.3f} floor but under half the "
+            f"SHAM moves {mean_abs:.3f}, above the {floor:.3f} floor but under half the "
             "median live cell."
         )
     else:
@@ -343,7 +379,8 @@ def placebo_change(
         statistics={
             "mean_abs_shift": round(mean_abs, 4),
             "share_moved": round(share_moved, 4),
-            "noise_floor": round(noise_floor, 4),
+            "noise_floor": round(floor, 4),
+            "noise_floor_twins_n": float(noise_floor.twins_n),
             "median_live_shift": (
                 None if median_live_shift is None else round(median_live_shift, 4)
             ),
@@ -388,6 +425,13 @@ def simple_guesses(
     m_group = mean([groupshift_errors[t] for t in twins])
     assert m_twin is not None and m_nochange is not None and m_group is not None
 
+    # Paired intervals on the same differences the verdict is taken from. The verdict stays a
+    # comparison of means, which is what `docs/08` §4 specifies, but a FAIL on nine twins read
+    # as a settled fact with nothing beside it saying how settled — and test 1, one screen away,
+    # reports an interval for the same shape of quantity.
+    vs_nochange = paired_gap([nochange_errors[t] - twin_errors[t] for t in twins])
+    vs_group = paired_gap([groupshift_errors[t] - twin_errors[t] for t in twins])
+
     beats = int(m_twin < m_nochange) + int(m_twin < m_group)
     if beats == 2:
         verdict, headline = "PASS", (
@@ -414,6 +458,12 @@ def simple_guesses(
             "mae_nochange": round(m_nochange, 4),
             "mae_groupshift": round(m_group, 4),
             "predictors_beaten": float(beats),
+            "advantage_over_nochange": vs_nochange.mean,
+            "advantage_over_nochange_ci_lower": vs_nochange.ci_lower,
+            "advantage_over_nochange_ci_upper": vs_nochange.ci_upper,
+            "advantage_over_groupshift": vs_group.mean,
+            "advantage_over_groupshift_ci_lower": vs_group.ci_lower,
+            "advantage_over_groupshift_ci_upper": vs_group.ci_upper,
         },
         verdict=verdict,
         headline=headline,
@@ -463,7 +513,7 @@ def impossible_version(
     *,
     happiness_shift: float | None,
     per_twin_happiness_shift: dict[str, float],
-    noise_floor: float | None,
+    noise_floor: NoiseFloor | None,
     model: str = "",
     temperature: float | None = None,
 ) -> ValidityOutcome:
@@ -472,6 +522,15 @@ def impossible_version(
     "Materially" and "a clear improvement" are both judged against the `00000` noise floor rather
     than against a number invented here: `docs/07` §6 already defines how much movement means
     nothing, and a second definition would be a second, unvalidated threshold.
+
+    **The two statistics are judged at two different levels, which is the point of
+    :class:`~twinlab.models.analysis.NoiseFloor`.** ``happiness_shift`` is a mean over twins, so it
+    takes the cell-level happiness floor. ``share_improved`` asks of **each twin** whether it moved
+    up, so its threshold is the per-twin happiness floor — how far one twin's happiness moves when
+    nothing changed. Against a cell-level floor, which cancels toward zero, the question degrades
+    to "did this twin move up at all", whose answer is ~50% under any noise and which no panel can
+    get below 25%. `docs/08` §4 says "a **clear** improvement", and the per-twin floor is what the
+    word "clear" refers to.
 
     * `PASS` — happiness does not rise beyond the floor **and** fewer than 25% of twins read it as
       an improvement.
@@ -484,14 +543,16 @@ def impossible_version(
     if not per_twin_happiness_shift or happiness_shift is None:
         return inconclusive(4, "no twin answered the contradictory probe")
 
-    improved = sum(1 for v in per_twin_happiness_shift.values() if v > noise_floor)
+    cell_floor = noise_floor.for_metric("happiness", per_twin=False)
+    twin_floor = noise_floor.for_metric("happiness", per_twin=True)
+    improved = sum(1 for v in per_twin_happiness_shift.values() if v > twin_floor)
     share = improved / len(per_twin_happiness_shift)
 
-    if happiness_shift <= noise_floor and share < IMPROVEMENT_SHARE_MAX:
+    if happiness_shift <= cell_floor and share < IMPROVEMENT_SHARE_MAX:
         verdict = "PASS"
         headline = (
-            f"Happiness moves {happiness_shift:+.3f} against a {noise_floor:.3f} floor and "
-            f"{share:.0%} of twins read the contradiction as an improvement."
+            f"Happiness moves {happiness_shift:+.3f} against a {cell_floor:.3f} floor and "
+            f"{share:.0%} of twins read the contradiction as a clear improvement."
         )
     else:
         verdict = "FAIL"
@@ -506,7 +567,9 @@ def impossible_version(
         statistics={
             "happiness_shift": round(happiness_shift, 4),
             "share_improved": round(share, 4),
-            "noise_floor": round(noise_floor, 4),
+            "noise_floor": round(cell_floor, 4),
+            "noise_floor_per_twin": round(twin_floor, 4),
+            "noise_floor_twins_n": float(noise_floor.twins_n),
         },
         verdict=verdict,
         headline=headline,
@@ -523,7 +586,7 @@ def order_and_wording(
     *,
     diff_per_metric: dict[str, float],
     twins_n: int,
-    noise_floor: float | None,
+    noise_floor: NoiseFloor | None,
     cell_own_shift: float | None = None,
     model: str = "",
     temperature: float | None = None,
@@ -536,6 +599,10 @@ def order_and_wording(
     A failure here means paragraph position or phrasing is a confound, which would undermine every
     lever comparison — and is why lever order is randomised per round in the first place
     (`docs/03` §8).
+
+    Judged against :attr:`NoiseFloor.twin`. ``diff_per_metric`` is built by taking each twin's own
+    ``|A - B|`` and averaging those, so it never cancels; the cell-level floor does, and comparing
+    the two put a mean-of-absolutes against an absolute-of-a-mean.
     """
     blocked = _floor_or_inconclusive(5, noise_floor)
     if blocked is not None:
@@ -544,19 +611,20 @@ def order_and_wording(
     if twins_n == 0 or not diff_per_metric:
         return inconclusive(5, "no twin answered both presentations of the cell")
 
+    floor = noise_floor.twin
     mean_diff = sum(abs(v) for v in diff_per_metric.values()) / len(diff_per_metric)
     own = None if cell_own_shift is None else abs(cell_own_shift)
 
-    if mean_diff <= noise_floor:
+    if mean_diff <= floor:
         verdict = "PASS"
         headline = (
-            f"Presentation moves the metrics {mean_diff:.3f}, within the {noise_floor:.3f} "
+            f"Presentation moves the metrics {mean_diff:.3f}, within the {floor:.3f} "
             "noise floor."
         )
     elif own is None:
         verdict = "CHECK"
         headline = (
-            f"Presentation moves {mean_diff:.3f}, above the {noise_floor:.3f} floor; the cell's "
+            f"Presentation moves {mean_diff:.3f}, above the {floor:.3f} floor; the cell's "
             "own shift is not known, so it cannot be called comparable."
         )
     elif mean_diff < own / 2:
@@ -577,7 +645,8 @@ def order_and_wording(
         twins_n=twins_n,
         statistics={
             "mean_abs_difference": round(mean_diff, 4),
-            "noise_floor": round(noise_floor, 4),
+            "noise_floor": round(floor, 4),
+            "noise_floor_twins_n": float(noise_floor.twins_n),
             "cell_own_shift": None if own is None else round(own, 4),
             **{f"diff_{k}": round(abs(v), 4) for k, v in sorted(diff_per_metric.items())},
         },
@@ -644,7 +713,8 @@ def ablation(
     *,
     fairness_with: dict[str, float],
     fairness_without: dict[str, float],
-    noise_floor: float | None,
+    fairness_retest: dict[str, float] | None = None,
+    noise_floor: NoiseFloor | None,
     model: str = "",
     temperature: float | None = None,
 ) -> ValidityOutcome:
@@ -652,6 +722,22 @@ def ablation(
 
     * `PASS` — the fairness answers move materially: the twin was using its own history.
     * `CHECK` — barely different, so the fairness answer may be a stock response.
+
+    **``fairness_retest`` is the control this test was missing** (2026-10-07,
+    `docs/DECISIONS.md`). ``fairness_with`` and ``fairness_without`` come from two *separate* model
+    calls, so their difference contains the twin's own call-to-call variance as well as any
+    sensitivity to the ablation. Without a same-persona retest there is nothing to subtract that
+    off against, and the test cannot distinguish "the twin used its fairness history" from "two
+    calls to one twin differ" — it would report `PASS` for a twin that ignored the persona
+    entirely. The comparator is therefore ``max(retest, floor)``: the ablation has to beat both the
+    twin's own noise and the panel's.
+
+    It stays optional so a stored outcome from before the control existed can still be
+    reconstructed; when it is absent the headline says the test ran without its control rather than
+    implying the comparison was made.
+
+    Judged against :attr:`NoiseFloor.twin` for ``fairness``: the statistic is a mean over twins of
+    each twin's own absolute difference, and it is one metric, not six.
     """
     blocked = _floor_or_inconclusive(6, noise_floor)
     if blocked is not None:
@@ -661,20 +747,46 @@ def ablation(
     if not twins:
         return inconclusive(6, "no twin answered both with and without its fairness clauses")
 
+    floor = noise_floor.for_metric("fairness", per_twin=True)
     m = mean([abs(fairness_with[t] - fairness_without[t]) for t in twins])
     assert m is not None
 
-    if m > noise_floor:
+    retested = sorted(set(fairness_with) & set(fairness_retest or {}))
+    retest = (
+        mean([abs(fairness_with[t] - fairness_retest[t]) for t in retested])  # type: ignore[index]
+        if retested
+        else None
+    )
+    # `max`, never a sum or a subtraction: the two are alternative explanations of the same
+    # difference, not components of it, and subtracting one from the other would report a
+    # difference nobody measured.
+    threshold = floor if retest is None else max(floor, retest)
+
+    if m > threshold:
         verdict = "PASS"
+        beat = (
+            f"the {floor:.3f} floor"
+            if retest is None
+            else f"the {floor:.3f} floor and the twin's own {retest:.3f} retest difference"
+        )
         headline = (
-            f"Removing the fairness items moves the fairness answer {m:.3f}, beyond the "
-            f"{noise_floor:.3f} floor: the twin was using its own history."
+            f"Removing the fairness items moves the fairness answer {m:.3f}, beyond {beat}: the "
+            "twin was using its own history."
         )
     else:
         verdict = "CHECK"
+        against = (
+            f"the {floor:.3f} floor"
+            if retest is None
+            else f"a {retest:.3f} retest difference on the same persona"
+        )
         headline = (
-            f"Removing the fairness items moves the answer only {m:.3f}, within the "
-            f"{noise_floor:.3f} floor: possibly a stock response."
+            f"Removing the fairness items moves the answer only {m:.3f}, within {against}: "
+            "possibly a stock response."
+        )
+    if retest is None:
+        headline += (
+            " (No same-persona retest was available, so call-to-call variance is not ruled out.)"
         )
 
     return ValidityOutcome(
@@ -682,7 +794,10 @@ def ablation(
         twins_n=len(twins),
         statistics={
             "mean_abs_difference": round(m, 4),
-            "noise_floor": round(noise_floor, 4),
+            "retest_difference": None if retest is None else round(retest, 4),
+            "retest_twins_n": float(len(retested)),
+            "noise_floor": round(floor, 4),
+            "noise_floor_twins_n": float(noise_floor.twins_n),
         },
         verdict=verdict,
         headline=headline,
@@ -809,7 +924,7 @@ def temperature_sweep(
     *,
     index_by_temp: dict[float, dict[str, float]],
     shifts_by_temp: dict[float, dict[str, float]],
-    noise_floor: float | None,
+    noise_floor: NoiseFloor | None,
     model: str = "",
 ) -> tuple[ValidityOutcome, TemperatureRecommendation]:
     """Test 8. `docs/08` §4 test 8. **This test sets the twin temperature; it is not chosen.**
@@ -820,6 +935,9 @@ def temperature_sweep(
     `docs/08` §4 test 8 states a `pass` rule and "report: always", and names no `FAIL`. A spread
     above the floor is therefore `CHECK`: it is information about sampling variance, not a verdict
     that the study is invalid.
+
+    Judged against :attr:`NoiseFloor.cell`: ``shifts_by_temp`` holds one mean per metric per
+    temperature, so the spread is a range over cell-level means.
     """
     nothing = TemperatureRecommendation(
         recommended=None,
@@ -861,17 +979,18 @@ def temperature_sweep(
         index_by_temp=index_by_temp, max_metric_spread=max_spread
     )
 
-    if max_spread is not None and max_spread <= noise_floor:
+    floor = noise_floor.cell
+    if max_spread is not None and max_spread <= floor:
         verdict = "PASS"
         headline = (
             f"Metric spread across {len(index_by_temp)} temperatures is {max_spread:.3f}, within "
-            f"the {noise_floor:.3f} noise floor."
+            f"the {floor:.3f} noise floor."
         )
     else:
         verdict = "CHECK"
         shown = "not measured" if max_spread is None else f"{max_spread:.3f}"
         headline = (
-            f"Metric spread across temperatures is {shown}, above the {noise_floor:.3f} noise "
+            f"Metric spread across temperatures is {shown}, above the {floor:.3f} noise "
             "floor: some of the movement is sampling variance."
         )
     if recommendation.recommended is not None:
@@ -883,7 +1002,8 @@ def temperature_sweep(
         statistics={
             "max_metric_spread": None if max_spread is None else round(max_spread, 4),
             "mean_within_twin_index_sd": None if mean_within is None else round(mean_within, 4),
-            "noise_floor": round(noise_floor, 4),
+            "noise_floor": round(floor, 4),
+            "noise_floor_twins_n": float(noise_floor.twins_n),
             "recommended_temperature": recommendation.recommended,
             **{f"spread_{k}": round(v, 4) for k, v in sorted(per_metric_spread.items())},
             **{f"between_twin_sd_{k}": v for k, v in recommendation.between_twin_sd.items()},

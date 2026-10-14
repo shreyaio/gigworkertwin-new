@@ -10,8 +10,11 @@ rather than shared: a stub design client, an in-memory backend, and a real
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
+from config.settings import settings
 from twinlab.agents.registry import StubModelClient
 from twinlab.models.variant import CoverageVerdict, LeverBrief
 from twinlab.models.variant import LeverParagraph as LP
@@ -218,20 +221,25 @@ def test_the_style_block_stays_byte_stable():
 # --------------------------------------------------------- the style_version bump (§4.2)
 
 
-def test_the_style_contract_and_settings_agree_on_v2():
+def test_the_style_contract_and_settings_agree_on_the_current_version():
     """§4.2 — the contract's own MUST, honoured. `style_contract.yaml` bumped, so settings did.
 
-    Paragraphs persisted for the first time in M15, and the §4.1 change alters what the design
-    agent is shown, so a v1 paragraph and a v2 paragraph are not written to the same contract.
+    The two are asserted **equal to each other**, not equal to a literal. The version is at v3
+    (M19 WP-1 made the word band a function of the commitment count) and will bump again; what
+    must never change is that the two declarations agree, because the render cache key is built
+    from one of them. Pinning the literal here only guarantees that whoever bumps it next has two
+    files to edit instead of three.
     """
     from config.settings import settings
 
     style = load_style_contract()
-    assert style["style_version"] == "v2"
-    assert settings.style_version == "v2", (
+    assert style["style_version"] == settings.style_version, (
         "a paragraph cached under one style_version served under another is the exact silent "
         "confound the (lever, dial, style_version) key exists to prevent"
     )
+    # Still a real assertion: the project has had v1, v2 and v3, and a blank or missing version
+    # would make the cache key `(lever, dial, '')` for every contract ever written.
+    assert re.fullmatch(r"v\d+", str(style["style_version"])), style["style_version"]
 
 
 # ------------------------------------------------- the boot gate for migration 003
@@ -240,7 +248,7 @@ def test_the_style_contract_and_settings_agree_on_v2():
 def _prefix_row() -> dict:
     """A `lever_paragraphs` row as a database that has not run 003 would return it."""
     return {
-        "lever": "L1", "dial": 1, "style_version": "v2", "text": "x",
+        "lever": "L1", "dial": 1, "style_version": settings.style_version, "text": "x",
         "word_count": 50, "delta_hash": "h", "checker_pass": False,
     }
 
@@ -286,6 +294,13 @@ async def test_an_empty_table_does_not_block_boot(backend):
 # confound `config/style_contract.yaml` bumps the key to prevent.
 
 
+#: A style version that is deliberately **not** the one the app runs under, standing in for the
+#: orphaned M15 rows. Named rather than written as a literal "v1" because the current version has
+#: moved twice (v1 -> v2 -> v3) and a test that says "v1 is the old one" has to be edited on every
+#: bump; what these tests are about is *another* version, whichever it is.
+OTHER_STYLE_VERSION = "v0_not_the_current_one"
+
+
 async def _put_variant(backend, code: str, version: str, *, passed: bool = True) -> None:
     from twinlab.db.repositories import VariantRepo
     from twinlab.models.reference import LEVER_BY_POSITION
@@ -302,10 +317,11 @@ async def _put_variant(backend, code: str, version: str, *, passed: bool = True)
 
 
 async def test_twin_studio_will_not_serve_a_variant_from_another_style_version(backend):
-    """I3 has no style_version exemption: verified under v1 is not verified under v2."""
+    """I3 has no style_version exemption: verified under one contract is not verified under
+    another."""
     from twinlab.services.studio import StudioBlocked, _stimulus
 
-    await _put_variant(backend, "01000", "v1")      # the orphaned M15 row
+    await _put_variant(backend, "01000", OTHER_STYLE_VERSION)      # the orphaned M15 row
 
     with pytest.raises(StudioBlocked, match="never been rendered"):
         await _stimulus("01000", "", backend)
@@ -315,15 +331,15 @@ async def test_twin_studio_serves_the_current_style_version(backend):
     """And it must still work once the cell exists under the version the app is running."""
     from twinlab.services.studio import _stimulus
 
-    await _put_variant(backend, "01000", "v1")
-    await _put_variant(backend, "01000", "v2")
+    await _put_variant(backend, "01000", OTHER_STYLE_VERSION)
+    await _put_variant(backend, "01000", settings.style_version)
 
     paragraphs, scenario, sandbox = await _stimulus("01000", "", backend)
 
     assert sandbox is False
-    assert all("v2 text" in text for text in paragraphs.values()), (
-        f"served a paragraph from the wrong style_version: {paragraphs}"
-    )
+    assert all(
+        f"{settings.style_version} text" in text for text in paragraphs.values()
+    ), f"served a paragraph from the wrong style_version: {paragraphs}"
     assert len(scenario) == 5
 
 
@@ -331,24 +347,26 @@ async def test_the_scenario_reader_ignores_another_style_versions_row(backend):
     """`services/lab.scenario_paragraphs` — what is shown must be what a twin could be shown."""
     from twinlab.services.lab import scenario_paragraphs
 
-    await _put_variant(backend, "01000", "v1")
+    await _put_variant(backend, "01000", OTHER_STYLE_VERSION)
     assert await scenario_paragraphs("01000", backend=backend) == []
 
-    await _put_variant(backend, "01000", "v2")
+    await _put_variant(backend, "01000", settings.style_version)
     shown = await scenario_paragraphs("01000", backend=backend)
-    assert shown and all("v2 text" in text for text in shown)
+    assert shown and all(f"{settings.style_version} text" in text for text in shown)
 
 
 async def test_the_validity_stimulus_reader_uses_the_whole_key(backend):
     """Validity tests 4-8 put these paragraphs straight to a twin."""
     from twinlab.services.validity import _paragraphs_for
 
-    await _put_variant(backend, "01000", "v1")
+    await _put_variant(backend, "01000", OTHER_STYLE_VERSION)
     assert await _paragraphs_for("01000", backend) == {}
 
-    await _put_variant(backend, "01000", "v2")
+    await _put_variant(backend, "01000", settings.style_version)
     found = await _paragraphs_for("01000", backend)
-    assert found and all("v2 text" in text for text in found.values())
+    assert found and all(
+        f"{settings.style_version} text" in text for text in found.values()
+    )
 
 
 # -------------------------------------- a passing lever is not re-rolled (the M16 §9 defect)

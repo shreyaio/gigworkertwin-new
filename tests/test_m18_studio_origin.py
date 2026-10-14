@@ -84,6 +84,19 @@ def _fresh_pool():
 # =================================================================== helpers
 
 
+async def _ensure_validated_config(backend) -> None:
+    """The Studio refuses until the live config has a validated twin (RESEARCHER 2026-10-05).
+
+    One qualified reference twin is enough to validate the config. It is added only when nothing is
+    qualified yet, so the helper can be called once per twin without piling up verdicts.
+    """
+    from tests._qualify import qualify
+    from twinlab.services.config_match import current_fingerprint, qualified_twin_ids
+
+    if not await qualified_twin_ids(await current_fingerprint(backend), backend):
+        await qualify(backend, "VALIDATED-REF", kept=True)
+
+
 async def _twin_with_driver(
     backend, twin_id: str, *, source: str = "synthetic", quality_passed: bool = True
 ) -> None:
@@ -119,13 +132,10 @@ async def _twin_with_driver(
         ],
     )
     if quality_passed:
-        await backend.insert(
-            "twin_quality_runs",
-            [{
-                "twin_id": twin_id, "holdout_set": "H3", "mae": 0.4, "pct_within_1": 0.95,
-                "kept": True, "items_n": 18, "detail": {}, "is_latest": True,
-            }],
-        )
+        from tests._qualify import qualify
+
+        await qualify(backend, twin_id, kept=True)
+    await _ensure_validated_config(backend)
 
 
 async def _stored_variant(backend, code: str, *, passed: bool = True) -> None:
@@ -514,6 +524,8 @@ async def test_a_hand_made_twin_has_an_empty_baseline_not_zeros(backend):
     from twinlab.orchestrator.panel import POPULATION_SOURCES
     from twinlab.services.studio import MANUAL_SOURCE, ask_studio, create_manual_twin
 
+    await _ensure_validated_config(backend)
+
     assert all(MANUAL_SOURCE not in sources for sources in POPULATION_SOURCES.values())
 
     twin = await create_manual_twin(
@@ -592,6 +604,8 @@ async def test_a_twin_from_a_survey_answer_can_be_asked(backend):
     """C-11, verified rather than assumed: mode 2 produces an askable twin."""
     from twinlab.services.studio import ask_studio, create_twin_from_survey
 
+    await _ensure_validated_config(backend)
+
     ref = reference()
     await backend.insert(
         "survey_submissions",
@@ -628,55 +642,60 @@ async def test_a_twin_from_a_survey_answer_can_be_asked(backend):
 # =================================================================== §5 Agent Studio
 
 
-async def test_the_twin_interviewer_returns_the_twins_answers_not_its_input(backend):
-    """§5.1, the defect that mattered: **the panel was showing its input instead of its result.**
+async def test_the_twin_interviewer_is_always_two_columns_driver_and_twin(backend):
+    """2026-10-05 decision: the Twin Interviewer shows what the driver said and what the twin said.
 
-    Its table was headed "what this twin's driver answered" and listed the baseline — the survey
-    vector the twin is anchored on. The screenshot asks for *"Some of the 37 answers it gave"*.
+    The same shape whether or not the prompt was edited. The twin's column is the twin acting on
+    the stored, Checker-passed version, and the driver's is the same driver's own answer to the
+    same item. No index metric and no per-prompt column.
     """
-    from twinlab.services.agent_config import twin_test_view
-
-    await _twin_with_driver(backend, "T1")
-    await _stored_variant(backend, "01000")
-
-    view = await twin_test_view("T1", "01000", backend=backend)
-    assert view["answers"], "the answers table is the subject of this panel"
-    first = view["answers"][0]
-    assert first["twin"] == 4, "the TWIN's answer, from the stub"
-    assert first["driver"] == 3, "and the driver's beside it, as the Checker panel does"
-
-
-async def test_the_twin_interviewer_compares_one_row_per_instruction_variant(backend):
-    """§5.1: one row per prompt, with `Answer checked?` and a reason — not one row per metric."""
+    from twinlab.agents.registry import resolve_prompt
     from twinlab.services.agent_config import load_agent, twin_test_view
 
     await _twin_with_driver(backend, "T1")
     await _stored_variant(backend, "01000")
-    # The **resolved** prompt, which is what the Agent Studio textarea holds. `system_prompt` is the
-    # unresolved `file:twin.md` reference and would fail the six-section skeleton check.
-    from twinlab.agents.registry import resolve_prompt
+    saved = resolve_prompt(await load_agent("twin", backend=backend))[0]
 
-    saved = await load_agent("twin", backend=backend)
-    edited = resolve_prompt(saved)[0] + "\n\nAnswer plainly."
+    unedited = await twin_test_view("T1", "01000", backend=backend)
+    edited = await twin_test_view(
+        "T1", "01000", edited_prompt=saved + "\n\nAnswer plainly.", backend=backend
+    )
+    for view in (unedited, edited):
+        assert set(view) == {"twin_id", "version_code", "items", "twin_checked", "note"}
+        assert view["twin_checked"] is True
+        first = view["items"][0]
+        assert first["twin"] == 4, "the TWIN's answer, from the stub"
+        assert first["driver"] == 3, "the driver's own answer to the same item"
+    assert [i["twin"] for i in unedited["items"]] == [i["twin"] for i in edited["items"]]
 
-    view = await twin_test_view("T1", "01000", edited_prompt=edited, backend=backend)
-    assert [row["which"] for row in view["variants"]] == ["saved", "your edit"]
-    for row in view["variants"]:
-        assert row["checked"] is True, "the contract/range verdict the ladder already computed"
-        assert row["reason"], "and the one-line rationale the screenshot shows"
-        assert set(row["scores"]) == set(view["metrics"])
-    assert view["driver_scores"], "the driver's six scores, for comparison"
 
-
-async def test_the_twin_interviewer_runs_the_saved_prompt_even_with_no_edit(backend):
-    """A screen that asks the twin nothing unless you edit the prompt is not a test screen."""
+async def test_the_twin_interviewer_runs_the_saved_prompt_when_the_box_is_empty(backend):
+    """An empty box means the saved prompt, so the second column is never blank for that reason."""
     from twinlab.services.agent_config import twin_test_view
 
     await _twin_with_driver(backend, "T1")
     await _stored_variant(backend, "01000")
-    view = await twin_test_view("T1", "01000", backend=backend)
-    assert [row["which"] for row in view["variants"]] == ["saved"]
-    assert view["answers"][0]["twin"] is not None
+    view = await twin_test_view("T1", "01000", edited_prompt="", backend=backend)
+    assert view["twin_checked"] is True and view["items"][0]["twin"] is not None
+
+
+async def test_a_twin_that_gives_no_valid_answer_is_not_tested_never_a_number(backend):
+    """I13/I17. A failed twin leaves its column *Not tested* and says so in the note."""
+    from unittest import mock
+
+    from twinlab.services.agent_config import twin_test_view
+
+    await _twin_with_driver(backend, "T1")
+    await _stored_variant(backend, "01000")
+
+    async def refuse(**_kwargs):
+        raise ValueError("the twin did not produce a valid answer vector")
+
+    with mock.patch("twinlab.services.twin_runtime.ask_items", new=refuse):
+        view = await twin_test_view("T1", "01000", backend=backend)
+    assert view["twin_checked"] is False
+    assert all(item["twin"] is None for item in view["items"])
+    assert "did not produce a valid answer" in view["note"]
 
 
 async def test_the_twin_interviewer_still_refuses_an_unrendered_version(backend):
@@ -686,58 +705,111 @@ async def test_the_twin_interviewer_still_refuses_an_unrendered_version(backend)
     await _twin_with_driver(backend, "T1")
     view = await twin_test_view("T1", "22000", backend=backend)
     assert "has never been rendered" in view["note"]
-    assert view["variants"] == []
+    assert view["twin_checked"] is False
 
 
-async def test_the_policy_designer_shows_the_rendered_paragraph_not_the_bullets(backend):
-    """§5.2 item 1: `Text used` held `told_summary`, which `variant/lookup.py` says a twin never
-    sees.
+async def test_the_policy_designer_runs_the_design_prompt_and_writes_nothing(backend):
+    """§5.2, as narrowed on 2026-10-05: the screen shows the design agent's OUTPUT, produced now.
 
-    Showing the bullets there is not cosmetic: it makes two artefacts `docs/03` §4.3 keeps
-    deliberately apart look interchangeable on the one screen whose job is to show what the design
-    agent produced.
+    One call per lever with a dial set, none for dial 0 (I5), and nothing written to the render
+    cache, so a test cannot change what a twin is shown (I4).
     """
+    from twinlab.agents.registry import StubModelClient, set_client
+    from twinlab.models.variant import LeverParagraph
+    from twinlab.orchestrator.odometer import dials
     from twinlab.services.agent_config import design_test_view
 
+    seen: list[str] = []
+
+    def handler(cfg, user_prompt, output_type):
+        seen.append(cfg.agent_id)
+        return LeverParagraph(text="You will now get a clear route to appeal.", status="ok")
+
+    set_client(StubModelClient(handler))
+    try:
+        before = await backend.count("lever_paragraphs")
+        view = await design_test_view("01000", backend=backend)
+    finally:
+        set_client(None)
+
+    lit = sum(1 for dial in dials("01000").values() if dial)
+    assert len(seen) == lit, "one design call per lever that has a dial set"
+    assert await backend.count("lever_paragraphs") == before, "the render cache is untouched"
+    written = [r for r in view["rows"] if r["status"] == "ok"]
+    assert len(written) == lit and written[0]["text"].startswith("You will now")
+    assert [r["status"] for r in view["rows"]].count("fixed") == 5 - lit
+
+
+async def test_the_quality_checker_puts_the_codebook_beside_the_agents_framing(backend):
+    """2026-10-05 decision: a side-by-side, and nothing else.
+
+    The left column is the codebook policy for each area, the right is the paragraph the design
+    agent wrote for it. No verdict and no reason, and no model call: a handler that fails the test
+    if it is reached proves the screen only reads.
+    """
+    from twinlab.agents.registry import StubModelClient, set_client
+    from twinlab.ingest.reference_store import reference
+    from twinlab.models.reference import LEVER_BY_POSITION
+    from twinlab.orchestrator.odometer import dials
+    from twinlab.services.agent_config import checker_test_view
+    from twinlab.variant.lookup import commitments_for_lever, lookup
+
     await _stored_variant(backend, "01000")
-    view = await design_test_view("01000", backend=backend)
 
-    lit = [lever for lever in view["levers"] if lever["dial"] > 0]
-    assert lit, "01000 has one lever set"
-    for lever in view["levers"]:
-        assert lever["paragraph"].startswith("Paragraph for "), (
-            "Text used must be the rendered paragraph the twin is shown"
-        )
-    # The bullets are still available, in their own column.
-    assert any(lever["bullets"] for lever in view["levers"])
-    assert all(
-        lever["paragraph"] not in lever["bullets"] for lever in view["levers"]
-    ), "the two artefacts must not be the same string"
+    def no_model_call(cfg, user_prompt, output_type):
+        raise AssertionError("the Quality Checker screen must not call a model")
+
+    set_client(StubModelClient(no_model_call))
+    try:
+        view = await checker_test_view("01000", backend=backend)
+    finally:
+        set_client(None)
+
+    spec = lookup("01000", reference())
+    per_lever = dials("01000")
+    assert view["rendered"] is True
+    assert len(view["rows"]) == len(LEVER_BY_POSITION)
+    for lever, row in zip(LEVER_BY_POSITION, view["rows"], strict=True):
+        assert set(row) == {"lever", "policy", "framed", "status", "reason"}
+        if per_lever[lever] == 0:
+            assert row["status"] == "fixed" and row["policy"] == []
+            continue
+        assert row["policy"] == [c for _, c in sorted(commitments_for_lever(spec, lever).items())]
+        assert row["framed"] == f"Paragraph for {lever}, as rendered."
 
 
-async def test_the_policy_designer_labels_both_wordings(backend):
-    """§5.2 item 2: wording is a real experimental factor (validity test 5), so it is labelled."""
-    from twinlab.services.agent_config import design_test_view
+async def test_the_quality_checker_says_so_for_an_unrendered_version(backend):
+    from twinlab.services.agent_config import checker_test_view
 
-    await _stored_variant(backend, "01000")
-    view = await design_test_view("01000", backend=backend)
-    assert set(view["wordings"]) == {"A", "B"}
-    assert view["wordings"]["B"] == list(reversed(view["wordings"]["A"])), (
-        "wording B is the reversed paragraph order `ask_items(reverse_order=True)` shows a twin"
+    view = await checker_test_view("22000", backend=backend)
+    assert view == {"version_code": "22000", "rendered": False, "rows": []}
+
+
+async def test_a_test_with_an_edit_that_would_not_run_fails_loudly(backend):
+    """An edit the Save button would refuse must not be tested as if it were a prompt that runs.
+
+    The skeleton rule is the one a saved prompt is held to, so the test refuses it too.
+    """
+    from twinlab.services.agent_config import _TEST_JOBS, agent_test_result, start_agent_test
+
+    job = start_agent_test(
+        "design", twin_id=None, version_code="01000", prompt_text="You write text."
     )
+    await _TEST_JOBS[job]["task"]
+    result = agent_test_result(job)
+    assert result["status"] == "failed"
+    assert "missing mandatory section" in result["view"]["error"]
 
 
-async def test_the_policy_designer_lists_the_versions_it_would_test_next(backend):
-    """§5.2 item 3: absent entirely before this. Read-only, and it starts nothing."""
-    from twinlab.services.agent_config import design_test_view
+async def test_a_prompt_missing_a_section_is_refused_on_save(backend):
+    """The bug this closes: a save said "Saved." and the next session silently ran the seed."""
+    from twinlab.models.agent import ConfigError
+    from twinlab.services.agent_config import history, save_agent
 
-    await _stored_variant(backend, "00001")
-    before = await backend.count("sessions")
-    view = await design_test_view("00001", backend=backend)
-
-    assert view["next_versions"], "the table was missing entirely"
-    assert all(row["why"] for row in view["next_versions"]), "every row names its reason"
-    assert await backend.count("sessions") == before, "looking at a plan starts nothing"
+    before = len(await history("design", backend=backend))
+    with pytest.raises(ConfigError, match="missing mandatory section"):
+        await save_agent("design", {"system_prompt": "You write text."}, backend=backend)
+    assert len(await history("design", backend=backend)) == before, "nothing was written"
 
 
 def test_the_next_versions_table_explains_one_dial_at_a_time():
@@ -983,3 +1055,23 @@ async def test_a_render_closes_its_parent_event(backend):
     assert [e["status"] for e in events] == ["ok"], "the render's parent event must be closed"
     design = next(c for c in await agent_cards(backend) if c.agent_id == "design")
     assert design.state != "running"
+
+
+async def test_a_saved_prompt_is_what_the_runtime_calls_read_next(backend):
+    """The Agent Studio wiring, end to end: a save reaches the live config the call sites read.
+
+    The Test buttons and the sessions read `live_agent_configs()`. A save that the process could
+    not see would make the screen and the study disagree until a restart, so the save installs the
+    config in this process before it returns (`agent_config.save_agent`).
+    """
+    from twinlab.agents.registry import live_agent, resolve_prompt
+    from twinlab.services.agent_config import load_agent, restore_agent, save_agent
+
+    current = resolve_prompt(await load_agent("twin", backend=backend))[0]
+    edited = current + "\n\nAnswer plainly."
+    try:
+        await save_agent("twin", {"system_prompt": edited}, backend=backend)
+        assert resolve_prompt(live_agent("twin"))[0] == edited
+    finally:
+        await restore_agent("twin", backend=backend)
+    assert resolve_prompt(live_agent("twin"))[0] == current

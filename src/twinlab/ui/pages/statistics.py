@@ -66,6 +66,14 @@ SCREENING_CHOICES = [
     ("Drop attention failures, speeders, straight liners", "strict"),
     ("Keep everyone", "none"),
 ]
+#: `docs/07` §7.2. The reported model is first, so the default needs no thought and the robustness
+#: check has to be chosen. The labels say which is which on the screen itself, because the run that
+#: produced a number has to be self-describing — a reader coming back to a result should not have
+#: to look up what the dropdown was set to.
+VARIANT_CHOICES = [
+    ("Full mediation (the reported model)", "full"),
+    ("Partial mediation (robustness check)", "partial"),
+]
 
 _STATUS_WORDS = {"ok": "ok", "check": "check", "na": "not applicable"}
 
@@ -466,6 +474,17 @@ def render_statistics(badge: str | None = None) -> None:
                 info="Excluded by default; they are not comparable with the current scales.",
             )
         with gr.Row():
+            variant = gr.Dropdown(
+                choices=VARIANT_CHOICES,
+                value="full",
+                label="Mediation structure",
+                info=(
+                    "Full mediation is the reported model. Partial adds the three direct "
+                    "justice-to-intention paths and is a robustness check, not a second headline; "
+                    "it is recorded on the run so the two can never be confused."
+                ),
+            )
+        with gr.Row():
             run_button = gr.Button("Run the analysis", variant="primary")
             export_button = gr.Button("Make an export sheet")
 
@@ -539,7 +558,9 @@ def render_statistics(badge: str | None = None) -> None:
             out.append(_export_intro())
             return out
 
-        async def _run(pop: str, screen_rule: str, count: float | None, pool: bool) -> list:
+        async def _run(
+            pop: str, screen_rule: str, count: float | None, pool: bool, model: str
+        ) -> list:
             from twinlab.services.statistics import (
                 NoCasesError,
                 create_analysis,
@@ -555,6 +576,7 @@ def render_statistics(badge: str | None = None) -> None:
                     screening=screen_rule,
                     bootstrap_samples=int(count or 0),
                     pool_legacy=bool(pool),
+                    variant=model,
                 )
             except (BootstrapFloorError, NoCasesError) as exc:
                 blocked = (
@@ -602,7 +624,9 @@ def render_statistics(badge: str | None = None) -> None:
 
         targets = [provenance, *[panels[s] for s in STAGES], panels["export"]]
         run_button.click(
-            _run, inputs=[population, screening, samples, pool_legacy], outputs=targets
+            _run,
+            inputs=[population, screening, samples, pool_legacy, variant],
+            outputs=targets,
         )
         export_button.click(
             _export, inputs=[population, pool_legacy], outputs=[export_file, panels["export"]]

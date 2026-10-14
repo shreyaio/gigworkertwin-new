@@ -47,35 +47,38 @@ async def _twin(backend, twin_id: str, *, source: str = "synthetic") -> None:
 
 
 async def _passed(backend, twin_id: str) -> None:
-    """Give a twin a `kept` H3 verdict, which is the second half of panel eligibility."""
-    await backend.insert(
-        "twin_quality_runs",
-        [{
-            "twin_id": twin_id, "holdout_set": "H3", "mae": 0.4, "pct_within_1": 0.95,
-            "kept": True, "items_n": 18, "detail": {}, "is_latest": True,
-        }],
-    )
+    """Give a twin a `kept` H3 verdict under the live config, with its controls (`005`)."""
+    from tests._qualify import qualify
+
+    await qualify(backend, twin_id, kept=True)
 
 
 # =================================================================== §2 the budget
 
 
 async def test_the_quality_budget_explains_its_own_total(backend):
-    """§2: *"for 50 twins (2 calls each) it will have 600 calls"* — the total is right.
+    """§2 — the total must say how it was reached, whatever the total is.
 
-    `6 × 2 × 50 = 600`, and the 6 is the six Part-17 stimuli at one model call each reading three
-    holdout items per round (`docs/08`'s 18 H3 numbers), **not** a repeat count. The plan is
-    explicit
-    that nothing about the number changes; what changes is that it says how it was reached.
+    The original complaint was *"for 50 twins (2 calls each) it will have 600 calls, that is too
+    much"*. `6 × 2 × 50 = 600` was arithmetically right and read as a bug because the total
+    appeared with nothing beside it; M18's fix was the caption.
+
+    M19 WP-3 then changed the number itself — one call per repeat showing all six Part-17
+    versions, so `1 × 2 × 50 = 100` — because `docs/01` §3.6 describes Part 17 as one section of
+    one questionnaire and `docs/08` §3.3 scores the twin on whether it *orders* the six worlds as
+    its driver did, which a twin asked in six isolated contexts cannot do. **This test is about
+    the caption, not the total**, so it asserts the caption explains whatever the total is — and
+    that 18 answers arriving from one call is accounted for, because otherwise the new total
+    looks too small instead of too large.
     """
     from twinlab.services.runs import quality_budget_view
 
     view = await quality_budget_view(twins=50, repeats=2)
-    assert view.calls == 600, "the number is correct and must not be quietly reduced"
+    assert view.calls == 200, "(1 H3 call × 2 repeats + 2 control calls) × 50 twins"
     assert "6 Part-17 versions" in view.breakdown
     assert "2 repeat(s)" in view.breakdown
     assert "50 twin(s)" in view.breakdown
-    assert view.per_unit == "12", "12 calls per twin is the figure a researcher decides against"
+    assert view.per_unit == "4", "calls per twin is the figure a researcher decides against"
 
 
 async def test_the_sweep_budget_names_the_two_control_cells(backend):

@@ -15,7 +15,7 @@ make the passage lossy, and losslessness is the whole point.
 
 from __future__ import annotations
 
-TEMPLATE_VERSION = "v1"
+TEMPLATE_VERSION = "v2"
 
 
 class PersonaTemplateMissing(KeyError):
@@ -158,10 +158,53 @@ OWN_WORDS_PROMPTS: dict[str, str] = {
     "OWN5": "Who depends on my earnings, and where I see myself in a year or two:",
 }
 
+#: The lead-in for a why answer, per probe. The three part-level questions name what they
+#: asked; the 34 item probes share one neutral lead-in, because the question they answer was
+#: itself constant and a bespoke lead-in would put words in the driver's mouth.
+#:
+#: `SURVEY_SCALES_AND_WHY_PROBES.md` §4.2 fixes the shape: the why follows its own item's
+#: clause, in the same sentence run — not grouped at the end of a section, where eleven PAC
+#: whys would sit in a row with nothing saying which item each belongs to.
+ITEM_WHY_PROMPT = "In my own words:"
+
 WHY_PROBE_PROMPTS: dict[str, str] = {
     "WHY_CONTROL": "What makes me feel the app controls, or does not control, how I work:",
     "WHY_SATISFACTION": "The main reason for how satisfied I am:",
     "WHY_OTHER_WORK": "Why finding other work is easy or hard for me:",
+    "WHY_AMQ1": ITEM_WHY_PROMPT,
+    "WHY_AMQ2": ITEM_WHY_PROMPT,
+    "WHY_AMQ3": ITEM_WHY_PROMPT,
+    "WHY_AMQ4": ITEM_WHY_PROMPT,
+    "WHY_AMQ5": ITEM_WHY_PROMPT,
+    "WHY_PAC1": ITEM_WHY_PROMPT,
+    "WHY_PAC2": ITEM_WHY_PROMPT,
+    "WHY_PAC3": ITEM_WHY_PROMPT,
+    "WHY_PAC4": ITEM_WHY_PROMPT,
+    "WHY_PAC5": ITEM_WHY_PROMPT,
+    "WHY_PAC6": ITEM_WHY_PROMPT,
+    "WHY_PAC7": ITEM_WHY_PROMPT,
+    "WHY_PAC8": ITEM_WHY_PROMPT,
+    "WHY_PAC9": ITEM_WHY_PROMPT,
+    "WHY_PAC10": ITEM_WHY_PROMPT,
+    "WHY_FAIR1": ITEM_WHY_PROMPT,
+    "WHY_FAIR2": ITEM_WHY_PROMPT,
+    "WHY_FAIR3": ITEM_WHY_PROMPT,
+    "WHY_FAIR4": ITEM_WHY_PROMPT,
+    "WHY_CLAR1": ITEM_WHY_PROMPT,
+    "WHY_CLAR2": ITEM_WHY_PROMPT,
+    "WHY_CLAR3": ITEM_WHY_PROMPT,
+    "WHY_SAT2": ITEM_WHY_PROMPT,
+    "WHY_SAT3": ITEM_WHY_PROMPT,
+    "WHY_CONT1": ITEM_WHY_PROMPT,
+    "WHY_CONT2": ITEM_WHY_PROMPT,
+    "WHY_ALGO1": ITEM_WHY_PROMPT,
+    "WHY_ALGO2": ITEM_WHY_PROMPT,
+    "WHY_ALGO3": ITEM_WHY_PROMPT,
+    "WHY_ALGO4": ITEM_WHY_PROMPT,
+    "WHY_TURN1": ITEM_WHY_PROMPT,
+    "WHY_TURN2": ITEM_WHY_PROMPT,
+    "WHY_TURN3": ITEM_WHY_PROMPT,
+    "WHY_DEP2": ITEM_WHY_PROMPT,
 }
 
 #: Section headings, in the fixed order of docs/02 §5.

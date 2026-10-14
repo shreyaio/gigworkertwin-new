@@ -20,8 +20,13 @@ Contracts this module must not break, each of which is an M10 acceptance criteri
 
 from __future__ import annotations
 
+import logging
+import time
+from typing import NamedTuple
+
 import gradio as gr
 
+from config.settings import settings
 from twinlab.models.reference import LEVER_NAMES
 
 from ..components import (
@@ -54,6 +59,8 @@ from ..components import (
     verdict_pill,
 )
 from ..theme import page_classes
+
+log = logging.getLogger(__name__)
 
 _NOT_RUN = "Not run"
 
@@ -133,7 +140,59 @@ def _row_click_js(target_id: str) -> str:
 # ===================================================================== Agents
 
 
-def _agents_tab() -> None:
+def _stored_population() -> str:
+    """The default a population control opens on. §3.6: **the stored value**, never a guess.
+
+    `sessions.population` defaults to `'real'` in the DDL and that is what the code has always
+    used, so that is what is shown. It is a default the researcher can see and change, which is
+    the whole point — it is not a study decision taken in code.
+
+    Module-level because two screens now open a population control on it (the Agents tab and,
+    from M19 WP-5, the Dial board). Two copies would be two defaults that could drift apart.
+    """
+    return "real"
+
+
+class _LabSignals(NamedTuple):
+    """Components the Lab tabs share, so one tab's action can wake another tab's refresh.
+
+    ``ticker`` is the Agents tab's poll timer. It used to be private to that tab and only the three
+    Agents buttons woke it, so a run started from the Dial board never reached the Agents page
+    until a reload — the cards stayed on whatever they said at page load. ``run_done`` is a hidden
+    value the poll writes when a session reaches a terminal state, which is what lets the Dial
+    board and the Results tab repaint a finished run without a reload.
+    """
+
+    ticker: gr.Timer
+    run_done: gr.Textbox
+
+
+def _wake_ticker() -> gr.Timer:
+    """Switch the Agents poll on. Wired to every control that starts a session."""
+    return gr.Timer(POLL_SECONDS, active=True)
+
+
+async def _cached_board(run: dict, code: str) -> str:
+    """The metric bars for a completed run, the same whether it was just asked or just finished.
+
+    **The floor is included.** `ARCHITECTURE.md` §5.2 requires `SHAM − 00000` beside every live
+    cell, and a Dial board index with no floor statement invites exactly the reading the control
+    cells exist to prevent.
+    """
+    from twinlab.services.metrics_view import build_metric_bars
+    from twinlab.services.results import session_floor
+
+    bars = build_metric_bars(
+        (run.get("metrics") or {}).get("shifts"),
+        index_value=run.get("index_value"),
+        twins_n=int(run.get("twins_n") or 0),
+        version_code=code,
+        floor=await session_floor(),
+    )
+    return metric_bars(bars, cached=True)
+
+
+def _agents_tab(signals: _LabSignals) -> None:
     """`docs/06` §3.1. Five cards, three workflow buttons **in order**, the log and the status."""
     from twinlab.services.menu import AGENT_CARDS
     from twinlab.services.runs import STOP_NOTE, WORKFLOW_BUTTONS
@@ -190,11 +249,11 @@ def _agents_tab() -> None:
         with no quality-passed twins says so here — in the page, beside the button — instead of
         creating a session row and dying in a background task.
         """
-        from config.settings import settings as app_settings
         from twinlab.services.config import load_twin_config
         from twinlab.services.lab import twin_rows
         from twinlab.services.runs import (
             check_eligibility,
+            effective_panel_size,
             population_counts,
             quality_budget_view,
             sweep_budget_view,
@@ -204,9 +263,13 @@ def _agents_tab() -> None:
         if kind == "quality":
             twins = len(await twin_rows())
             view = await quality_budget_view(twins=twins, repeats=cfg.quality_runs_per_twin)
+            from twinlab.services.config_match import describe
+
+            # RESEARCHER 2026-10-05: a verdict belongs to the config it was made under, so the
+            # confirm step says which model and temperature these verdicts will be for.
             title = (
                 f"Run the twin quality test on {twins:,} twins, "
-                f"{cfg.quality_runs_per_twin} repeat(s) each"
+                f"{cfg.quality_runs_per_twin} repeat(s) each, for {await describe()}"
             )
             # The gate is what *produces* quality-passed twins, so it has no panel and no
             # population: showing the control here would imply a choice that does not exist.
@@ -222,10 +285,14 @@ def _agents_tab() -> None:
         )
         view = await sweep_budget_view(iterations=iterations)
         stored = _stored_population()
-        ready = await check_eligibility(stored, app_settings.panel_size)
+        ready = await check_eligibility(stored, effective_panel_size())
         note = (
             f"**Not ready.** {ready['reason']}" if not ready["ok"]
-            else f"{ready['eligible']} twin(s) eligible for a panel of {ready['panel_size']}."
+            else (
+                f"{ready['eligible']} twin(s) eligible for a panel of {ready['panel_size']}, "
+                f"qualified for {ready['config_model']} at temperature "
+                f"{float(ready['config_temperature']):g}."
+            )
         )
         return (
             gr.update(visible=True),
@@ -236,15 +303,6 @@ def _agents_tab() -> None:
             note,
             kind,
         )
-
-    def _stored_population() -> str:
-        """The default the control opens on. §3.6: **the current stored value**, never a guess.
-
-        `sessions.population` defaults to `'real'` in the DDL and that is what the code has always
-        used, so that is what is shown. It is a default the researcher can see and change, which is
-        the whole point — it is not a study decision taken in code.
-        """
-        return "real"
 
     for key, button in buttons.items():
         button.click(
@@ -262,10 +320,9 @@ def _agents_tab() -> None:
         Without this the readiness line would describe the population they just moved away from,
         which is worse than no line at all.
         """
-        from config.settings import settings as app_settings
-        from twinlab.services.runs import check_eligibility
+        from twinlab.services.runs import check_eligibility, effective_panel_size
 
-        ready = await check_eligibility(chosen, app_settings.panel_size)
+        ready = await check_eligibility(chosen, effective_panel_size())
         if ready["ok"]:
             return f"{ready['eligible']} twin(s) eligible for a panel of {ready['panel_size']}."
         return f"**Not ready.** {ready['reason']}"
@@ -370,7 +427,9 @@ def _agents_tab() -> None:
         paused = await paused_sessions()
         if not paused:
             return "**Nothing to resume.** No session is paused."
-        newest = paused[-1]
+        # `paused_sessions` is newest first. It used to be sorted by uuid, so `[-1]` resumed an
+        # arbitrary old session rather than the one the researcher had just stopped.
+        newest = paused[0]
         try:
             await resume_session(newest.session_id)
         except (SessionAlreadyRunning, NotReadyToSweep) as exc:
@@ -401,7 +460,7 @@ def _agents_tab() -> None:
     #: **Off when nothing is running.** `ARCHITECTURE_UPDATE.md` §3.1 point 4: an idle Agents page
     #: must make zero database calls. The three workflow buttons, Stop and Resume all switch it on,
     #: and `_poll` switches it off again once the session it is watching reaches a terminal state.
-    ticker = gr.Timer(POLL_SECONDS, active=False)
+    ticker = signals.ticker
 
     async def _poll(after_id: int, seen: list, watching: str | None, seen_fp: dict):
         """Incremental, and **idempotent in the DOM**. `docs/04` §7.3, `ARCHITECTURE_UPDATE.md`
@@ -457,6 +516,13 @@ def _agents_tab() -> None:
             timer = gr.Timer(POLL_SECONDS, active=True)
 
         after: dict = {"log": [session_id, next_id], "live": live}
+        # A live → finished transition is the moment the Dial board and Results must repaint. It is
+        # checked **before** the early return below, because a session can finish without writing a
+        # new event (`set_status` on the parent row changes no id), and a check placed after the
+        # return would miss it. The timestamp makes each finish a distinct value, so Gradio fires
+        # `.change` again even for a re-run of the same session.
+        finished = before.get("live") is True and session is not None and not live
+        done = f"{session_id}:{session.status}:{time.time_ns()}" if finished else gr.skip()
         if not fresh and before.get("log") == after["log"]:
             # Nothing moved. **No further reads**, and not one DOM subtree is touched.
             return (
@@ -464,6 +530,7 @@ def _agents_tab() -> None:
                 gr.skip(), gr.skip(), gr.skip(),
                 {**before, **after},
                 timer,
+                done,
             )
 
         cards_html = "".join(agent_card(a) for a in await agent_cards())
@@ -488,6 +555,7 @@ def _agents_tab() -> None:
             moved("job", job),
             {**before, **after},
             timer,
+            done,
         )
 
     async def _tested():
@@ -528,7 +596,7 @@ def _agents_tab() -> None:
 
     poll_outputs = [
         log, cursor, rendered, session_state, cards, status_card, job_line,
-        fingerprint, ticker,
+        fingerprint, ticker, signals.run_done,
     ]
     ticker.tick(
         _poll,
@@ -542,15 +610,17 @@ def _agents_tab() -> None:
         inputs=[cursor, rendered, session_state, fingerprint],
         outputs=poll_outputs,
     )
-    # Starting, stopping or resuming is the only thing that wakes the timer.
+    # Starting, stopping or resuming wakes the timer. The Dial board and Rerun also start sessions,
+    # and they wake it from their own tab (`_dial_board_tab`) — before, they did not, so a run
+    # started there left these cards frozen until a reload.
     for trigger in (confirm_go, stop_button, resume_button):
-        trigger.click(lambda: gr.Timer(POLL_SECONDS, active=True), outputs=ticker)
+        trigger.click(_wake_ticker, outputs=ticker)
 
 
 # ================================================================= Dial board
 
 
-def _dial_board_tab() -> None:
+def _dial_board_tab(signals: _LabSignals) -> None:
     """`docs/06` §3.2. **Changing a dial does no network work.**"""
     from twinlab.services.dials import CONTROL_REASON, LEVER_ORDER
 
@@ -571,6 +641,41 @@ def _dial_board_tab() -> None:
             gr.Markdown(CONTROL_REASON, elem_classes=["tl-dial-note"])
         with gr.Column(scale=4):
             summary = gr.HTML("")
+
+    # M19 WP-5. *Ask the twins* used to call `ask_twins(code)` with no population and no panel
+    # size, so on an all-synthetic database it always refused — naming a population control that
+    # existed only on the Agents tab. It also started a session with **no cost shown**, which
+    # `docs/06` §9 requires of every long action and which the Agents, Twins and Validity tabs
+    # already do. Both are fixed by giving this button the same confirm step they have.
+    with gr.Group(visible=False) as dial_confirm:
+        dial_confirm_title = gr.Markdown("")
+        dial_budget = gr.HTML("")
+        with gr.Row():
+            dial_population = gr.Radio(
+                choices=["real", "synthetic", "both"],
+                value="real",
+                label="Which twins should answer?",
+                elem_classes=["tl-toggle"],
+            )
+            # Reading (b) of the plan's Q3, confirmed by the researcher: the panel is **frozen at
+            # the chosen size**, so every cell in the session is answered by the same twins and
+            # the indices stay differenceable against each other and against the 00000 and SHAM
+            # floors (I14). A census with no frozen panel would be cheaper to look at and
+            # impossible to difference.
+            dial_panel_size = gr.Number(
+                value=settings.panel_size,
+                precision=0,
+                minimum=1,
+                label="How many twins",
+            )
+            dial_every = gr.Checkbox(value=False, label="Use every eligible twin")
+        dial_counts = gr.Markdown("")
+        dial_readiness = gr.Markdown("")
+        with gr.Row():
+            dial_go = gr.Button("Start", variant="primary")
+            gr.Button("Cancel").click(
+                lambda: gr.update(visible=False), outputs=dial_confirm
+            )
 
     results = gr.HTML("")
     rerun_row = gr.Row(visible=False)
@@ -598,16 +703,97 @@ def _dial_board_tab() -> None:
     for radio in inputs:
         radio.change(_on_dial, inputs=inputs, outputs=[summary, ask])
 
-    async def _ask(*values: int):
+    async def _eligible_count(population: str) -> int:
+        """How many twins *could* answer. One read, no writes."""
+        from twinlab.services.runs import check_eligibility
+
+        # `panel_size=1` asks only "is there anybody", so the count comes back whether or not the
+        # researcher's chosen size is satisfiable.
+        ready = await check_eligibility(population, 1)
+        return int(ready.get("eligible") or 0)
+
+    async def _resolve_size(population: str, size: float | None, every: bool) -> int:
+        """The panel size this confirm step would actually freeze onto the session."""
+        if every:
+            return await _eligible_count(population)
+        return max(int(size or 0), 0)
+
+    async def _dial_readiness_line(population: str, size: int) -> str:
+        from twinlab.services.runs import check_eligibility
+
+        if size <= 0:
+            return (
+                "**Not ready.** No twins selected. A run with no twins is a failure, never a "
+                "result with an index of 0.000 (I15)."
+            )
+        ready = await check_eligibility(population, size)
+        if ready["ok"]:
+            return (
+                f"{ready['eligible']} twin(s) eligible for {ready['config_model']} at temperature "
+                f"{float(ready['config_temperature']):g}; the panel will be frozen at "
+                f"{ready['panel_size']} and every cell in this session uses those same twins "
+                "(I14). The 00000 and SHAM floors come from each twin's quality test, so this "
+                "run asks only its versions."
+            )
+        return f"**Not ready.** {ready['reason']}"
+
+    async def _open_confirm(*values: int):
+        """The cost and the population, **before** a session row exists. No model call. WP-5.
+
+        Nothing here writes: `check_eligibility` and the budget are both pure reads, so cancelling
+        leaves no trace (`docs/06` §9).
+        """
+        from twinlab.services.dials import code_from_dials
+        from twinlab.services.runs import (
+            effective_panel_size,
+            population_counts,
+            sweep_budget_view,
+        )
+
+        code = code_from_dials(dict(zip(LEVER_ORDER, values, strict=True)))
+        population = _stored_population()
+        size = effective_panel_size()
+        view = await sweep_budget_view(iterations=1, panel_size=size, start_code=code)
+        return (
+            gr.update(visible=True),
+            f"### Ask the twins for `{code}`",
+            budget_summary(view),
+            gr.update(value=population),
+            gr.update(value=size),
+            gr.update(value=False),
+            await population_counts(),
+            await _dial_readiness_line(population, size),
+        )
+
+    async def _recost(population: str, size: float | None, every: bool, *values: int):
+        """Re-cost and re-pre-flight when any of the three controls moves. Reads only."""
+        from twinlab.services.dials import code_from_dials
+        from twinlab.services.runs import sweep_budget_view
+
+        resolved = await _resolve_size(population, size, every)
+        code = code_from_dials(dict(zip(LEVER_ORDER, values, strict=True)))
+        view = await sweep_budget_view(
+            iterations=1, panel_size=max(resolved, 1), start_code=code
+        )
+        return (
+            budget_summary(view),
+            gr.update(value=resolved) if every else gr.update(),
+            await _dial_readiness_line(population, resolved),
+        )
+
+    async def _ask(population: str, size: float | None, every: bool, *values: int):
         """`docs/04` §6.1's contract. **No model call on this path.**
 
         A cache hit renders immediately and offers *Rerun?*; a miss creates a real session and
         starts it in the background, so its log appears like any other run. `00000` is refused by
         the service as well as by the disabled button — neither path alone is load-bearing
         (`docs/03` §6.1).
+
+        The population and the panel size the researcher chose are passed through explicitly
+        (WP-5). `ask_twins` has always taken both; this screen simply never supplied them, so it
+        ran against `population='real'` and `settings.panel_size` whatever was on the screen.
         """
         from twinlab.services.dials import code_from_dials
-        from twinlab.services.metrics_view import build_metric_bars
         from twinlab.services.runs import (
             ControlCellError,
             NotReadyToSweep,
@@ -619,39 +805,41 @@ def _dial_board_tab() -> None:
         code = code_from_dials(dict(zip(LEVER_ORDER, values, strict=True)))
         run = await cached_run(code)
         if run is not None:
-            bars = build_metric_bars(
-                (run.get("metrics") or {}).get("shifts"),
-                index_value=run.get("index_value"),
-                twins_n=int(run.get("twins_n") or 0),
-                version_code=code,
-            )
             return (
-                metric_bars(bars, cached=True),
+                await _cached_board(run, code),
                 gr.update(visible=True),
                 run.get("session_id"),
+                gr.update(visible=False),
             )
+        resolved = await _resolve_size(population, size, every)
         try:
-            session = await ask_twins(code)
+            session = await ask_twins(
+                code, population=population, panel_size=resolved
+            )
         except (ControlCellError, NotReadyToSweep, SessionAlreadyRunning) as exc:
             return (
                 error_state("Nothing was started.", type(exc).__name__, str(exc)[:300]),
                 gr.update(visible=False),
                 None,
+                gr.update(visible=False),
             )
         except Exception as exc:  # noqa: BLE001 — a dead button is worse than a named failure
             return (
                 error_state("Nothing was started.", type(exc).__name__, str(exc)[:300]),
                 gr.update(visible=False),
                 None,
+                gr.update(visible=False),
             )
         return (
             f'<div class="tl-note tl-note-ok"><strong>Started {esc(code)} as session '
-            f"{esc(session.session_id[:8])}.</strong><div>It runs in the background and "
-            "continues if you change tab. Watch it in <strong>Agents → What the agents "
-            "said</strong>; the result lands here and on the Results tab when it finishes."
-            "</div></div>",
+            f"{esc(session.session_id[:8])}.</strong><div>{resolved} twin(s) from the "
+            f"<strong>{esc(population)}</strong> population, frozen as this session's panel. "
+            "It runs in the background and continues if you change tab. Watch it in "
+            "<strong>Agents → What the agents said</strong>; the result lands here and on the "
+            "Results tab when it finishes.</div></div>",
             gr.update(visible=False),
             session.session_id,
+            gr.update(visible=False),
         )
 
     async def _rerun(session_id: str | None, *values: int):
@@ -660,6 +848,10 @@ def _dial_board_tab() -> None:
         A rerun answered by a different set of twins is not a rerun; it is a different experiment
         wearing the same version code. `services.runs.rerun` defaults to inheriting, and this
         passes the originating session rather than letting it default to a fresh draw.
+
+        It deliberately takes **neither** the population nor the panel size from the confirm step
+        above: both are inherited, and letting a rerun take new values is exactly the thing I14
+        forbids.
         """
         from twinlab.services.dials import code_from_dials
         from twinlab.services.runs import (
@@ -691,14 +883,59 @@ def _dial_board_tab() -> None:
             "Watch it in Agents → What the agents said."
         )
 
+    async def _refresh_board(_done: str, *values: int):
+        """Repaint a finished run on the board, with no reload. Reads only, and only on a finish.
+
+        Before, the board showed a result only when *Start* found it cached, so a run that finished
+        while the researcher watched it did not appear here until the page was reloaded.
+        """
+        from twinlab.services.dials import code_from_dials
+        from twinlab.services.runs import cached_run
+
+        code = code_from_dials(dict(zip(LEVER_ORDER, values, strict=True)))
+        run = await cached_run(code)
+        if run is None:
+            return gr.skip(), gr.skip(), gr.skip()
+        return (
+            await _cached_board(run, code),
+            gr.update(visible=True),
+            run.get("session_id"),
+        )
+
     rerun_button.click(_rerun, inputs=[cached_session, *inputs], outputs=rerun_note)
-    ask.click(_ask, inputs=inputs, outputs=[results, rerun_row, cached_session])
+    # Starting a session from here wakes the Agents poll, so its cards and log move as it runs.
+    dial_go.click(_wake_ticker, outputs=signals.ticker)
+    rerun_button.click(_wake_ticker, outputs=signals.ticker)
+    signals.run_done.change(
+        _refresh_board,
+        inputs=[signals.run_done, *inputs],
+        outputs=[results, rerun_row, cached_session],
+    )
+    # The button now opens the confirm step; *Start* inside it is what asks.
+    ask.click(
+        _open_confirm,
+        inputs=inputs,
+        outputs=[
+            dial_confirm, dial_confirm_title, dial_budget, dial_population,
+            dial_panel_size, dial_every, dial_counts, dial_readiness,
+        ],
+    )
+    recost_inputs = [dial_population, dial_panel_size, dial_every, *inputs]
+    recost_outputs = [dial_budget, dial_panel_size, dial_readiness]
+    dial_population.change(_recost, inputs=recost_inputs, outputs=recost_outputs)
+    dial_panel_size.change(_recost, inputs=recost_inputs, outputs=recost_outputs)
+    dial_every.change(_recost, inputs=recost_inputs, outputs=recost_outputs)
+    dial_go.click(
+        _ask,
+        inputs=recost_inputs,
+        outputs=[results, rerun_row, cached_session, dial_confirm],
+    )
     # Paint the initial state once. It reads the radios rather than assuming zeros, and it stops
     # after the first tick -- a repeating timer would overwrite every dial the researcher moves.
     load_once(_on_dial, inputs=inputs, outputs=[summary, ask])
 
 
-# ====================================================================== Twins
+# ===================================================================== Twins
 
 
 def _twins_tab() -> None:
@@ -740,6 +977,42 @@ def _twins_tab() -> None:
                 elem_id="tl-twin-pick",
                 info="Clicking a row fills this and opens the twin on the right.",
             )
+
+            # Deleting twins. **A `gr.CheckboxGroup`, not checkboxes in the table above**: that
+            # table is `gr.HTML`, and Gradio gives no way to read a tick out of rendered markup.
+            # The degradation is in the styling rather than the content (`CLAUDE.md`) — the boxes
+            # list exactly the twins the filters select, so the selection is still made by
+            # ticking, and `docs/DECISIONS.md` records the choice.
+            with gr.Accordion("Delete twins", open=False):
+                gr.Markdown(
+                    "Tick the twins to delete. This removes the twin **and the survey it was "
+                    "built from**, real or synthetic — unlike the Generator's *delete all "
+                    "synthetic*, which can never touch a real row. Narrow the list with the "
+                    "filters above."
+                )
+                d_pick = gr.CheckboxGroup([], label="Twins", value=[])
+                d_all = gr.Button("Select all shown", size="sm")
+                d_button = gr.Button("Delete selected", elem_classes=["tl-btn-danger"])
+                with gr.Group(visible=False) as d_confirm:
+                    d_line = gr.Markdown("")
+                    d_purge = gr.Checkbox(
+                        label=(
+                            "Also withdraw their sessions, runs and validity results "
+                            "(required when a twin has answered a run)"
+                        ),
+                        value=False,
+                        visible=False,
+                    )
+                    d_keep_survey = gr.Checkbox(
+                        label="Keep the surveys, delete only the twins (lets you re-import)",
+                        value=False,
+                    )
+                    with gr.Row():
+                        d_go = gr.Button("Delete them", elem_classes=["tl-btn-danger"])
+                        gr.Button("Cancel").click(
+                            lambda: gr.update(visible=False), outputs=d_confirm
+                        )
+                d_note = gr.Markdown("")
         with gr.Column(scale=4):
             compare = gr.Dropdown([], label="Compare with version", value=None)
             panel = gr.HTML("")
@@ -775,13 +1048,110 @@ def _twins_tab() -> None:
             f'<div id="tl-twin-pick-table">{table}</div>',
             gr.update(choices=await comparable_codes()),
             f"{len(rows):,} {'twin' if len(rows) == 1 else 'twins'} selected by these filters.",
+            # The delete list follows the filters, and the ticks are cleared when it does: a
+            # selection left over from a previous filter is a selection the researcher can no
+            # longer see, and this button deletes things.
+            gr.update(
+                choices=[(f"{r.twin_id} · {r.source}", r.twin_id) for r in rows], value=[]
+            ),
         )
 
     filters = [f_source, f_city, f_service, f_quality]
     for control in filters:
         control.change(
-            _list, inputs=filters, outputs=[twin_table, compare, selected_line]
+            _list, inputs=filters, outputs=[twin_table, compare, selected_line, d_pick]
         )
+
+    async def _select_all(source: str, city: str, service: str, quality: str):
+        from twinlab.services.lab import twin_rows
+
+        rows = await twin_rows(
+            source=source or None,
+            city=city or None,
+            service=service or None,
+            quality=quality or None,
+        )
+        return gr.update(value=[r.twin_id for r in rows])
+
+    d_all.click(_select_all, inputs=filters, outputs=d_pick)
+
+    async def _ask_twin_delete(chosen: list[str]):
+        """The cost of **this** selection, before the button is live. `docs/06` §9.
+
+        The collateral line is the one that matters: deleting two twins can require withdrawing a
+        session that forty others answered, and a researcher who finds that out afterwards has
+        lost evidence they never agreed to lose.
+        """
+        from twinlab.services.surveys import twin_delete_preflight
+
+        if not chosen:
+            return gr.update(visible=False), "", gr.update(visible=False), "Nothing ticked."
+
+        pre = await twin_delete_preflight(list(chosen))
+        real = pre["real_twin_ids"]
+        line = f"### Delete {len(pre['twin_ids'])} twin(s)?\n"
+        if real:
+            line += (
+                f"**{len(real)} of them are real respondents** "
+                f"({', '.join(real[:5])}). Their surveys go too unless you keep them below.\n\n"
+            )
+        if pre["blocked_twin_ids"]:
+            rows = {s["session_id"]: s for s in pre["dependent_sessions"]}
+            named = ", ".join(f"*{r['name']}* ({r['runs_n']} run(s))" for r in rows.values())
+            line += (
+                f"{len(pre['blocked_twin_ids'])} of them **are evidence** in {named}. A twin "
+                "cannot leave behind a stored result that was computed over it, so those "
+                "sessions and their validity verdicts have to be withdrawn as well."
+            )
+            if pre["collateral_twin_ids"]:
+                line += (
+                    f"\n\n⚠️ **That also withdraws {len(pre['collateral_twin_ids'])} other "
+                    f"twin(s)' answers** from those sessions "
+                    f"({', '.join(pre['collateral_twin_ids'][:6])}"
+                    + (" …" if len(pre["collateral_twin_ids"]) > 6 else "")
+                    + "). Those twins are **not** deleted — they lose the run they answered."
+                )
+        return (
+            gr.update(visible=True),
+            line,
+            gr.update(visible=bool(pre["blocked_twin_ids"]), value=False),
+            "",
+        )
+
+    async def _do_twin_delete(chosen: list[str], purge: bool, keep_surveys: bool):
+        from twinlab.services.surveys import DeleteBlocked, delete_twins
+
+        try:
+            removed = await delete_twins(
+                list(chosen),
+                purge_sessions=bool(purge),
+                delete_surveys=not bool(keep_surveys),
+            )
+        except DeleteBlocked as exc:
+            return gr.update(visible=True), f"**Nothing was deleted.** {exc}"
+        note = f"Deleted {removed['twins']:,} twin(s)"
+        if removed["submissions"]:
+            note += f" and {removed['submissions']:,} survey(s)"
+        purged = removed.get("purged") or {}
+        if purged:
+            note += (
+                f". **Withdrew {purged.get('sessions', 0):,} session(s)**: "
+                + ", ".join(
+                    f"{n:,} {t.replace('_', ' ')}"
+                    for t, n in sorted(purged.items())
+                    if t != "sessions"
+                )
+            )
+        return gr.update(visible=False), note + "."
+
+    d_button.click(
+        _ask_twin_delete, inputs=d_pick, outputs=[d_confirm, d_line, d_purge, d_note]
+    )
+    d_go.click(
+        _do_twin_delete,
+        inputs=[d_pick, d_purge, d_keep_survey],
+        outputs=[d_confirm, d_note],
+    )
 
     async def _confirm_quality(source: str, city: str, service: str, quality: str):
         """The budget **for the twins these filters select**, before anything starts (`docs/06` §9).
@@ -812,7 +1182,8 @@ def _twins_tab() -> None:
             gr.update(visible=True),
             f"### Run the twin quality test on {len(rows):,} twin(s)\n"
             f"Six Part 17 versions × {repeats} repeat(s) each, scored against each twin's own "
-            "driver. A twin below threshold is dropped, not tuned.",
+            "driver, plus the two control answers (00000, SHAM) per twin. A twin below threshold "
+            "is dropped, not tuned. Verdicts are for the config shown in the budget.",
             budget_summary(view),
         )
 
@@ -873,7 +1244,7 @@ def _twins_tab() -> None:
 
     picked.change(_open, inputs=[picked, compare], outputs=panel)
     compare.change(_open, inputs=[picked, compare], outputs=panel)
-    load_once(_list, inputs=filters, outputs=[twin_table, compare, selected_line])
+    load_once(_list, inputs=filters, outputs=[twin_table, compare, selected_line, d_pick])
     # A row click fills the textbox above, which is what opens the panel. Without it the table is
     # a list of opaque keys to re-type (`CLAUDE.md` rule 8, `docs/05` §8.3).
     load_js(_row_click_js("tl-twin-pick"))
@@ -897,16 +1268,28 @@ def _persona_html(view) -> str:
 
 
 def _validation_tab() -> None:
-    """`docs/06` §3.4. Canonical part numbers, and the **Arm seen** column."""
+    """`docs/06` §3.4. Canonical part numbers, and the **Arm seen** column.
+
+    **This tab is a read-only view over `twin_quality_runs`.** There is no separate "validation
+    run" to start: `validation_view` aggregates H2 error, H3 error and the three Pearson `r`s from
+    the rows the twin quality test writes. Until M19 WP-7 that produced a screen with a
+    primary-styled button that did nothing (`interactive=False`, no handler) above a table whose
+    empty state read *"Press Check twins against their drivers"* — instructing the researcher to
+    press the control that was disabled, and saying nothing about where the numbers come from.
+
+    The honest action is a **refresh**, so that is what the button is and what it is called. It
+    makes no model call: every number here is re-aggregated from stored rows.
+    """
     from twinlab.services.lab import SYNTHETIC_WARNING
 
     gr.Markdown("### Validation: do twins answer like their drivers?")
-    gr.Button(
-        "Check twins against their drivers",
-        variant="primary",
-        interactive=False,  # no handler; disabled rather than silently inert
+    gr.Markdown(
+        "These numbers are produced by the **twin quality test**, which you run on the "
+        "**Twins** tab. Its verdicts land here. Nothing on this tab calls a model."
     )
+    recheck = gr.Button("Recheck twins against their drivers", variant="primary")
     warning = gr.HTML("")
+    protocol_line = gr.Markdown("")
     summary = gr.HTML("")
     table = gr.HTML("")
 
@@ -965,9 +1348,12 @@ def _validation_tab() -> None:
                 ]
                 for r in rows
             ],
+            # WP-7. The empty state says where the data comes from and counts what is missing,
+            # instead of naming a button to press.
             empty=empty_state(
-                "Validation has not been run.",
-                "Press Check twins against their drivers.",
+                f"{view.twins_checked} of {view.twins_total} twins have a stored quality run.",
+                "These numbers are produced by the twin quality test. Run it on the Twins tab; "
+                "the verdicts land here.",
             ),
         )
         warn = (
@@ -975,9 +1361,31 @@ def _validation_tab() -> None:
             if view.synthetic_present
             else ""
         )
-        return warn, card, body
+        return warn, _protocol_note(view), card, body
 
-    load_once(_load, outputs=[warning, summary, table])
+    def _protocol_note(view) -> str:
+        """Which H3 presentation produced these rows. WP-7 item 3.
+
+        An H3 number must always say how it was collected: `h3_single_call_v1` shows a twin all
+        six Part-17 versions in one call, the way the human respondent saw them (M19 WP-3), while
+        the earlier protocol asked each version in its own call. The two are **different
+        measurements and cannot be pooled**, so a table carrying both says so rather than
+        averaging across them.
+        """
+        if not view.h3_protocols:
+            return ""
+        if len(view.h3_protocols) == 1:
+            return f"Part 17 answers collected under protocol `{esc(view.h3_protocols[0])}`."
+        joined = "`, `".join(esc(p) for p in view.h3_protocols)
+        return (
+            f"⚠️ **These rows mix {len(view.h3_protocols)} H3 protocols** (`{joined}`). "
+            "Six-in-one-context and six-in-isolation are different measurements and must not be "
+            "pooled — exclude one before quoting an average."
+        )
+
+    outputs = [warning, protocol_line, summary, table]
+    recheck.click(_load, outputs=outputs)
+    load_once(_load, outputs=outputs)
 
 
 # ============================================================== Validity tests
@@ -1001,7 +1409,40 @@ def _validity_tab() -> None:
     # `docs/08` §6.2 — mandatory wherever the tested set may include synthetic twins. "A green
     # board on synthetic data is the expected result and means nothing."
     gr.HTML(f'<div class="tl-warn-strip" role="note">{esc(SYNTHETIC_WARNING)}</div>')
-    twins_per_test = gr.Number(value=20, label="Twins per test", precision=0)
+
+    # M19 WP-6 item 4. There was no control anywhere for **which** session or **which** version a
+    # test ran against, so every test took `latest_session_id` (the newest session of any kind,
+    # which on this database was a render session with no panel) and `settings.start_code` (which
+    # had never been rendered). Eight cards, eight buttons, and no path by which any of them could
+    # produce a row.
+    #
+    # M19 WP-7: there used to be a "Twins per test" number here too, feeding the confirm step's
+    # budget. Tests 2 and 4-8 always put a stimulus to the **frozen** panel of the session above
+    # (I14) — the number of twins is not a free parameter once a session is picked, so a manual
+    # count could only ever disagree with what the run actually did. Removed; the budget below
+    # reads the panel's own size.
+    with gr.Row():
+        session_pick = gr.Dropdown(
+            choices=[],
+            label="Session to test (only sessions with a frozen panel)",
+            interactive=True,
+        )
+        version_pick = gr.Dropdown(
+            choices=[],
+            label="Version to test (only versions that passed the Checker)",
+            interactive=True,
+        )
+    second_model = gr.Textbox(
+        value="",
+        label="Second model name (test 7 only)",
+        info=(
+            "Test 7 asks whether the same twins answer the same way under a different model, "
+            "which cannot be answered against one model. Any model this installation's endpoint "
+            "serves works by name — mistral-large-4 or deepseek-v4-pro:0813, say; crossing model "
+            "families is worth more than two variants of one base model agreeing. The name is "
+            "checked before the test spends anything. Leave empty and test 7 will say so."
+        ),
+    )
 
     # `docs/06` §3.5's eight cards. The Run control is **inside its own card**, not in a separate
     # list of buttons below the grid: a researcher picks a test by reading it, and a button whose
@@ -1012,6 +1453,8 @@ def _validity_tab() -> None:
     # The buttons are still created BEFORE the confirm step so they read above it, and their
     # handlers are attached below, once `confirm` exists.
     buttons: dict[int, gr.Button] = {}
+    #: Per-card readiness line, computed from the same reads the test itself makes (WP-6 item 5).
+    readiness: dict[int, gr.Markdown] = {}
     with gr.Row(elem_classes=["tl-validity-grid"]):
         for card in VALIDITY_TESTS:
             with gr.Column(min_width=280):
@@ -1027,6 +1470,9 @@ def _validity_tab() -> None:
                         + "</div>"
                         f'<div class="tl-validity-q">{esc(card.question)}</div>'
                         f'<div class="tl-validity-what">{esc(card.what_it_does)}</div>'
+                    )
+                    readiness[card.number] = gr.Markdown(
+                        "", elem_classes=["tl-validity-ready"]
                     )
                     buttons[card.number] = gr.Button(
                         "Run this test  →",
@@ -1044,30 +1490,99 @@ def _validity_tab() -> None:
     pending = gr.State(None)
     note = gr.Markdown("")
 
-    async def _confirm(number: int, twins: float | None):
-        from twinlab.services.validity import calls_for, validity_budget_view
+    async def _confirm(
+        number: int,
+        session: str | None,
+        version: str | None,
+        model_name: str | None,
+    ):
+        from twinlab.services.validity import test_readiness, validity_budget_view
 
-        n = int(twins or 0)
-        view = await validity_budget_view(number, twins=n)
+        view = await validity_budget_view(number, session_id=session or None)
         card = VALIDITY_TESTS[number - 1]
-        cost = calls_for(number, n)
-        free = "" if cost else " This test re-scores stored answers and makes no model call."
+        free = "" if view.calls else " This test re-scores stored answers and makes no model call."
+        ready = await test_readiness(
+            number,
+            session_id=session or None,
+            version_code=version or None,
+            second_model_name=model_name or None,
+        )
+        # Shown on the confirm step as well as on the card, because the card was painted when the
+        # tab loaded and the researcher may have changed the session or version since.
+        state = (
+            f"**Ready.** {ready['reason']}" if ready["ready"]
+            else f"**Not ready** — {ready['reason']}"
+        )
         return (
             gr.update(visible=True),
-            f"### {number}. {card.name}\n{card.question}{free}",
+            f"### {number}. {card.name}\n{card.question}{free}\n\n{state}",
             budget_summary(view),
             number,
         )
 
+    aim_inputs = [session_pick, version_pick, second_model]
     for number, button in buttons.items():
         button.click(
             _confirm,
-            inputs=[gr.State(number), twins_per_test],
+            inputs=[gr.State(number), *aim_inputs],
             outputs=[confirm, confirm_title, confirm_budget, pending],
         )
 
-    async def _run(number: int | None):
-        """Run it, or hand it to the loop. **No model call happens in this function.**"""
+    async def _readiness_lines(session: str | None, version: str | None, model_name: str | None):
+        """Every card's readiness, recomputed when an aiming control moves. Reads only.
+
+        Computed rather than guessed from the card's metadata: a line that can disagree with what
+        the test will actually do is worse than no line.
+        """
+        from twinlab.services.validity import test_readiness
+
+        out = []
+        for card in VALIDITY_TESTS:
+            try:
+                ready = await test_readiness(
+                    card.number,
+                    session_id=session or None,
+                    version_code=version or None,
+                    second_model_name=model_name or None,
+                )
+            except Exception as exc:  # noqa: BLE001 — name it rather than leave the card blank
+                out.append(f"*could not check: {type(exc).__name__}*")
+                continue
+            out.append(
+                "\✓ ready" if ready["ready"] else f"**needs** {ready['reason']}"
+            )
+        return out
+
+    async def _load_aim():
+        """Populate the two dropdowns and paint every readiness line. One pass, reads only."""
+        from twinlab.services.runs import sessions_with_panels
+        from twinlab.services.validity import runnable_version_codes
+
+        sessions = await sessions_with_panels()
+        codes = await runnable_version_codes()
+        session_value = sessions[0][0] if sessions else None
+        version_value = codes[0] if codes else None
+        lines = await _readiness_lines(session_value, version_value, "")
+        return (
+            gr.update(
+                choices=[(label, sid) for sid, label in sessions], value=session_value
+            ),
+            gr.update(choices=codes, value=version_value),
+            *lines,
+        )
+
+    async def _run(
+        number: int | None,
+        session: str | None,
+        version: str | None,
+        model_name: str | None,
+    ):
+        """Run it, or hand it to the loop. **No model call happens in this function.**
+
+        The session, version and second model the researcher chose are passed through (WP-6 item
+        4). Before M19 none of the three reached the service, so every test ran against the newest
+        session of any kind and `settings.start_code`.
+        """
         from twinlab.services.twin_runtime import ask_panel_twins
         from twinlab.services.validity import (
             enqueue_validity_test,
@@ -1076,39 +1591,59 @@ def _validity_tab() -> None:
         from twinlab.validity.tests import CALLS_PER_TWIN
 
         if number is None:
-            return gr.update(visible=False), "No test selected.", await _load()
+            return gr.update(visible=False), "No test selected.", await _load(), gr.skip()
+        aim: dict[str, object] = {
+            "session_id": session or None,
+            "version_code": version or None,
+            "second_model_name": model_name or None,
+        }
         if CALLS_PER_TWIN[number] == 0:
             # Tests 1 and 3 re-score stored vectors and take no `ask` at all, which is why
             # `docs/08` §4 gives them a cost of zero and why they run inline.
-            outcome = await run_validity_test(number)
+            outcome = await run_validity_test(number, **aim)
             return (
                 gr.update(visible=False),
                 f"**{outcome.verdict}** — {outcome.headline}",
                 await _load(),
+                gr.skip(),  # nothing queued; the poll timer is untouched
             )
         # The live twin path, injected exactly as `SessionRunner` takes `ask_twin`. Without it
         # tests 4-8 record INCONCLUSIVE and say so, which was honest but never a result.
-        enqueue_validity_test(number, ask=ask_panel_twins)
+        # The returned task is held by `enqueue_validity_test`'s own module-level set, and its
+        # done-callback writes an INCONCLUSIVE row if it raises (WP-6 item 1). Discarding it here
+        # used to mean the task could be garbage-collected mid-run and anything it raised became
+        # an "exception was never retrieved" warning at interpreter shutdown — while this handler
+        # had already promised the result would appear in the table.
+        enqueue_validity_test(number, ask=ask_panel_twins, **aim)
         return (
             gr.update(visible=False),
             f"Queued test {number}. The result appears in the table below when it finishes; "
-            "the run continues if you change tab.",
+            "the run continues if you change tab. If it cannot finish, an INCONCLUSIVE row "
+            "appears there saying why.",
             await _load(),
+            # M19 WP-7. The table used to be painted once on load, so a queued test's row stayed
+            # invisible until the page was reloaded by hand, though this message already promised
+            # it would "appear in the table below when it finishes." Wakes the poll started below.
+            gr.Timer(POLL_SECONDS, active=True),
         )
 
     gr.HTML(section_title("Results so far"))
     results = gr.HTML("")
+    # Off until a test is queued, exactly as the Agents tab's ticker (`_wake_ticker`): an idle
+    # Validity tab must make zero database calls.
+    validity_timer = gr.Timer(POLL_SECONDS, active=False)
 
     async def _load():
         from twinlab.services.lab import validity_results
 
         rows = await validity_results()
         return data_table(
-            ["When", "Test", "Twins", "Model", "Result", "Verdict"],
+            ["When", "Test", "Version", "Twins", "Model", "Result", "Verdict"],
             [
                 [
                     esc(r.when[:19]),
                     esc(r.test),
+                    esc(r.version_code or "—"),
                     str(r.twins_n),
                     esc(r.model),
                     esc(r.result),
@@ -1121,8 +1656,35 @@ def _validity_tab() -> None:
             ),
         )
 
-    confirm_go.click(_run, inputs=pending, outputs=[confirm, note, results])
+    async def _tick():
+        """One poll while a validity test is in flight. M19 WP-7.
+
+        Switching off is unconditional — sent fresh on every tick where nothing is left running, the
+        same rule the Agents tab's ticker uses, since `active=False` is idempotent. Switching on
+        happens once, in `_run`'s return; while the timer is already active this returns `gr.skip()`
+        for it rather than resetting the interval on every tick.
+        """
+        from twinlab.services.validity import pending_validity_tests
+
+        table = await _load()
+        if pending_validity_tests() == 0:
+            return table, gr.Timer(POLL_SECONDS, active=False)
+        return table, gr.skip()
+
+    confirm_go.click(
+        _run,
+        inputs=[pending, session_pick, version_pick, second_model],
+        outputs=[confirm, note, results, validity_timer],
+    )
+    validity_timer.tick(_tick, outputs=[results, validity_timer])
+
+    ready_outputs = [readiness[card.number] for card in VALIDITY_TESTS]
+    aim_controls = [session_pick, version_pick, second_model]
+    for control in aim_controls:
+        control.change(_readiness_lines, inputs=aim_controls, outputs=ready_outputs)
+
     load_once(_load, outputs=results)
+    load_once(_load_aim, outputs=[session_pick, version_pick, *ready_outputs])
 
 
 # ================================================================== Fieldwork
@@ -1192,7 +1754,7 @@ def _fieldwork_tab() -> None:
 # ==================================================================== Results
 
 
-def _results_tab() -> None:
+def _results_tab(signals: _LabSignals) -> None:
     """`docs/06` §3.7. Grid, interactions, the linear table and the seven-step side panel."""
     gr.Markdown(
         "### Results\n*Every tested version compared with Uber today. Higher index means "
@@ -1307,6 +1869,8 @@ def _results_tab() -> None:
     picked.change(_open, inputs=picked, outputs=panel)
     search.change(_load, inputs=search, outputs=[grid, table, interactions])
     load_once(_load, inputs=search, outputs=[grid, table, interactions])
+    # A finished run must reach the grid without a reload. Same loader, same outputs.
+    signals.run_done.change(_load, inputs=search, outputs=[grid, table, interactions])
     # `gr.HTML` emits no events, so a cell click is bridged into the version-code box, which is
     # what opens the panel. `docs/05` §8.3: never ship a grid without click handling -- without
     # it the grid is decoration, and the click is how a researcher reaches the scenario text.
@@ -1325,15 +1889,28 @@ def _settings_tab() -> None:
     row — so a researcher who changed the panel size saw a success message, changed nothing, and
     destroyed the seeded quality-gate thresholds in the same click.
 
-    The split is the design. The five fields on the left are `TwinConfig`'s and are editable; the
+    The split is the design. The fields on the left are `TwinConfig`'s and are editable; the
     environment-owned values on the right of them are shown read-only, because a Gradio control
     cannot change an environment variable and a control that looks editable and is not is the same
     lie in a smaller font.
+
+    **`panel_size` moved from the right to the left in M19 WP-5.** It was environment-only, which
+    left the researcher's "let every twin answer this version" with no control anywhere and made
+    the Dial board's refusal name a setting that could not be reached. `PANEL_SIZE` is still shown
+    on the right, now labelled as the default the editable field starts from.
     """
     from config.settings import settings
     from twinlab.services.config import load_twin_config
     from twinlab.services.lab import CLEAR_RUNS_NOTE
+    from twinlab.services.runs import effective_panel_size
 
+    # The **seed**, used only to give every control a value while the page is being built. It is
+    # not what is in force: `load_twin_config` reads a process override that nothing has populated
+    # at build time, so before `_refresh` runs below these are `config/twin.default.yaml`'s
+    # numbers. Every control is repainted from `app_config` on page load, because a settings screen
+    # showing the seed while the database holds something else is the same lie as a read-only
+    # control that looks editable — and it is how `show_baseline: false` sat in the YAML for a day
+    # while `app_config` ran `true`.
     cfg = load_twin_config()
 
     with gr.Row():
@@ -1350,15 +1927,35 @@ def _settings_tab() -> None:
             pct_min = gr.Number(
                 value=cfg.pct_within_1_min, label="Quality gate: lowest share within 1 point"
             )
+            # Editable from M19 WP-5. It was read-only on the right, with the environment's
+            # `PANEL_SIZE` as the only way to change it — so the researcher's question "let all
+            # the twins answer this version" had no control anywhere, and the Dial board's
+            # refusal named a setting they could not reach. It is a `TwinConfig` field now, so it
+            # is versioned on write and frozen onto every session that ran under it (I11, I14).
+            panel_size = gr.Number(
+                value=effective_panel_size(),
+                precision=0,
+                minimum=1,
+                label="Panel size (twins per sweep)",
+            )
 
             gr.Markdown("**Set outside the app** — these come from the environment, not from here.")
+            # `docs/03` §321: a recorded field, a researcher-set default, **not a UI control**.
+            # Shown because a value that governs every twin round and appears on no screen is a
+            # value nobody can check; read-only because changing it is a deliberate act against
+            # the database, not a slider. `_save` below never writes it (see there).
+            baseline_shown = gr.Textbox(
+                value=str(cfg.show_baseline),
+                label="Twin sees its own baseline numbers (set in app_config, not here)",
+                interactive=False,
+            )
             gr.Textbox(value=settings.model_badge, label="Twin model", interactive=False)
             gr.Textbox(value=settings.twinlab_model, label="Model name", interactive=False)
             gr.Number(
                 value=settings.panel_size,
                 precision=0,
                 interactive=False,
-                label="Panel size (twins per sweep)",
+                label="Panel size default (PANEL_SIZE in the environment)",
             )
             gr.Number(
                 value=settings.delay_seconds,
@@ -1381,14 +1978,65 @@ def _settings_tab() -> None:
                     "**Pause between AI calls** limits provider pressure. Raise it if calls "
                     "start being refused. It is applied before every model call.\n\n"
                     "**Panel size** sets the sweep budget: a full sweep is panel size × 243 twin "
-                    "calls. It is frozen onto a session when the session starts (I14).\n\n"
+                    "calls. It is frozen onto a session when the session starts, so every cell "
+                    "in that session is answered by the same twins (I14) and a later change "
+                    "cannot be applied to it retroactively. `PANEL_SIZE` on the right is only "
+                    "the default this field starts from.\n\n"
                     "**Temperature** is a placeholder at 0.7 and should be set from validity "
                     "test 8, not chosen."
                 )
 
-            async def _save(temp, word, runs, mae, pct):
+            #: The `TwinConfig` fields this screen owns. **`show_baseline` is deliberately absent**
+            #: and `_save` writes only these keys, so the UI path cannot change it whatever the
+            #: form holds. `services.lab.save_settings` merges over the stored row, so a key this
+            #: screen never sends is a key it can never clobber — which is the only way
+            #: "researcher-set in the database, not from here" survives a researcher pressing Save.
+            EDITABLE = (
+                "temperature",
+                "wording",
+                "quality_runs_per_twin",
+                "mae_max",
+                "pct_within_1_min",
+                "panel_size",
+            )
+
+            async def _refresh():
+                """Repaint every control from `app_config`, on page load.
+
+                Without this the screen showed `config/twin.default.yaml` — `load_twin_config`
+                merges a process override that nothing has populated when the Blocks are built. A
+                researcher read the seed, believed it, and `_save` then wrote the seed's
+                `show_baseline` back over the database's.
+                """
+                from twinlab.services.config import refresh_twin_config
+
+                try:
+                    live = await refresh_twin_config()
+                except Exception as exc:  # noqa: BLE001 — never block a page load on a config read
+                    log.warning("settings tab could not read the live config: %r", exc)
+                    return (gr.skip(),) * 7
+                return (
+                    gr.update(value=live.temperature),
+                    gr.update(value=live.wording),
+                    gr.update(value=live.quality_runs_per_twin),
+                    gr.update(value=live.mae_max),
+                    gr.update(value=live.pct_within_1_min),
+                    gr.update(value=effective_panel_size()),
+                    gr.update(value=str(live.show_baseline)),
+                )
+
+            async def _save(temp, word, runs, mae, pct, panel):
                 from twinlab.models.twin import TwinConfig
+                from twinlab.services.config import refresh_twin_config
                 from twinlab.services.lab import save_settings
+
+                # The live row, not the build-time seed: the proposal is validated against what is
+                # actually stored, and `show_baseline` is taken from there purely so the model can
+                # be constructed. It is dropped again before the write.
+                try:
+                    live = await refresh_twin_config()
+                except Exception as exc:  # noqa: BLE001
+                    return f"**Not saved.** Could not read the live config: {exc}"
 
                 # Validated before it is written, through the same model `load_twin_config` uses.
                 # `TwinConfig` forbids extras and range-checks the two gate thresholds, so a value
@@ -1400,24 +2048,60 @@ def _settings_tab() -> None:
                         quality_runs_per_twin=int(runs),
                         mae_max=float(mae),
                         pct_within_1_min=float(pct),
-                        show_baseline=cfg.show_baseline,
+                        show_baseline=live.show_baseline,
+                        panel_size=int(panel) if panel else None,
                     )
                 except ValueError as exc:
                     return f"**Not saved.** {exc}"
 
-                version = await save_settings("twin", proposed.model_dump())
+                from twinlab.services.config_match import current_fingerprint, describe
+
+                before = await current_fingerprint()
+                # Only the keys this screen owns. `save_settings` merges, so everything else on
+                # the row — `show_baseline`, `max_concurrency` — is left exactly as stored.
+                dumped = proposed.model_dump()
+                version = await save_settings(
+                    "twin", {k: dumped[k] for k in EDITABLE}
+                )
+                after = await current_fingerprint()
+                if after != before:
+                    # RESEARCHER 2026-10-05. A change to the config makes every verdict made under
+                    # the old one stale, and nothing downstream runs until the gate is run again.
+                    return (
+                        f"Saved to `app_config` as version **{version}**. The config is now "
+                        f"{await describe()}, which is not the config the quality test was run "
+                        "under. **Run the twin quality test again** before a session, validity "
+                        "test or Studio ask runs. Verdicts under the old config are kept on the "
+                        "record but do not qualify any twin now."
+                    )
+                # M19 WP-9. The old message said "this does not change what the next session runs
+                # under yet. Nothing reads `app_config` back." That had stopped being true:
+                # `services.config.refresh_twin_config` reads the row into a process override,
+                # `load_twin_config` merges it over the seed, and `services.runs.session_config`
+                # calls the refresh before every session, so a sweep already runs under what was
+                # just saved. A researcher who believed the message edited the YAML by hand
+                # instead — unversioned, unaudited, and outside the `config_version` that
+                # `twin_quality_runs` records — which actively undoes the reproducibility chain
+                # this button exists to maintain.
                 return (
-                    f"Saved to `app_config` as version **{version}**. Completed runs stay "
-                    "associated with the config they ran under.\n\n"
-                    "**This does not change what the next session runs under yet.** Nothing reads "
-                    "`app_config` back — the running values come from `config/twin.default.yaml` "
-                    "until that read path exists. Edit the YAML to change behaviour."
+                    f"Saved to `app_config` as version **{version}**. The next session, quality "
+                    "gate or Studio ask reads this; runs already completed keep the config "
+                    "version they ran under (I9). You do not need to edit any file."
                 )
 
             save.click(
                 _save,
-                inputs=[temperature, wording, quality_runs, mae_max, pct_min],
+                inputs=[temperature, wording, quality_runs, mae_max, pct_min, panel_size],
                 outputs=saved,
+            )
+            # Every control shows what is in force, not what the YAML seeds. Off the render path
+            # (`docs/05` §8.4 rule 2) — the read happens after the page is served.
+            load_once(
+                _refresh,
+                outputs=[
+                    temperature, wording, quality_runs, mae_max, pct_min, panel_size,
+                    baseline_shown,
+                ],
             )
 
         with gr.Column():
@@ -1474,17 +2158,41 @@ def _settings_tab() -> None:
                         await _available(which),
                     )
 
-                tone = "ok" if result.imported and not result.invalid else "warn"
+                # "Nothing left to import" and "nothing qualified" are opposite outcomes and used
+                # to share the word `skipped`, so a researcher whose respondent already had a
+                # working twin was told "Nothing was eligible". Since the hosted questionnaire
+                # builds the twin at submit time, that is now the ordinary case.
+                nothing_wrong = (
+                    not result.imported and not result.invalid and not result.gated
+                )
+                tone = (
+                    "ok" if (result.imported and not result.invalid) or nothing_wrong else "warn"
+                )
                 head = (
-                    f"Imported {result.imported:,}, skipped {result.skipped:,}, "
-                    f"invalid {result.invalid:,}."
+                    f"Imported {result.imported:,}, already twins {result.already_twins:,}, "
+                    f"gated out {result.gated:,}, invalid {result.invalid:,}."
                 )
                 body = ""
-                if not result.imported and not result.invalid:
+                if nothing_wrong and result.already_twins:
                     body = (
-                        "<div>Nothing was eligible. A respondent becomes a twin only if they "
-                        "are eligible, consented, answered the whole battery and agreed to a "
-                        "twin (statement 7) — and is skipped if they are already one.</div>"
+                        f"<div><strong>Nothing to do, and nothing is wrong.</strong> "
+                        f"{result.already_twins:,} respondent"
+                        f"{'s' if result.already_twins != 1 else ''} in this scope already "
+                        "ha" + ("ve" if result.already_twins != 1 else "s") + " a twin. The "
+                        "hosted questionnaire builds the twin when the driver presses send, so "
+                        "there is usually nothing left here to import — look for them on the "
+                        "Twin Lab's Twins tab.</div>"
+                    )
+                elif result.gated:
+                    body = (
+                        f"<div>{result.gated:,} respondent"
+                        f"{'s' if result.gated != 1 else ''} did not qualify. A respondent "
+                        "becomes a twin only if they are eligible, consented, answered the whole "
+                        "battery and agreed to a twin (statement 7).</div>"
+                    )
+                elif nothing_wrong:
+                    body = (
+                        "<div>There are no respondents in this scope yet.</div>"
                     )
                 if result.reasons:
                     items = "".join(f"<li>{esc(r)}</li>" for r in result.reasons)
@@ -1524,6 +2232,10 @@ _TABS = (
 )
 
 
+#: The tabs that start, watch or repaint a session. The rest take no shared state.
+_SIGNALLED_TABS = frozenset({"Agents", "Dial board", "Results"})
+
+
 def render_lab(badge: str | None = None) -> None:
     """Build Twin Lab into the enclosing Blocks context. Tab order is mandatory."""
     from twinlab.services.menu import LAB_TABS
@@ -1542,10 +2254,19 @@ def render_lab(badge: str | None = None) -> None:
             badge,
         )
         global_nav("/lab")
+        # Created once, before any tab, so every tab that starts, watches or repaints a run shares
+        # the same components. The timer is invisible; the textbox only carries the finish signal.
+        signals = _LabSignals(
+            ticker=gr.Timer(POLL_SECONDS, active=False),
+            run_done=gr.Textbox(visible=False, elem_id="tl-run-done"),
+        )
         with sub_nav(LAB_TABS):
             for name, build in _TABS:
                 with gr.Tab(name):
-                    build()
+                    if name in _SIGNALLED_TABS:
+                        build(signals)
+                    else:
+                        build()
 
 
 __all__ = ["render_lab"]

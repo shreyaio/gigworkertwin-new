@@ -28,6 +28,7 @@ from twinlab.models.stats import (
     AnalysisRunView,
     CaseMatrix,
     ModelSpec,
+    ModelVariant,
     Population,
     Screening,
     StatsTableSpec,
@@ -70,6 +71,7 @@ async def create_analysis(
     bootstrap_samples: int = plssem.BOOTSTRAP_DEFAULT,
     seed: int = 20260929,
     pool_legacy: bool = False,
+    variant: ModelVariant = "full",
     backend: DbBackend | None = None,
 ) -> tuple[str, CaseMatrix]:
     """Create the run row and build its matrix. Nothing is computed yet.
@@ -77,6 +79,10 @@ async def create_analysis(
     The matrix is built **before** the row is inserted, because `analysis_has_cases` requires a
     real `n_cases` and a run row that exists with nobody in it is exactly the shape I15 forbids in
     the counterfactual layer.
+
+    ``variant`` defaults to ``"full"``, the reported model. ``"partial"`` is a declared robustness
+    check (`docs/07` §7.2) and is recorded on the row, so `run_analysis` resumes under the model the
+    matrix was built for rather than under the default.
     """
     db = backend or get_backend()
     if bootstrap_samples < plssem.BOOTSTRAP_FLOOR:
@@ -87,7 +93,7 @@ async def create_analysis(
             "not be reported (docs/07 §9)."
         )
 
-    spec = build_model_spec()
+    spec = build_model_spec(variant=variant)
     matrix = await load_matrix(
         population=population, screening=screening, pool_legacy=pool_legacy,
         spec=spec, backend=db,
@@ -106,9 +112,16 @@ async def create_analysis(
                 "engine_version": plssem.engine_version(),
                 "config": {
                     "model_fingerprint": spec.fingerprint(),
+                    # Read back by `run_analysis` so a resumed run rebuilds the model the matrix
+                    # was built for, never the default (`_spec_for_run`).
+                    "model_variant": variant,
                     "pool_legacy": pool_legacy,
                     "dropped": len(matrix.dropped),
                     "legacy_excluded": matrix.legacy_excluded,
+                    # `docs/07` §7.1: the screening rule that produced a result is part of the
+                    # result. `screening` says strict or none; this says which threshold strict
+                    # meant, so a later change to it cannot be mistaken for the same analysis.
+                    "straight_line_sd_min": matrix.straight_line_sd_min,
                 },
             }
         ],
@@ -119,6 +132,35 @@ async def create_analysis(
         analysis_id, population, screening, matrix.n_cases, bootstrap_samples,
     )
     return analysis_id, matrix
+
+
+def _spec_for_run(run: dict[str, Any]) -> ModelSpec:
+    """Rebuild the model **this run was created under**, and refuse a mismatch.
+
+    `run_analysis` used to call a bare ``build_model_spec()``. With one model that agreed with
+    `create_analysis` by luck; with two it would estimate the default model against a matrix built
+    for the other one and store the result under the other one's fingerprint, and nothing would
+    raise. A resumed run is the same hazard for a different reason: the item register or the edge
+    list may have moved between the two calls.
+
+    So the variant is read back off the row rather than defaulted, and the rebuilt fingerprint is
+    **checked** against the one recorded at creation. A fingerprint mismatch is not a recoverable
+    condition — the stages already stored were computed under a different specification, and
+    continuing would interleave two models in one `analysis_results` table.
+    """
+    config = dict(run.get("config") or {})
+    variant: Any = config.get("model_variant", "full")
+    spec = build_model_spec(variant=variant)
+    recorded = str(config.get("model_fingerprint") or "")
+    if recorded and spec.fingerprint() != recorded:
+        raise StageError(
+            f"analysis {run.get('analysis_id')} was created under model {recorded} "
+            f"(variant {variant!r}) and the model now fingerprints as {spec.fingerprint()}. The "
+            "stored stages were computed under a different specification, so this run cannot be "
+            "continued — start a new analysis rather than interleaving two models in one result "
+            "set."
+        )
+    return spec
 
 
 async def completed_stages(
@@ -151,7 +193,7 @@ async def run_analysis(
         raise StageError(f"no analysis run {analysis_id}")
     run = run_rows[0]
 
-    spec = build_model_spec()
+    spec = _spec_for_run(run)
     done = await completed_stages(analysis_id, db)
     outstanding = [stage for stage in STAGES if stage not in done]
 

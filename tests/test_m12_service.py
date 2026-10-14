@@ -139,6 +139,75 @@ async def test_resume_computes_only_the_outstanding_stages(matrix, monkeypatch):
     assert computed == list(STAGES[6:])
 
 
+async def test_a_resumed_run_rebuilds_its_own_variant_not_the_default(matrix, monkeypatch):
+    """`run_analysis` used to call a bare `build_model_spec()`. **The latent bug A1 would expose.**
+
+    With one model that agreed with `create_analysis` by luck. With two, a resumed run would
+    estimate the *default* model against a matrix built for the other one and store the result
+    under the other one's fingerprint, and nothing would raise. So the variant is read back off the
+    row.
+    """
+    partial = build_model_spec(variant="partial")
+    analysis_id = await _seed_run(
+        bootstrap_samples=30,
+        config={
+            "model_fingerprint": partial.fingerprint(),
+            "model_variant": "partial",
+        },
+    )
+    monkeypatch.setattr(statistics.plssem, "fit", lambda *a, **k: object())
+    monkeypatch.setattr(statistics.plssem, "bootstrap", lambda *a, **k: None)
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        statistics, "_compute_stage",
+        lambda stage, pls, mtx, spec, boot, seed: (
+            seen.append(spec.fingerprint()), {"rows": []}
+        )[1],
+    )
+
+    await statistics.run_analysis(analysis_id, matrix)
+    assert seen, "no stage ran"
+    assert set(seen) == {partial.fingerprint()}, "a stage ran under the wrong model"
+
+
+async def test_a_run_whose_model_has_moved_is_refused_rather_than_continued(matrix, monkeypatch):
+    """A fingerprint mismatch is not recoverable: the stored stages used another specification.
+
+    Continuing would interleave two models in one `analysis_results` table, which no reader could
+    untangle afterwards.
+    """
+    analysis_id = await _seed_run(
+        bootstrap_samples=30,
+        config={"model_fingerprint": "deadbeefdeadbeef", "model_variant": "full"},
+    )
+    monkeypatch.setattr(statistics.plssem, "fit", lambda *a, **k: object())
+    monkeypatch.setattr(statistics.plssem, "bootstrap", lambda *a, **k: None)
+
+    with pytest.raises(statistics.StageError) as excinfo:
+        await statistics.run_analysis(analysis_id, matrix)
+    message = str(excinfo.value)
+    assert "deadbeefdeadbeef" in message
+    assert "different specification" in message
+
+
+async def test_a_run_created_before_the_variant_existed_still_resumes(matrix, monkeypatch):
+    """A row with no `model_variant` is a `full` run — the only model that existed then.
+
+    Append-only (rule 6) means old rows are not rewritten, so they must stay readable.
+    """
+    analysis_id = await _seed_run(
+        bootstrap_samples=30,
+        config={"model_fingerprint": build_model_spec().fingerprint()},
+    )
+    monkeypatch.setattr(statistics.plssem, "fit", lambda *a, **k: object())
+    monkeypatch.setattr(statistics.plssem, "bootstrap", lambda *a, **k: None)
+    monkeypatch.setattr(statistics, "_compute_stage", lambda *a: {"rows": []})
+
+    view = await statistics.run_analysis(analysis_id, matrix)
+    assert view.is_complete
+
+
 async def test_a_failed_stage_records_the_cursor_and_stores_nothing(matrix, monkeypatch):
     """A stage that raised is not stored as an empty payload. `CLAUDE.md` rule 7."""
     analysis_id = await _seed_run(bootstrap_samples=30)

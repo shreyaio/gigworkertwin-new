@@ -304,7 +304,7 @@ def build_rows(
         "outcome": outcome,
         "arm": arm,
         "arm_source": arm_source,
-        "mc_answer": _text_or_none(checks.get("manipulation")),
+        "mc_answer": _mc_answer(checks.get("manipulation"), ref),
         "city": _text_or_none(fields.get("city")),
         "service": _text_or_none(fields.get("service")),
         "language": meta.get("language"),
@@ -334,6 +334,32 @@ def _text_or_none(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _mc_answer(value: Any, ref: ReferenceData) -> str | None:
+    """Part 15's manipulation check, stored as an **arm id** so `mc_correct` can mean something.
+
+    `survey_submissions.mc_correct` is ``generated always as (mc_answer = arm)``. Part 15 offers
+    the four arms by their *labels* — "A drivers' forum and union recognition" — while `arm` holds
+    an id, so storing the label made `mc_correct` **false for every real respondent**, forever and
+    silently. The synthetic generator hid it by putting the id in directly, which is why no test
+    caught it: the two paths disagreed about what the column contained.
+
+    The label is resolved against the frozen arms. An answer matching no arm is kept verbatim
+    rather than discarded or guessed at — it is still the driver's answer, `mc_correct` is simply
+    false, and the raw object holds what they picked either way.
+    """
+    text = _text_or_none(value)
+    if text is None:
+        return None
+    if text in ref.arms:
+        return text
+    by_label = {
+        str(arm.label).strip().casefold(): arm_id
+        for arm_id, arm in ref.arms.items()
+        if getattr(arm, "label", None)
+    }
+    return by_label.get(text.casefold(), text)
 
 
 def _attention_expectations(ref: ReferenceData) -> dict[str, int]:

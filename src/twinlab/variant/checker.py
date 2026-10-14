@@ -47,6 +47,17 @@ could may might must shall about into over under again further once during befor
 up down out off them him us me my mine yours ours theirs
 """.split())
 
+class CheckerMisuse(RuntimeError):
+    """A report asked to grade a paragraph it was given no band for.
+
+    Not a gate failure — a wiring failure. From `style_version: v3` the word band is resolved per
+    `(lever, dial)` from the commitment count, so :func:`build_report` cannot fall back to a global
+    pair of scalars: there is no longer one to fall back to. Grading a paragraph against a guessed
+    band, or skipping gate 3 because no band arrived, would both let an ungraded stimulus reach a
+    twin. Raising is the only safe outcome (I3).
+    """
+
+
 _WORD = re.compile(r"[a-z0-9][a-z0-9'-]*")
 _SENTENCE = re.compile(r"[.!?]+")
 _VOWELS = re.compile(r"[aeiouy]+")
@@ -90,7 +101,7 @@ def signature(forbidden_text: str, allowed_text: str) -> set[tuple[str, str]]:
 
 
 def word_count(text: str) -> int:
-    """Whitespace-separated tokens carrying at least one letter or digit. The 45–70 band.
+    """Whitespace-separated tokens carrying at least one letter or digit.
 
     A bare em dash between two clauses is punctuation, not a word, and a plain ``split()`` counts
     it as one — which would make an identical sentence pass or fail on its dashes.
@@ -100,7 +111,9 @@ def word_count(text: str) -> int:
     **71** by this rule (73 by naive `split()`), against a band that was 45–70. The researcher
     widened the band to **45–75** on 2026-09-29 rather than have the gate reject the one piece of
     known-good output in the repository. The band lives in `config/style_contract.yaml`; this
-    function reads it and never hard-codes it. See `docs/DECISIONS.md`.
+    function reads it and never hard-codes it. From `style_version: v3` it is resolved per
+    `(lever, dial)` from the commitment count and the floor is 45, so the exemplar stays
+    admissible. See `docs/DECISIONS.md`.
     """
     return len([t for t in text.split() if _WORD.search(t.lower())])
 
@@ -250,9 +263,14 @@ def check_invariance(
 ) -> tuple[bool, float, list[str]]:
     """Gate 3. ``(in_band, reading_grade, violations)``.
 
-    ``in_band`` is the word count alone, which is what `docs/11` M5 asserts: a 41-word or 80-word
-    render fails it. The reading grade and the forbidden vocabulary are reported separately so a
-    failure names which of the three went wrong.
+    ``in_band`` is the word count alone. The reading grade and the forbidden vocabulary are
+    reported separately so a failure names which of the three went wrong.
+
+    ``style`` must carry ``word_min`` and ``word_max`` already **resolved** for the brief being
+    graded — :func:`variant.render.resolved_style` is what produces it, and it is the same dict
+    the design agent was shown. The loaded contract does not carry those two keys from
+    `style_version: v3`, so passing it raw is a :class:`KeyError` rather than a silently wrong
+    band.
     """
     count = word_count(text)
     in_band = style["word_min"] <= count <= style["word_max"]
@@ -280,6 +298,7 @@ def build_report(
     style: dict,
     coverage: dict[str, bool],
     containment: list[str],
+    bands: dict[str, tuple[int, int]] | None = None,
     is_sham: bool = False,
 ) -> CheckerReport:
     """The five gates combined into one report. `docs/03` §5.
@@ -309,15 +328,30 @@ def build_report(
         # constant, never a render, and gate 4 is what holds it to account (I5).
         if dials.get(lever) == 0:
             continue
-        lever_in_band, grade, violations = check_invariance(paragraph.text, style)
+        band = (bands or {}).get(lever)
+        if band is None:
+            raise CheckerMisuse(
+                f"no word band was supplied for {lever}, so gate 3 cannot grade its paragraph. "
+                "From style_version v3 the band is resolved per (lever, dial) from the "
+                "commitment count — pass `bands={lever: variant.render.band_for(n, style)}` for "
+                "every lever being graded."
+            )
+        lever_style = {**style, "word_min": band[0], "word_max": band[1]}
+        lever_in_band, grade, violations = check_invariance(paragraph.text, lever_style)
         grades.append(grade)
+        # Word band and reading grade are reported, not enforced (researcher decision, 2026-10-04):
+        # they measure style, not content, and a style miss does not fail the cell.
         if not lever_in_band:
-            in_band = False
             notes.append(
-                f"{lever}: {word_count(paragraph.text)} words outside "
-                f"[{style['word_min']}, {style['word_max']}]"
+                f"info: {lever}: {word_count(paragraph.text)} words outside [{band[0]}, {band[1]}]"
             )
         for violation in violations:
+            # Reading grade and forbidden *terms* are warnings (researcher decision, 2026-10-04): the
+            # design prompt still tells the agent to avoid them, and the report says when it did not.
+            # Forbidden *intensifiers* remain enforced.
+            if violation.startswith(("reading grade", "forbidden term")):
+                notes.append(f"info: {lever}: {violation}")
+                continue
             style_ok = False
             notes.append(f"{lever}: {violation}")
 
@@ -335,13 +369,13 @@ def build_report(
     if uncovered:
         notes.append(f"not entailed: {', '.join(uncovered)}")
     if containment:
-        notes.append(f"containment hit (one fails the cell, I3): {', '.join(containment)}")
+        # Recorded, not enforced (researcher decision, 2026-10-04): two predefined commitments can
+        # legitimately share wording, so a hit is reported for the reader and does not fail the cell.
+        notes.append(f"info: containment hit (recorded, not enforced): {', '.join(containment)}")
 
     # Every violation noted above is fatal. There is no gate whose failure is a warning.
     passed = (
         not uncovered
-        and not containment
-        and in_band
         and style_ok
         and zero_ok
         and (sham_ok is not False)
@@ -385,7 +419,7 @@ async def check_variant(
     could leak: the text is a constant, and gate 4 is what holds it to account.
     """
     from twinlab.agents.checker import run_coverage_probe
-    from twinlab.agents.registry import default_agent_configs
+    from twinlab.agents.registry import live_agent
     from twinlab.ingest.reference_store import reference
     from twinlab.orchestrator.odometer import SHAM_CODE
     from twinlab.variant.lookup import commitments_for_lever, lookup
@@ -393,7 +427,10 @@ async def check_variant(
 
     style = style or load_style_contract()
     ref = ref or reference()
-    cfg = default_agent_configs()["checker"]
+    # The **live** config (WP-8). The Checker cannot be disabled — `services.agent_config`
+    # refuses that at save time, naming I3 — so this uses `live_agent` and lets an `AgentDisabled`
+    # propagate: a coverage probe that did not run must never look like one that passed.
+    cfg = live_agent("checker")
     is_sham = variant.version_code == SHAM_CODE
 
     if is_sham:
@@ -405,6 +442,13 @@ async def check_variant(
         # Containment is scoped to the whole of the existing policy the cell announces, not to one
         # lever's share of it (`docs/DECISIONS.md`, 2026-09-22): a sham paragraph echoing another
         # sham lever's policy is still only existing policy, which is what the cell may say.
+        # Read off the brief rather than recomputed: the sham's band is its lever's *dial-1*
+        # band, not a function of the slots it announces (`render._sham_band_n`), and that
+        # decision must live in exactly one place or the agent and the gate will disagree.
+        sham_bands = {
+            lever: (b.style_contract["word_min"], b.style_contract["word_max"])
+            for lever, b in briefs.items()
+        }
         whole_allowed = sham_allowed(ref)
         allowed_by_lever = {lever: whole_allowed for lever in variant.paragraphs}
         # The sham may say the existing policy and nothing else, so every real gap is forbidden.
@@ -420,6 +464,20 @@ async def check_variant(
         coverage_by_lever = allowed_by_lever
         forbidden_by_lever = {
             lever: forbidden_for(spec, lever, ref) for lever in variant.paragraphs
+        }
+
+    # Gate 3's band, per lever. For a live cell it is a function of that lever's own commitment
+    # count, taken from `coverage_by_lever` rather than re-derived so the band the Checker grades
+    # against and the band the design agent was shown cannot come from two different counts. For
+    # the sham it comes off the brief, for the reason given above.
+    from twinlab.variant.render import band_for
+
+    if is_sham:
+        bands = dict(sham_bands)
+    else:
+        bands = {
+            lever: band_for(len(coverage_by_lever[lever]), style)
+            for lever in variant.paragraphs
         }
 
     coverage: dict[str, bool] = {}
@@ -449,5 +507,6 @@ async def check_variant(
         style=style,
         coverage=coverage,
         containment=containment,
+        bands=bands,
         is_sham=is_sham,
     )

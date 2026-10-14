@@ -13,8 +13,10 @@ from twinlab.ingest.reference_store import reference
 from twinlab.models.stats import STAGES
 from twinlab.stats import export as export_module
 from twinlab.stats.dataset import (
+    STRAIGHT_LINE_SD_MIN,
     DatasetError,
     NoCasesError,
+    battery_sd,
     build_matrix,
     reverse_if_needed,
     screen,
@@ -243,6 +245,89 @@ def test_keep_everyone_drops_only_non_consenters():
     """`none` keeps everyone who consented. Consent is not a screening rule, it is a condition."""
     assert screen(_submission("S1", attention_passed=False, speeder=True), "none") is None
     assert screen(_submission("S1", consented=False), "none") == "did not consent"
+
+
+def test_straight_lining_is_a_dispersion_rule_on_raw_answers(ref):
+    """`docs/07` §7.1 — the rule the prototype meant to have, with its arithmetic fixed.
+
+    The Apps Script prototype computed this SD **after** reverse-coding, so an all-7s respondent
+    had their reversed items sitting at 1, an SD near 2.8, and passed. It only ever caught
+    straight-lining at the scale midpoint. The all-7s case below is that bug as a regression test.
+
+    `battery_sd` reads raw answers, which is the only ordering under which the statistic means what
+    its name says.
+    """
+    battery = list(ref.battery_item_ids)
+    all_fours = dict.fromkeys(battery, 4)
+    all_sevens = dict.fromkeys(battery, 7)
+    near = {**dict.fromkeys(battery, 7), battery[0]: 6}
+
+    assert battery_sd(all_fours, ref) == pytest.approx(0.0)
+    assert battery_sd(all_sevens, ref) == pytest.approx(0.0)
+    # One answer off in thirty-seven: passes today's exact-equality rule, fails this one.
+    assert 0.0 < battery_sd(near, ref) < STRAIGHT_LINE_SD_MIN
+
+    for label, values in (("all 4s", all_fours), ("all 7s", all_sevens), ("36x7 1x6", near)):
+        reason = screen(
+            _submission("S1"), "strict", answer_sd=battery_sd(values, ref)
+        )
+        assert reason is not None and "near-identical" in reason, label
+
+
+def test_a_genuine_respondent_is_not_screened_as_a_straight_liner(ref):
+    """The rule must not cost real respondents. A varied vector clears the threshold widely."""
+    battery = list(ref.battery_item_ids)
+    varied = {
+        item: 1 + (index % ref.scale_points(item)) for index, item in enumerate(battery)
+    }
+    spread = battery_sd(varied, ref)
+    assert spread is not None and spread > STRAIGHT_LINE_SD_MIN
+    assert screen(_submission("S1"), "strict", answer_sd=spread) is None
+
+
+def test_keep_everyone_ignores_the_dispersion_rule(ref):
+    """`none` keeps everyone who consented, straight-liners included."""
+    flat = battery_sd(dict.fromkeys(ref.battery_item_ids, 4), ref)
+    assert screen(_submission("S1"), "none", answer_sd=flat) is None
+
+
+def test_one_answer_has_no_dispersion_and_is_not_called_a_straight_liner(ref):
+    """`None`, not 0.0 — a respondent with one answer is dropped for missing indicators.
+
+    Returning 0.0 would route them to the straight-lining reason, which would be a wrong account of
+    why they left the sample.
+    """
+    first = next(iter(ref.battery_item_ids))
+    assert battery_sd({first: 4}, ref) is None
+    assert battery_sd({}, ref) is None
+    assert screen(_submission("S1"), "strict", answer_sd=None) is None
+
+
+def test_the_matrix_records_which_threshold_screened_it(spec, ref):
+    """`docs/07` §7.1 — the rule that produced a result is part of the result.
+
+    `create_analysis` copies this onto `analysis_runs.config`, so a later change to the threshold
+    cannot be mistaken for the same analysis.
+    """
+    submissions, answers = _varied(["S1", "S2", "S3", "S4"], spec, ref)
+    strict = build_matrix(submissions, answers, spec=spec, ref=ref, screening="strict")
+    assert strict.straight_line_sd_min == STRAIGHT_LINE_SD_MIN
+    # Under "none" no dispersion rule was applied at all, which is a different fact from
+    # "applied with this threshold and dropped nobody".
+    lenient = build_matrix(submissions, answers, spec=spec, ref=ref, screening="none")
+    assert lenient.straight_line_sd_min is None
+
+
+def test_a_flat_respondent_is_dropped_by_the_matrix_with_the_reason(spec, ref):
+    """End to end: the dispersion rule reaches `build_matrix`, not only `screen`."""
+    submissions, answers = _varied(["S1", "S2", "S3", "S4"], spec, ref)
+    submissions.append(_submission("FLAT", arm="MGT1"))
+    answers.extend(_answers("FLAT", spec, ref, value=4))
+
+    matrix = build_matrix(submissions, answers, spec=spec, ref=ref, screening="strict")
+    assert "FLAT" not in matrix.submission_ids
+    reason = dict(matrix.dropped)["FLAT"]
+    assert "near-identical" in reason
 
 
 def test_manipulation_check_never_screens_anyone_out():

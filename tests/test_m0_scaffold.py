@@ -132,25 +132,45 @@ def test_eight_routes_in_the_mandatory_order() -> None:
 
 
 def test_built_ui_exposes_every_route_in_order() -> None:
-    """The Blocks actually serves the eight paths, in the specified order, with a navbar."""
+    """The Blocks serves the eight researcher paths in order, then the participant ones."""
     from twinlab.ui.app import build_ui
+    from twinlab.ui.theme import PARTICIPANT_ROUTES
 
     demo = build_ui()
 
     # Gradio records pages as (path-without-leading-slash, name, show_in_navbar); the root
     # page's path is "" and its label comes from the navbar's `main_page_name`.
-    assert [f"/{path}".replace("//", "/") for path, _, _ in demo.pages] == [
-        path for _, path in ROUTES
-    ]
+    served = [f"/{path}".replace("//", "/") for path, _, _ in demo.pages]
+    assert served == [path for _, path in (*ROUTES, *PARTICIPANT_ROUTES)]
 
     navbars = [c for c in demo.blocks.values() if isinstance(c, gr.Navbar)]
     assert navbars, "no navbar was built"
 
     labels = [navbars[0].main_page_name] + [name for _, name, _ in demo.pages[1:]]
-    assert labels == [label for label, _ in ROUTES]
+    assert labels == [label for label, _ in (*ROUTES, *PARTICIPANT_ROUTES)]
 
-    # Every route is reachable from the navbar; none is a hidden URL.
+    # Every route is a real URL, researcher and participant alike.
     assert all(show for _, _, show in demo.pages)
+
+
+def test_participant_routes_are_absent_from_the_researcher_nav() -> None:
+    """A driver sent the questionnaire link gets no way into the researcher's application.
+
+    `global_nav` draws its strip from :data:`ROUTES` alone, so the property that keeps the Dial
+    board off a driver's screen is that `/take` is **not in ROUTES** while still being served.
+    Asserted here rather than left to the renderer, because adding the obvious line to ROUTES is
+    exactly the mistake this separation exists to prevent.
+    """
+    from twinlab.ui.theme import PARTICIPANT_ROUTES
+
+    researcher_paths = {path for _, path in ROUTES}
+    assert PARTICIPANT_ROUTES, "no participant route is defined"
+    for label, path in PARTICIPANT_ROUTES:
+        assert path not in researcher_paths, (
+            f"{path} is on the researcher nav strip; a driver would be shown links into the "
+            "Twin Lab from inside the questionnaire"
+        )
+        assert label not in {lbl for lbl, _ in ROUTES}
 
 
 def test_every_route_renders_its_header() -> None:

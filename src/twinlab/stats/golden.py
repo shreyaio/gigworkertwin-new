@@ -237,26 +237,42 @@ def matrix_digest(matrix: CaseMatrix) -> str:
 GOLDEN_DIGEST = "0ce50e16d52c704c18d1453dfb9906c1"
 
 #: The model fingerprint the expected values below were computed under. `docs/07` §10.
-GOLDEN_FINGERPRINT = "7c7fd73a12a4ec48"
+GOLDEN_FINGERPRINT = "081db1a0f8a2a2e0"
 
 #: Expected values for every statistic in `docs/07` §8, to |delta| < :data:`TOLERANCE`.
 #: Regenerate with ``tools/gen_golden.py --write`` and **read the diff** — a change here is a
 #: change to a number in the paper.
 EXPECTED: dict[str, Any] = {
     "effects": {
-        "direct|ARM->CTRL": 0.100352,
-        "direct|ARM->EXIT": 0.0,
-        "direct|ARM->EXPO": 0.320069,
-        "direct|ARM->FAIR": 0.0,
-        "direct|ARM->LOYA": 0.0,
-        "direct|ARM->SATI": 0.0,
-        "direct|ARM->TRAN": 0.0,
-        "direct|ARM->VOIC": 0.0,
+        "direct|ARM_CON1->CTRL": 0.180996,
+        "direct|ARM_CON1->EXIT": 0.0,
+        "direct|ARM_CON1->EXPO": 0.224244,
+        "direct|ARM_CON1->FAIR": 0.0,
+        "direct|ARM_CON1->LOYA": 0.0,
+        "direct|ARM_CON1->SATI": 0.0,
+        "direct|ARM_CON1->TRAN": 0.0,
+        "direct|ARM_CON1->VOIC": 0.0,
+        "direct|ARM_MGT1->CTRL": 0.188162,
+        "direct|ARM_MGT1->EXIT": 0.0,
+        "direct|ARM_MGT1->EXPO": 0.301912,
+        "direct|ARM_MGT1->FAIR": 0.0,
+        "direct|ARM_MGT1->LOYA": 0.0,
+        "direct|ARM_MGT1->SATI": 0.0,
+        "direct|ARM_MGT1->TRAN": 0.0,
+        "direct|ARM_MGT1->VOIC": 0.0,
+        "direct|ARM_REP1->CTRL": 0.018836,
+        "direct|ARM_REP1->EXIT": 0.0,
+        "direct|ARM_REP1->EXPO": 0.375981,
+        "direct|ARM_REP1->FAIR": 0.0,
+        "direct|ARM_REP1->LOYA": 0.0,
+        "direct|ARM_REP1->SATI": 0.0,
+        "direct|ARM_REP1->TRAN": 0.0,
+        "direct|ARM_REP1->VOIC": 0.0,
         "direct|CTRL->EXIT": 0.0,
-        "direct|CTRL->FAIR": 0.230079,
+        "direct|CTRL->FAIR": 0.229899,
         "direct|CTRL->LOYA": 0.0,
         "direct|CTRL->SATI": 0.0,
-        "direct|CTRL->TRAN": 0.360426,
+        "direct|CTRL->TRAN": 0.359651,
         "direct|CTRL->VOIC": 0.0,
         "direct|EDEP->EXIT": 0.31007,
         "direct|EDEP->LOYA": 0.162282,
@@ -265,102 +281,134 @@ EXPECTED: dict[str, Any] = {
         "direct|EDEP_x_SATI->LOYA": -0.065606,
         "direct|EDEP_x_SATI->VOIC": -0.132896,
         "direct|EXPO->EXIT": 0.0,
-        "direct|EXPO->FAIR": 0.345604,
+        "direct|EXPO->FAIR": 0.346293,
         "direct|EXPO->LOYA": 0.0,
         "direct|EXPO->SATI": 0.0,
-        "direct|EXPO->TRAN": 0.215073,
+        "direct|EXPO->TRAN": 0.215128,
         "direct|EXPO->VOIC": 0.0,
         "direct|FAIR->EXIT": 0.0,
         "direct|FAIR->LOYA": 0.0,
-        "direct|FAIR->SATI": 0.421577,
+        "direct|FAIR->SATI": 0.421592,
         "direct|FAIR->VOIC": 0.0,
         "direct|SATI->EXIT": -0.355491,
         "direct|SATI->LOYA": 0.521002,
         "direct|SATI->VOIC": -0.320375,
         "direct|TRAN->EXIT": 0.0,
         "direct|TRAN->LOYA": 0.0,
-        "direct|TRAN->SATI": 0.218538,
+        "direct|TRAN->SATI": 0.218554,
         "direct|TRAN->VOIC": 0.0,
-        "indirect|ARM->CTRL": 0.0,
-        "indirect|ARM->EXIT": -0.028196,
-        "indirect|ARM->EXPO": 0.0,
-        "indirect|ARM->FAIR": 0.133706,
-        "indirect|ARM->LOYA": 0.041324,
-        "indirect|ARM->SATI": 0.079315,
-        "indirect|ARM->TRAN": 0.105008,
-        "indirect|ARM->VOIC": -0.025411,
-        "indirect|CTRL->EXIT": -0.062482,
+        "indirect|ARM_CON1->CTRL": 0.0,
+        "indirect|ARM_CON1->EXIT": -0.02668,
+        "indirect|ARM_CON1->EXPO": 0.0,
+        "indirect|ARM_CON1->FAIR": 0.119265,
+        "indirect|ARM_CON1->LOYA": 0.039102,
+        "indirect|ARM_CON1->SATI": 0.075051,
+        "indirect|ARM_CON1->TRAN": 0.113337,
+        "indirect|ARM_CON1->VOIC": -0.024045,
+        "indirect|ARM_MGT1->CTRL": 0.0,
+        "indirect|ARM_MGT1->EXIT": -0.032456,
+        "indirect|ARM_MGT1->EXPO": 0.0,
+        "indirect|ARM_MGT1->FAIR": 0.147808,
+        "indirect|ARM_MGT1->LOYA": 0.047568,
+        "indirect|ARM_MGT1->SATI": 0.0913,
+        "indirect|ARM_MGT1->TRAN": 0.132622,
+        "indirect|ARM_MGT1->VOIC": -0.02925,
+        "indirect|ARM_REP1->CTRL": 0.0,
+        "indirect|ARM_REP1->EXIT": -0.026973,
+        "indirect|ARM_REP1->EXPO": 0.0,
+        "indirect|ARM_REP1->FAIR": 0.13453,
+        "indirect|ARM_REP1->LOYA": 0.039531,
+        "indirect|ARM_REP1->SATI": 0.075875,
+        "indirect|ARM_REP1->TRAN": 0.087658,
+        "indirect|ARM_REP1->VOIC": -0.024308,
+        "indirect|CTRL->EXIT": -0.062398,
         "indirect|CTRL->FAIR": 0.0,
-        "indirect|CTRL->LOYA": 0.091573,
-        "indirect|CTRL->SATI": 0.175763,
+        "indirect|CTRL->LOYA": 0.09145,
+        "indirect|CTRL->SATI": 0.175527,
         "indirect|CTRL->TRAN": 0.0,
-        "indirect|CTRL->VOIC": -0.05631,
+        "indirect|CTRL->VOIC": -0.056234,
         "indirect|EDEP->EXIT": 0.0,
         "indirect|EDEP->LOYA": 0.0,
         "indirect|EDEP->VOIC": 0.0,
         "indirect|EDEP_x_SATI->EXIT": 0.0,
         "indirect|EDEP_x_SATI->LOYA": 0.0,
         "indirect|EDEP_x_SATI->VOIC": 0.0,
-        "indirect|EXPO->EXIT": -0.068503,
+        "indirect|EXPO->EXIT": -0.068614,
         "indirect|EXPO->FAIR": 0.0,
-        "indirect|EXPO->LOYA": 0.100397,
-        "indirect|EXPO->SATI": 0.1927,
+        "indirect|EXPO->LOYA": 0.10056,
+        "indirect|EXPO->SATI": 0.193012,
         "indirect|EXPO->TRAN": 0.0,
-        "indirect|EXPO->VOIC": -0.061736,
-        "indirect|FAIR->EXIT": -0.149867,
-        "indirect|FAIR->LOYA": 0.219643,
+        "indirect|EXPO->VOIC": -0.061836,
+        "indirect|FAIR->EXIT": -0.149872,
+        "indirect|FAIR->LOYA": 0.219651,
         "indirect|FAIR->SATI": 0.0,
-        "indirect|FAIR->VOIC": -0.135063,
+        "indirect|FAIR->VOIC": -0.135068,
         "indirect|SATI->EXIT": 0.0,
         "indirect|SATI->LOYA": 0.0,
         "indirect|SATI->VOIC": 0.0,
-        "indirect|TRAN->EXIT": -0.077688,
-        "indirect|TRAN->LOYA": 0.113859,
+        "indirect|TRAN->EXIT": -0.077694,
+        "indirect|TRAN->LOYA": 0.113867,
         "indirect|TRAN->SATI": 0.0,
-        "indirect|TRAN->VOIC": -0.070014,
-        "total|ARM->CTRL": 0.100352,
-        "total|ARM->EXIT": -0.028196,
-        "total|ARM->EXPO": 0.320069,
-        "total|ARM->FAIR": 0.133706,
-        "total|ARM->LOYA": 0.041324,
-        "total|ARM->SATI": 0.079315,
-        "total|ARM->TRAN": 0.105008,
-        "total|ARM->VOIC": -0.025411,
-        "total|CTRL->EXIT": -0.062482,
-        "total|CTRL->FAIR": 0.230079,
-        "total|CTRL->LOYA": 0.091573,
-        "total|CTRL->SATI": 0.175763,
-        "total|CTRL->TRAN": 0.360426,
-        "total|CTRL->VOIC": -0.05631,
+        "indirect|TRAN->VOIC": -0.070019,
+        "total|ARM_CON1->CTRL": 0.180996,
+        "total|ARM_CON1->EXIT": -0.02668,
+        "total|ARM_CON1->EXPO": 0.224244,
+        "total|ARM_CON1->FAIR": 0.119265,
+        "total|ARM_CON1->LOYA": 0.039102,
+        "total|ARM_CON1->SATI": 0.075051,
+        "total|ARM_CON1->TRAN": 0.113337,
+        "total|ARM_CON1->VOIC": -0.024045,
+        "total|ARM_MGT1->CTRL": 0.188162,
+        "total|ARM_MGT1->EXIT": -0.032456,
+        "total|ARM_MGT1->EXPO": 0.301912,
+        "total|ARM_MGT1->FAIR": 0.147808,
+        "total|ARM_MGT1->LOYA": 0.047568,
+        "total|ARM_MGT1->SATI": 0.0913,
+        "total|ARM_MGT1->TRAN": 0.132622,
+        "total|ARM_MGT1->VOIC": -0.02925,
+        "total|ARM_REP1->CTRL": 0.018836,
+        "total|ARM_REP1->EXIT": -0.026973,
+        "total|ARM_REP1->EXPO": 0.375981,
+        "total|ARM_REP1->FAIR": 0.13453,
+        "total|ARM_REP1->LOYA": 0.039531,
+        "total|ARM_REP1->SATI": 0.075875,
+        "total|ARM_REP1->TRAN": 0.087658,
+        "total|ARM_REP1->VOIC": -0.024308,
+        "total|CTRL->EXIT": -0.062398,
+        "total|CTRL->FAIR": 0.229899,
+        "total|CTRL->LOYA": 0.09145,
+        "total|CTRL->SATI": 0.175527,
+        "total|CTRL->TRAN": 0.359651,
+        "total|CTRL->VOIC": -0.056234,
         "total|EDEP->EXIT": 0.31007,
         "total|EDEP->LOYA": 0.162282,
         "total|EDEP->VOIC": 0.088445,
         "total|EDEP_x_SATI->EXIT": 0.063426,
         "total|EDEP_x_SATI->LOYA": -0.065606,
         "total|EDEP_x_SATI->VOIC": -0.132896,
-        "total|EXPO->EXIT": -0.068503,
-        "total|EXPO->FAIR": 0.345604,
-        "total|EXPO->LOYA": 0.100397,
-        "total|EXPO->SATI": 0.1927,
-        "total|EXPO->TRAN": 0.215073,
-        "total|EXPO->VOIC": -0.061736,
-        "total|FAIR->EXIT": -0.149867,
-        "total|FAIR->LOYA": 0.219643,
-        "total|FAIR->SATI": 0.421577,
-        "total|FAIR->VOIC": -0.135063,
+        "total|EXPO->EXIT": -0.068614,
+        "total|EXPO->FAIR": 0.346293,
+        "total|EXPO->LOYA": 0.10056,
+        "total|EXPO->SATI": 0.193012,
+        "total|EXPO->TRAN": 0.215128,
+        "total|EXPO->VOIC": -0.061836,
+        "total|FAIR->EXIT": -0.149872,
+        "total|FAIR->LOYA": 0.219651,
+        "total|FAIR->SATI": 0.421592,
+        "total|FAIR->VOIC": -0.135068,
         "total|SATI->EXIT": -0.355491,
         "total|SATI->LOYA": 0.521002,
         "total|SATI->VOIC": -0.320375,
-        "total|TRAN->EXIT": -0.077688,
-        "total|TRAN->LOYA": 0.113859,
-        "total|TRAN->SATI": 0.218538,
-        "total|TRAN->VOIC": -0.070014
+        "total|TRAN->EXIT": -0.077694,
+        "total|TRAN->LOYA": 0.113867,
+        "total|TRAN->SATI": 0.218554,
+        "total|TRAN->VOIC": -0.070019
     },
     "explained": {
         "CTRL": {
-            "q2": -0.006407,
-            "r2": 0.010071,
-            "r2_adj": 0.001681
+            "q2": 0.003387,
+            "r2": 0.041179,
+            "r2_adj": 0.016382
         },
         "EXIT": {
             "q2": 0.14536,
@@ -368,14 +416,14 @@ EXPECTED: dict[str, Any] = {
             "r2_adj": 0.194938
         },
         "EXPO": {
-            "q2": 0.036318,
-            "r2": 0.102444,
-            "r2_adj": 0.094838
+            "q2": 0.041913,
+            "r2": 0.10578,
+            "r2_adj": 0.082654
         },
         "FAIR": {
-            "q2": 0.078094,
-            "r2": 0.166146,
-            "r2_adj": 0.151892
+            "q2": 0.078735,
+            "r2": 0.166409,
+            "r2_adj": 0.15216
         },
         "LOYA": {
             "q2": 0.209837,
@@ -383,49 +431,53 @@ EXPECTED: dict[str, Any] = {
             "r2_adj": 0.269767
         },
         "SATI": {
-            "q2": 0.178824,
-            "r2": 0.247804,
-            "r2_adj": 0.234946
+            "q2": 0.178831,
+            "r2": 0.247815,
+            "r2_adj": 0.234957
         },
         "TRAN": {
-            "q2": 0.0932,
-            "r2": 0.170087,
-            "r2_adj": 0.155901
+            "q2": 0.093107,
+            "r2": 0.169445,
+            "r2_adj": 0.155247
         },
         "VOIC": {
-            "q2": 0.044688,
+            "q2": 0.044672,
             "r2": 0.149445,
             "r2_adj": 0.127448
         }
     },
     "f_squared": {
-        "ARM->CTRL": 0.010173,
-        "ARM->EXPO": 0.114137,
-        "CTRL->FAIR": 0.063386,
-        "CTRL->TRAN": 0.15629,
+        "ARM_CON1->CTRL": 0.022778,
+        "ARM_CON1->EXPO": 0.037489,
+        "ARM_MGT1->CTRL": 0.024617,
+        "ARM_MGT1->EXPO": 0.067956,
+        "ARM_REP1->CTRL": 0.000247,
+        "ARM_REP1->EXPO": 0.105389,
+        "CTRL->FAIR": 0.063303,
+        "CTRL->TRAN": 0.155489,
         "EDEP->EXIT": 0.120757,
         "EDEP->LOYA": 0.036467,
         "EDEP->VOIC": 0.009065,
         "EDEP_x_SATI->EXIT": 0.004833,
         "EDEP_x_SATI->LOYA": 0.0057,
         "EDEP_x_SATI->VOIC": 0.019576,
-        "EXPO->FAIR": 0.143021,
-        "EXPO->TRAN": 0.055651,
-        "FAIR->SATI": 0.232811,
-        "SATI->EXIT": 0.153971,
+        "EXPO->FAIR": 0.143629,
+        "EXPO->TRAN": 0.055633,
+        "FAIR->SATI": 0.232835,
+        "SATI->EXIT": 0.153972,
         "SATI->LOYA": 0.364611,
         "SATI->VOIC": 0.115382,
-        "TRAN->SATI": 0.062561
+        "TRAN->SATI": 0.062572
     },
     "fornell_larcker": {
-        "CTRL": 0.808531,
+        "CTRL": 0.808539,
         "EDEP": 0.86596,
         "EXIT": 0.886509,
-        "EXPO": 0.822158,
-        "FAIR": 0.866432,
+        "EXPO": 0.822018,
+        "FAIR": 0.866431,
         "LOYA": 0.914802,
         "SATI": 0.916282,
-        "TRAN": 0.860644,
+        "TRAN": 0.860648,
         "VOIC": 0.874363
     },
     "htmt": {
@@ -467,39 +519,39 @@ EXPECTED: dict[str, Any] = {
         "VOIC|LOYA": 0.164786
     },
     "loadings": {
-        "CTRL|PAC1": 0.817792,
-        "CTRL|PAC10": 0.809441,
-        "CTRL|PAC11": 0.779196,
-        "CTRL|PAC2": 0.828042,
-        "CTRL|PAC3": 0.82654,
-        "CTRL|PAC4": 0.82477,
-        "CTRL|PAC5": 0.84867,
-        "CTRL|PAC6": 0.798491,
-        "CTRL|PAC7": 0.816003,
-        "CTRL|PAC8": 0.806559,
-        "CTRL|PAC9": 0.732474,
-        "EDEP|DEP1": 0.846798,
+        "CTRL|PAC1": 0.812663,
+        "CTRL|PAC10": 0.809817,
+        "CTRL|PAC11": 0.78399,
+        "CTRL|PAC2": 0.829257,
+        "CTRL|PAC3": 0.829923,
+        "CTRL|PAC4": 0.824822,
+        "CTRL|PAC5": 0.851359,
+        "CTRL|PAC6": 0.795496,
+        "CTRL|PAC7": 0.813743,
+        "CTRL|PAC8": 0.804115,
+        "CTRL|PAC9": 0.732834,
+        "EDEP|DEP1": 0.846797,
         "EDEP|DEP2": 0.884708,
         "EXIT|TURN1": 0.889924,
         "EXIT|TURN2": 0.885721,
         "EXIT|TURN3": 0.883873,
-        "EXPO|AMQ1": 0.818386,
-        "EXPO|AMQ2": 0.853959,
-        "EXPO|AMQ3": 0.793573,
-        "EXPO|AMQ4": 0.831068,
-        "EXPO|AMQ5": 0.812577,
-        "FAIR|FAIR1": 0.865971,
-        "FAIR|FAIR2": 0.879407,
-        "FAIR|FAIR3": 0.84844,
-        "FAIR|FAIR4": 0.871612,
+        "EXPO|AMQ1": 0.818497,
+        "EXPO|AMQ2": 0.854839,
+        "EXPO|AMQ3": 0.791349,
+        "EXPO|AMQ4": 0.832347,
+        "EXPO|AMQ5": 0.811695,
+        "FAIR|FAIR1": 0.865959,
+        "FAIR|FAIR2": 0.879474,
+        "FAIR|FAIR3": 0.848451,
+        "FAIR|FAIR4": 0.87154,
         "LOYA|CONT1": 0.934752,
         "LOYA|CONT2": 0.894408,
         "SATI|SAT1": 0.925244,
         "SATI|SAT2": 0.921907,
-        "SATI|SAT3": 0.901515,
-        "TRAN|CLAR1": 0.851988,
-        "TRAN|CLAR2": 0.880945,
-        "TRAN|CLAR3": 0.848632,
+        "SATI|SAT3": 0.901514,
+        "TRAN|CLAR1": 0.851939,
+        "TRAN|CLAR2": 0.880642,
+        "TRAN|CLAR3": 0.849007,
         "VOIC|ALGO1": 0.858077,
         "VOIC|ALGO2": 0.860202,
         "VOIC|ALGO3": 0.883532,
@@ -507,212 +559,216 @@ EXPECTED: dict[str, Any] = {
     },
     "model_fit": {
         "NFI": None,
-        "SRMR": 0.085952,
+        "SRMR": 0.081887,
         "d_G": None,
-        "d_ULS": 7.624202
+        "d_ULS": 6.940102
     },
     "paths": {
-        "ARM->CTRL": 0.100352,
-        "ARM->EXPO": 0.320069,
-        "CTRL->FAIR": 0.230079,
-        "CTRL->TRAN": 0.360426,
+        "ARM_CON1->CTRL": 0.180996,
+        "ARM_CON1->EXPO": 0.224244,
+        "ARM_MGT1->CTRL": 0.188162,
+        "ARM_MGT1->EXPO": 0.301912,
+        "ARM_REP1->CTRL": 0.018836,
+        "ARM_REP1->EXPO": 0.375981,
+        "CTRL->FAIR": 0.229899,
+        "CTRL->TRAN": 0.359651,
         "EDEP->EXIT": 0.31007,
         "EDEP->LOYA": 0.162282,
         "EDEP->VOIC": 0.088445,
         "EDEP_x_SATI->EXIT": 0.063426,
         "EDEP_x_SATI->LOYA": -0.065606,
         "EDEP_x_SATI->VOIC": -0.132896,
-        "EXPO->FAIR": 0.345604,
-        "EXPO->TRAN": 0.215073,
-        "FAIR->SATI": 0.421577,
+        "EXPO->FAIR": 0.346293,
+        "EXPO->TRAN": 0.215128,
+        "FAIR->SATI": 0.421592,
         "SATI->EXIT": -0.355491,
         "SATI->LOYA": 0.521002,
         "SATI->VOIC": -0.320375,
-        "TRAN->SATI": 0.218538
+        "TRAN->SATI": 0.218554
     },
     "plspredict": {
         "CTRL|PAC1": {
-            "q2_predict": -0.011391,
+            "q2_predict": -0.029978,
             "rmse_lm": 0.906476,
-            "rmse_pls": 0.893088
+            "rmse_pls": 0.901257
         },
         "CTRL|PAC10": {
-            "q2_predict": -0.017356,
+            "q2_predict": 0.010636,
             "rmse_lm": 0.788732,
-            "rmse_pls": 0.797122
+            "rmse_pls": 0.786079
         },
         "CTRL|PAC11": {
-            "q2_predict": 0.000415,
+            "q2_predict": 0.038145,
             "rmse_lm": 0.866891,
-            "rmse_pls": 0.886155
+            "rmse_pls": 0.86927
         },
         "CTRL|PAC2": {
-            "q2_predict": -0.016443,
+            "q2_predict": 0.005247,
             "rmse_lm": 0.842526,
-            "rmse_pls": 0.846681
+            "rmse_pls": 0.837599
         },
         "CTRL|PAC3": {
-            "q2_predict": -0.026869,
+            "q2_predict": 0.003368,
             "rmse_lm": 0.831978,
-            "rmse_pls": 0.842482
+            "rmse_pls": 0.829985
         },
         "CTRL|PAC4": {
-            "q2_predict": -0.003788,
+            "q2_predict": -0.000337,
             "rmse_lm": 1.001952,
-            "rmse_pls": 1.001076
+            "rmse_pls": 0.999354
         },
         "CTRL|PAC5": {
-            "q2_predict": -0.020211,
+            "q2_predict": 0.008365,
             "rmse_lm": 0.895547,
-            "rmse_pls": 0.901473
+            "rmse_pls": 0.888758
         },
         "CTRL|PAC6": {
-            "q2_predict": -0.012914,
+            "q2_predict": -0.017323,
             "rmse_lm": 0.90227,
-            "rmse_pls": 0.892822
+            "rmse_pls": 0.894763
         },
         "CTRL|PAC7": {
-            "q2_predict": -0.028104,
+            "q2_predict": -0.024199,
             "rmse_lm": 0.863621,
-            "rmse_pls": 0.858288
+            "rmse_pls": 0.856656
         },
         "CTRL|PAC8": {
-            "q2_predict": -0.022945,
+            "q2_predict": -0.017381,
             "rmse_lm": 0.952783,
-            "rmse_pls": 0.944503
+            "rmse_pls": 0.941931
         },
         "CTRL|PAC9": {
-            "q2_predict": -0.018661,
+            "q2_predict": -0.021892,
             "rmse_lm": 0.909394,
-            "rmse_pls": 0.901529
+            "rmse_pls": 0.902957
         },
         "EXIT|TURN1": {
-            "q2_predict": 0.089933,
+            "q2_predict": 0.08813,
             "rmse_lm": 1.324169,
-            "rmse_pls": 1.274414
+            "rmse_pls": 1.275676
         },
         "EXIT|TURN2": {
-            "q2_predict": 0.00714,
+            "q2_predict": 0.006582,
             "rmse_lm": 1.484409,
-            "rmse_pls": 1.415325
+            "rmse_pls": 1.415722
         },
         "EXIT|TURN3": {
-            "q2_predict": 0.043012,
+            "q2_predict": 0.042933,
             "rmse_lm": 1.407753,
-            "rmse_pls": 1.336554
+            "rmse_pls": 1.33661
         },
         "EXPO|AMQ1": {
-            "q2_predict": -0.020155,
+            "q2_predict": -0.006249,
             "rmse_lm": 1.198893,
-            "rmse_pls": 1.194037
+            "rmse_pls": 1.185871
         },
         "EXPO|AMQ2": {
-            "q2_predict": 0.060505,
+            "q2_predict": 0.074164,
             "rmse_lm": 1.225573,
-            "rmse_pls": 1.236319
+            "rmse_pls": 1.227298
         },
         "EXPO|AMQ3": {
-            "q2_predict": -0.025544,
+            "q2_predict": -0.019425,
             "rmse_lm": 1.225294,
-            "rmse_pls": 1.218403
+            "rmse_pls": 1.214763
         },
         "EXPO|AMQ4": {
-            "q2_predict": 0.014037,
+            "q2_predict": 0.030362,
             "rmse_lm": 1.202309,
-            "rmse_pls": 1.21133
+            "rmse_pls": 1.201261
         },
         "EXPO|AMQ5": {
-            "q2_predict": -0.01053,
+            "q2_predict": -0.004353,
             "rmse_lm": 1.143315,
-            "rmse_pls": 1.145221
+            "rmse_pls": 1.141716
         },
         "FAIR|FAIR1": {
-            "q2_predict": 0.016644,
+            "q2_predict": 0.019665,
             "rmse_lm": 1.289486,
-            "rmse_pls": 1.267396
+            "rmse_pls": 1.265447
         },
         "FAIR|FAIR2": {
-            "q2_predict": 0.008789,
+            "q2_predict": 0.00783,
             "rmse_lm": 1.308016,
-            "rmse_pls": 1.269452
+            "rmse_pls": 1.270066
         },
         "FAIR|FAIR3": {
-            "q2_predict": 0.007706,
+            "q2_predict": 0.007044,
             "rmse_lm": 1.325698,
-            "rmse_pls": 1.231393
+            "rmse_pls": 1.231803
         },
         "FAIR|FAIR4": {
-            "q2_predict": 0.000265,
+            "q2_predict": 0.003087,
             "rmse_lm": 1.325321,
-            "rmse_pls": 1.259269
+            "rmse_pls": 1.257491
         },
         "LOYA|CONT1": {
-            "q2_predict": 0.018958,
+            "q2_predict": 0.017177,
             "rmse_lm": 0.890704,
-            "rmse_pls": 0.984744
+            "rmse_pls": 0.985638
         },
         "LOYA|CONT2": {
-            "q2_predict": -0.003559,
+            "q2_predict": -0.004605,
             "rmse_lm": 0.916657,
-            "rmse_pls": 0.980348
+            "rmse_pls": 0.980859
         },
         "SATI|SAT1": {
-            "q2_predict": 0.024161,
+            "q2_predict": 0.023121,
             "rmse_lm": 1.371764,
-            "rmse_pls": 1.466285
+            "rmse_pls": 1.467066
         },
         "SATI|SAT2": {
-            "q2_predict": 0.01134,
+            "q2_predict": 0.013765,
             "rmse_lm": 1.404348,
-            "rmse_pls": 1.558546
+            "rmse_pls": 1.556633
         },
         "SATI|SAT3": {
-            "q2_predict": 0.016149,
+            "q2_predict": 0.015522,
             "rmse_lm": 1.458657,
-            "rmse_pls": 1.519641
+            "rmse_pls": 1.520125
         },
         "TRAN|CLAR1": {
-            "q2_predict": -0.012716,
+            "q2_predict": -0.014623,
             "rmse_lm": 0.918495,
-            "rmse_pls": 0.90054
+            "rmse_pls": 0.901387
         },
         "TRAN|CLAR2": {
-            "q2_predict": -0.009848,
+            "q2_predict": -0.00674,
             "rmse_lm": 0.932247,
-            "rmse_pls": 0.92471
+            "rmse_pls": 0.923286
         },
         "TRAN|CLAR3": {
-            "q2_predict": -0.017329,
+            "q2_predict": -0.01632,
             "rmse_lm": 0.885375,
-            "rmse_pls": 0.899335
+            "rmse_pls": 0.898889
         },
         "VOIC|ALGO1": {
-            "q2_predict": -0.039786,
+            "q2_predict": -0.038931,
             "rmse_lm": 1.269057,
-            "rmse_pls": 1.310031
+            "rmse_pls": 1.309492
         },
         "VOIC|ALGO2": {
-            "q2_predict": -0.035628,
+            "q2_predict": -0.033774,
             "rmse_lm": 1.276979,
-            "rmse_pls": 1.248706
+            "rmse_pls": 1.247588
         },
         "VOIC|ALGO3": {
-            "q2_predict": -0.003248,
+            "q2_predict": -0.002944,
             "rmse_lm": 1.295526,
-            "rmse_pls": 1.33248
+            "rmse_pls": 1.332278
         },
         "VOIC|ALGO4": {
-            "q2_predict": 0.018049,
+            "q2_predict": 0.017899,
             "rmse_lm": 1.33836,
-            "rmse_pls": 1.387619
+            "rmse_pls": 1.387726
         }
     },
     "predict_verdict": "medium",
     "reliability": {
         "CTRL": {
             "alpha": 0.947212,
-            "ave": 0.653722,
-            "rho_a": 0.960922,
+            "ave": 0.653735,
+            "rho_a": 0.960695,
             "rho_c": 0.954269
         },
         "EDEP": {
@@ -729,14 +785,14 @@ EXPECTED: dict[str, Any] = {
         },
         "EXPO": {
             "alpha": 0.880873,
-            "ave": 0.675943,
-            "rho_a": 0.899639,
+            "ave": 0.675714,
+            "rho_a": 0.901157,
             "rho_c": 0.913005
         },
         "FAIR": {
             "alpha": 0.88941,
-            "ave": 0.750705,
-            "rho_a": 0.899699,
+            "ave": 0.750702,
+            "rho_a": 0.899727,
             "rho_c": 0.923446
         },
         "LOYA": {
@@ -748,13 +804,13 @@ EXPECTED: dict[str, Any] = {
         "SATI": {
             "alpha": 0.904408,
             "ave": 0.839572,
-            "rho_a": 0.912773,
+            "rho_a": 0.912774,
             "rho_c": 0.940117
         },
         "TRAN": {
             "alpha": 0.824891,
-            "ave": 0.740708,
-            "rho_a": 0.833026,
+            "ave": 0.740715,
+            "rho_a": 0.832886,
             "rho_c": 0.895528
         },
         "VOIC": {
@@ -765,24 +821,27 @@ EXPECTED: dict[str, Any] = {
         }
     },
     "vif": {
+        "inner|CTRL|ARM_CON1": 1.5,
+        "inner|CTRL|ARM_MGT1": 1.5,
+        "inner|CTRL|ARM_REP1": 1.5,
         "inner|EXIT|EDEP": 1.014535,
         "inner|EXIT|EDEP_x_SATI": 1.060732,
         "inner|EXIT|SATI": 1.045869,
-        "inner|FAIR|CTRL": 1.001538,
-        "inner|FAIR|EXPO": 1.001538,
+        "inner|EXPO|ARM_CON1": 1.5,
+        "inner|EXPO|ARM_MGT1": 1.5,
+        "inner|EXPO|ARM_REP1": 1.5,
+        "inner|FAIR|CTRL": 1.0016,
+        "inner|FAIR|EXPO": 1.0016,
         "inner|LOYA|EDEP": 1.014535,
         "inner|LOYA|EDEP_x_SATI": 1.060732,
         "inner|LOYA|SATI": 1.045869,
-        "inner|SATI|FAIR": 1.014888,
-        "inner|SATI|TRAN": 1.014888,
-        "inner|TRAN|CTRL": 1.001538,
-        "inner|TRAN|EXPO": 1.001538,
+        "inner|SATI|FAIR": 1.014873,
+        "inner|SATI|TRAN": 1.014873,
+        "inner|TRAN|CTRL": 1.0016,
+        "inner|TRAN|EXPO": 1.0016,
         "inner|VOIC|EDEP": 1.014535,
         "inner|VOIC|EDEP_x_SATI": 1.060732,
         "inner|VOIC|SATI": 1.045869,
-        "outer|ARM|arm_CON1": 1.5,
-        "outer|ARM|arm_MGT1": 1.5,
-        "outer|ARM|arm_REP1": 1.5,
         "outer|CTRL|PAC1": 2.619294,
         "outer|CTRL|PAC10": 2.537708,
         "outer|CTRL|PAC11": 2.408809,

@@ -120,6 +120,8 @@ Copy `.env.example` to `.env` in the repo root and fill it in. It is gitignored.
 | `OLLAMA_API_KEY` | yes | your key from ollama.com |
 | `OLLAMA_BASE_URL` | no | defaults to `https://ollama.com/v1` |
 | `TWINLAB_MODEL` | no | defaults to `gpt-oss:120b` |
+| `OPENAI_BASE_URL` | no | only for `ModelRef.provider = "openai"`, i.e. a **different** endpoint. Unset, that provider raises rather than falling back to the Ollama one (`docs/DECISIONS.md` 2026-10-08). Validity test 7 does **not** need it — a second model is a name on the same endpoint. |
+| `OPENAI_API_KEY` | no | the key for `OPENAI_BASE_URL` |
 | `INTAKE_HMAC_SECRET` | for intake | see below |
 | `LOGFIRE_TOKEN` | no | unset disables telemetry entirely; the app runs normally without it |
 | `START_CODE` | no | defaults to `10000` — where a fresh sweep begins (ARCHITECTURE §9 Q1) |

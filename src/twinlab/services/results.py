@@ -135,10 +135,16 @@ async def interaction_rows(
 
 
 async def shifts_by_code(backend: DbBackend | None = None) -> dict[str, dict[str, float]]:
-    """Completed cells only, so an absent key means an absent run rather than a zero."""
+    """Completed **tested versions** only, so an absent key means an absent run rather than a zero.
+
+    Controls are excluded, as in :func:`tested_rows`. An interaction is between two dialled
+    versions, and `00000` and `SHAM` are not dial vectors: passing `SHAM` to the joint-code step
+    raised `ValueError` on its `S`, which is what blanked the side panel.
+    """
     return {
         run["version_code"]: dict((run.get("metrics") or {}).get("shifts") or {})
         for run in await completed_runs(backend)
+        if run["version_code"] not in (CONTROL_CODE, SHAM_CODE)
     }
 
 

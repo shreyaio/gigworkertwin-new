@@ -50,6 +50,36 @@ comment on column runs.origin is
 alter table studio_runs
   add column if not exists is_latest_for_twin_version boolean not null default true;
 
+-- BACKFILL, and it must run before the index below exists. The column defaults to true, so
+-- every pre-004 row claims to be current; a twin asked the same cell twice in the Studio before
+-- this migration therefore has two current rows and `studio_runs_latest_uq` refuses to build
+-- ("Key (...)=(SYN-30092026-0001, 22000, ) is duplicated").
+--
+-- The resolution is a DEMOTE, never a delete: the losing rows keep every field they had and only
+-- stop being the pointer, which is exactly what a second ask would have done to the first had the
+-- pointer existed at the time (CLAUDE.md rule 6 — evidence is append-only, and `is_latest_*` is a
+-- boolean pointer, not a fact about the answer).
+--
+-- Newest wins by `created_at`, tie-broken by `studio_run_id`, because `created_at` has no
+-- uniqueness guarantee and two rows inserted in the same millisecond must still resolve to one
+-- winner or the index fails again. Idempotent: on a database with no duplicates it updates nothing.
+with ranked as (
+  select studio_run_id,
+         row_number() over (
+           partition by twin_id,
+                        coalesce(version_code, ''),
+                        coalesce(custom_change, '')
+           order by created_at desc, studio_run_id desc
+         ) as rn
+    from studio_runs
+   where is_latest_for_twin_version
+)
+update studio_runs s
+   set is_latest_for_twin_version = false
+  from ranked r
+ where s.studio_run_id = r.studio_run_id
+   and r.rn > 1;
+
 -- Flipped in the same transaction as the insert, exactly as `runs.is_latest_for_version` is
 -- (ARCHITECTURE_UPDATE.md §4.4). A second ask for the same (twin_id, version_code, wording)
 -- appends and moves the pointer; the earlier row survives. `studio_runs` keeps being the full

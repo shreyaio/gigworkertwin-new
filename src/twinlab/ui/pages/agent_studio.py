@@ -32,7 +32,6 @@ from ..components import (
     kv_table,
     load_js,
     load_once,
-    num,
     pill,
     section_title,
     status_dot,
@@ -60,187 +59,55 @@ _AGENT_PICK_JS = """
 
 
 def _checker_html(view: dict) -> str:
-    """The *Quality Checker* view of `docs/06` §6: the two contract checks, the score, the
-    per-item comparison and the keep/drop decision.
+    """The *Quality Checker* view: the codebook policy beside the design agent's framing.
 
-    ``Not tested`` where a side is absent, never a zero: an item only one of them answered is not
-    scored, and a difference against a blank would be a number standing in for a measurement
-    (I17).
+    One row per area. The left column is what the codebook says this version commits to. The right
+    column is the paragraph the design agent wrote for that area, as stored. Nothing is scored here.
     """
-    if not view.get("has_run"):
+    if not view.get("rendered"):
         return empty_state(
-            f"{view['twin_id']} has no quality run.",
-            "Run the twin quality test from Twin Lab → Twins.",
+            f"{view['version_code']} has not been rendered.",
+            "Render it in Twin Studio, or on the Dial board, before it can be compared.",
         )
-
-    kept = view["kept"]
-    decision = (
-        status_dot("complete", "Kept") if kept
-        else status_dot("failed", "Dropped") if kept is False
-        else status_dot("pending", "No verdict")
+    rows = []
+    for r in view["rows"]:
+        if r["status"] == "fixed":
+            policy = esc("No change in this area.")
+            framed = _absent()
+        else:
+            policy = "<br>".join(esc(c) for c in r["policy"]) or _absent()
+            if r["status"] == "ok" and r["framed"].strip():
+                framed = esc(r["framed"])
+            else:
+                framed = status_dot("failed", f"refused: {r.get('reason') or 'no reason given'}")
+        rows.append([esc(r["lever"]), policy, framed])
+    return data_table(
+        ["Area", "Codebook policy (what this version commits to)", "How the agent framed it"],
+        rows,
     )
-    checks = kv_table(
-        [
-            (
-                "Every holdout item present",
-                status_dot("complete", "pass") if view["complete"]
-                else status_dot("failed", f"missing {', '.join(view['missing'][:6])}"),
-            ),
-            (
-                "Every answer inside its own scale",
-                status_dot("complete", "pass") if view["in_scale"]
-                else status_dot(
-                    "failed", f"outside range: {', '.join(view['out_of_range'][:6])}"
-                ),
-            ),
-            # `ARCHITECTURE_UPDATE.md` §5.3: each threshold row carries its `must be …` caption,
-            # read
-            # from the live config rather than written into the screen. The verdict beside the
-            # number
-            # is per-threshold; the keep/drop decision below is the **AND** of the two.
-            # `kv_table` escapes the label and trusts the value, so the caption rides in the value
-            # cell beside the number — which is also where it is read.
-            (
-                "Average error",
-                (
-                    status_dot(
-                        "complete" if view["mae"] <= view["mae_max"] else "failed",
-                        num(view["mae"], signed=False),
-                    )
-                    if view["mae"] is not None
-                    else num(None)
-                )
-                + f' <small>must be {esc(view["mae_max"])} or less</small>',
-            ),
-            (
-                "Share within 1 point",
-                (
-                    status_dot(
-                        "complete"
-                        if view["pct_within_1"] >= view["pct_within_1_min"]
-                        else "failed",
-                        f"{view['pct_within_1'] * 100:.0f}%",
-                    )
-                    if view["pct_within_1"] is not None
-                    else num(None)
-                )
-                + f' <small>must be {view["pct_within_1_min"] * 100:.0f}% or more</small>',
-            ),
-            ("Items scored", str(view["items_n"])),
-            ("Repeats averaged", str(view["repeats"])),
-            ("Model", esc(view["model"])),
-            # Screenshot 6's explicit `Decision: Keep this twin` line, with the rule beside it so
-            # the
-            # conjunction is visible. D-4: the decision is both thresholds, never either.
-            (
-                "Decision",
-                f"{decision} <small>{esc(view['decision_rule'])}</small>",
-            ),
-        ],
-        caption="Completeness, scale and the keep/drop decision",
-    )
-    table = data_table(
-        ["Held-out item", "Question", "Driver said", "Twin said", "Error"],
-        [
-            [
-                esc(row["item_id"]),
-                esc(row["question"]),
-                "—" if row["driver"] is None else str(row["driver"]),
-                "—" if row["twin"] is None else str(row["twin"]),
-                num(None if row["error"] is None else float(row["error"]), signed=False),
-            ]
-            for row in view["comparison"]
-        ],
-    )
-    correlations = view.get("correlations") or {}
-    r_table = (
-        kv_table(
-            [
-                (name.capitalize(), num(value, signed=False))
-                for name, value in sorted(correlations.items())
-            ],
-            caption="Twin and driver move together (r)",
-        )
-        if correlations
-        else ""
-    )
-    return checks + r_table + section_title("Held-out answers") + table
 
 
 def _twin_html(view: dict) -> str:
-    """The *Twin Interviewer* view. `docs/06` §6, `ARCHITECTURE_UPDATE.md` §5.1.
+    """The *Twin Interviewer* view: what the driver said and what the twin said.
 
-    One row **per instruction variant** — the saved prompt and the edit — with `Answer checked?`,
-    the six metrics and the reason the twin gave. The previous build transposed this into one row
-    per metric with `Saved / Your edit / Difference` columns, which had no pass/fail and no reason.
-
-    The answers table shows **what the twin said**, with the driver's value beside it. It used to
-    show the driver's column alone — the panel's input rather than its result, which is the defect
-    that mattered here.
+    The twin column is the twin acting on this version. A failed twin leaves that column *Not
+    tested* and says why in the note; it is never filled with a number (I13, I17).
     """
-    metrics = view.get("metrics") or []
     body = ""
-    variants = view.get("variants") or []
-    if variants:
-        body += section_title("What each set of instructions produced") + data_table(
-            [
-                "Instructions",
-                "Answer checked?",
-                *(m.capitalize() for m in metrics),
-                "A reason it gave",
-            ],
-            [
-                [
-                    esc(str(row["which"]).capitalize()),
-                    (
-                        status_dot(
-                            "complete",
-                            "pass"
-                            + (
-                                f" ({row['retries']} repair)"
-                                if row.get("retries")
-                                else ""
-                            ),
-                        )
-                        if row["checked"]
-                        # Never coerced into a pass. A twin that cannot produce 37 valid integers
-                        # after its one targeted repair has failed, and that is the right outcome.
-                        else status_dot("failed", "no valid answer")
-                    ),
-                    *(num((row.get("scores") or {}).get(m), signed=False) for m in metrics),
-                    esc(row.get("reason") or ""),
-                ]
-                for row in variants
-            ],
-        )
-        driver = view.get("driver_scores") or {}
-        if driver:
-            body += kv_table(
-                [(m.capitalize(), num(driver.get(m), signed=False)) for m in metrics],
-                caption="This twin's own driver, for comparison (Uber today)",
-            )
     if view.get("note"):
         body += f'<div class="tl-card">{esc(view["note"])}</div>'
-    body += section_title("Some of the 37 answers it gave")
-    body += data_table(
-        ["Item", "Question", "Twin said", "Driver said"],
+    return body + data_table(
+        ["Item", "Question", "Driver said", "Twin said"],
         [
             [
-                esc(row["item_id"]),
-                esc(row["question"]),
-                # `Not tested` rather than a zero on either side: an item only one of them answered
-                # is not scored, and a blank standing in for a measurement is I17's failure.
-                num(row["twin"], signed=False) if row["twin"] is not None else _absent(),
-                num(row["driver"], signed=False) if row["driver"] is not None else _absent(),
+                esc(item["item_id"]),
+                esc(f"{item['question']} (answer 1 to {item['points']})"),
+                str(item["driver"]) if item["driver"] is not None else _absent(),
+                str(item["twin"]) if item["twin"] is not None else _absent(),
             ]
-            for row in view["answers"]
+            for item in view["items"]
         ],
-        empty=empty_state(
-            "Nothing was asked.",
-            "Choose a twin and a rendered version above, then press Test this agent.",
-        ),
     )
-    return body
 
 
 def _absent() -> str:
@@ -266,93 +133,74 @@ def _history_model(row: dict) -> str:
 
 
 def _design_html(view: dict) -> str:
-    """The *Policy Designer* view. `docs/06` §6, `ARCHITECTURE_UPDATE.md` §5.2.
+    """The *Policy Designer* view: the paragraph the design agent wrote for each area, now.
 
-    `Text used` carries the **rendered paragraph** — what a twin is shown — with the researcher-
-    facing
-    bullet summary in its own column beside it. The panel used to put the bullets under `Text used`,
-    which made two artefacts `docs/03` §4.3 keeps deliberately apart look interchangeable on the one
-    screen whose job is to show what the design agent produced.
+    Words are shown against the band the brief allowed, so a paragraph that ran long or short is
+    visible at a glance. A refusal is shown as a refusal, with its reason, and is not replaced by
+    anything.
     """
-    rows = [
-        [
-            esc(lever["lever_name"]),
-            esc(str(lever["dial"])),
-            esc(lever["paragraph"]) or _absent(),
-            esc("; ".join(lever["bullets"]) or "No change from today."),
-        ]
-        for lever in view["levers"]
-    ]
-    body = (
-        data_table(
+    rows = []
+    for r in view["rows"]:
+        if r["status"] == "fixed":
+            status = status_dot("pending", "fixed text")
+        elif r["status"] == "ok":
+            status = status_dot("complete", "written")
+        else:
+            status = status_dot("failed", f"refused: {r['reason']}")
+        words = "—" if r["words"] is None else f"{r['words']} (band {r['band'][0]}–{r['band'][1]})"
+        rows.append(
             [
-                "Dial",
-                "Setting",
-                # The twin's artefact and the researcher's, named so they cannot be confused.
-                "Text used (what the twin is shown)",
-                "Bullet summary (never shown to a twin)",
-            ],
-            rows,
+                esc(r["lever"]),
+                esc(str(r["dial"])),
+                esc(r["text"]) or _absent(),
+                esc(words),
+                status,
+            ]
         )
-        + kv_table([("Fairwork score", esc(view["fairwork_text"]))])
+    return (
+        '<div class="tl-card">Nothing was stored. These are new drafts from the prompt in the box. '
+        "The paragraphs a twin is shown are the ones already in the render cache.</div>"
+        + data_table(["Area", "Dial", "Paragraph the design agent wrote", "Words", "Status"], rows)
     )
-
-    # §5.2 item 2: labelled Wording A and Wording B blocks. Wording is a real experimental factor
-    # (validity test 5), so one unlabelled set of cards understates what is being varied.
-    body += section_title("The whole scenario, in both wordings")
-    wordings = view.get("wordings") or {}
-    if not wordings:
-        body += empty_state(
-            "No scenario rendered for this version yet.",
-            "Render it in Twin Studio, or ask the twins for it in Twin Lab → Dial board.",
-        )
-    else:
-        for label, paragraphs in wordings.items():
-            body += (
-                f'<div class="tl-wording"><div class="tl-wording-head">Wording {esc(label)}'
-                + (
-                    " — as rendered"
-                    if label == "A"
-                    else " — the same five paragraphs in reverse order (validity test 5)"
-                )
-                + "</div>"
-                + "".join(f'<div class="tl-card">{esc(p)}</div>' for p in paragraphs)
-                + "</div>"
-            )
-
-    # §5.2 item 3: absent entirely before this. Read-only, and the `Why` column says these come from
-    # the odometer rather than from the agent choosing — a reader who thinks otherwise has
-    # misunderstood the design.
-    body += section_title("Versions it would test next")
-    body += data_table(
-        ["Version", "Why"],
-        [[esc(row["code"]), esc(row["why"])] for row in view["next_versions"]],
-        caption="The next odometer positions from here. Nothing is started by looking at this.",
-    )
-    return body
 
 
 def _in_force_line(view: dict) -> str:
-    """What this agent is actually run with, and where each value comes from. §5.5 item 3.
+    """What this agent is actually run with, and where each value comes from.
 
-    Stated whether or not it differs from the stored row — a researcher reading a temperature needs
-    to know which temperature it is every time, not only on the screens where the two happen to
-    disagree. When they do disagree the line leads with that, because the stored number is then not
-    the one in force and the screen must not let it pass for one.
+    Stated whether or not it differs from the seed — a researcher reading a temperature needs to
+    know which temperature it is every time, not only on the screens where two numbers happen to
+    disagree.
+
+    **The closing sentence was false from M19 WP-8 and is now the opposite.** It read *"Editing
+    the boxes above changes the stored record and the audit log; it does not change what the
+    runtime loads."* That was true while every call site built its agent from
+    `config/agents.default.yaml`; the five call sites now read `registry.live_agent_configs`, so
+    a save governs the next session, gate, Studio ask and validity test. Leaving the old sentence
+    would be worse than the original defect: it would tell a researcher their edit is inert at
+    the moment it starts changing results.
     """
     force = view.get("in_force") or {}
     if not force.get("model_name"):
         return ""
-    head = (
-        "**The stored values above are not what runs.** "
-        if view.get("in_force_differs")
-        else "Actually in force: "
+    version = force.get("version")
+    if version is None:
+        head = "Actually in force (the shipped default, nothing saved here yet): "
+    elif force.get("differs_from_seed"):
+        head = f"**Actually in force — your saved version {version}, not the shipped default.** "
+    else:
+        head = f"Actually in force (saved version {version}): "
+    temperature_note = (
+        " The twin's temperature is set in Twin Lab → Settings, because it is frozen onto "
+        "every session and is the subject of validity test 8."
+        if view.get("temperature_read_only")
+        else ""
     )
     return (
         f"{head}`{force['provider']}` · `{force['model_name']}` · "
         f"temperature **{force['temperature']}**  \n"
-        f"<small>Read from {esc(force['source'])}. Editing the boxes above changes the stored "
-        "record and the audit log; it does not change what the runtime loads.</small>"
+        f"<small>Read from {esc(force['source'])}. Editing the boxes above and saving changes "
+        "what the next session, quality gate, Studio ask and validity test actually do, and the "
+        f"version is frozen onto every run that used it.{esc(temperature_note)}</small>"
     )
 
 
@@ -401,28 +249,33 @@ def _test_panel(
 ) -> None:
     """*Test this agent* — one view per agent. `docs/06` §6's table.
 
-    ``prompt_box`` is the *What this agent is told* textarea, passed in so the Twin Interviewer's
-    test can compare **saved versus your edit** without the edit having to be saved first — which
-    is the point of a test screen.
+    ``prompt_box`` is the *What this agent is told* textarea, passed in so a test runs the prompt
+    **as it is in the box**, edited or not, without the edit having to be saved first.
+
+    The three model-calling tests (Twin, Policy Designer, Quality Checker) run as background jobs.
+    *Test this agent* starts one and returns at once; *Show the result* reads it back. A model call
+    on the handler's own path would hold the screen for the whole call (`CLAUDE.md` rule 12).
     """
     gr.HTML(section_title("Test this agent"))
     with gr.Row():
         twin_for_test = gr.Dropdown([], label="Twin", value=None)
         version_for_test = gr.Textbox(value="01000", label="Version")
-    run_test = gr.Button("Test this agent", variant="secondary")
+    with gr.Row():
+        run_test = gr.Button("Test this agent", variant="secondary")
+        show_test = gr.Button("Show the result", variant="secondary")
+    job = gr.State(None)
     test_out = gr.HTML("")
 
-    async def _test(
-        agent_id: str, twin_id: str | None, version_code: str, prompt_text: str
-    ):
-        from twinlab.services.agent_config import manager_plan
+    async def _test(agent_id: str, twin_id: str | None, version_code: str, prompt_text: str):
+        from twinlab.services.agent_config import start_agent_test
 
         if agent_id == "manager":
-            # Builds a plan and starts nothing (docs/06 §6). No session is created here.
-            from twinlab.services.agent_config import manager_log_preview
+            # Builds a plan and starts nothing (docs/06 §6). No session is created here, and no
+            # model is called, so it stays on the handler's own path.
+            from twinlab.services.agent_config import manager_log_preview, manager_plan
 
             plan = await manager_plan(version_code)
-            return (
+            html = (
                 kv_table([(r.label, esc(r.value)) for r in plan], caption="The plan")
                 # `ARCHITECTURE_UPDATE.md` §5.4: the one section screenshot 7 has and the panel did
                 # not. It is a dry run, so this previews the log's shape without producing one.
@@ -434,60 +287,85 @@ def _test_panel(
                 + '<div class="tl-card">This is a plan only. Nothing has been started; a sweep '
                 "runs from Twin Lab → Agents.</div>"
             )
-
-        if agent_id == "design":
-            from twinlab.services.agent_config import design_test_view
-
-            return _design_html(await design_test_view(version_code))
+            return html, None
 
         if agent_id == "analyst":
+            # The reading the analyst wrote for this version, beside the computed numbers it was
+            # given: the six movements, the index and the floors. It is read from the stored result:
+            # the analyst's input is a cell's computed shifts, which exist only once a cell has run,
+            # so this screen shows the reading rather than calling the model.
             from twinlab.services.results import results_panel
 
-            if not version_code:
-                return empty_state("No version given.", "Type a version code above.")
-            panel = await results_panel(version_code)
             from ..components import metric_bars
 
-            return metric_bars(panel.bars) + (
-                f'<div class="tl-card">{esc(panel.analysis)}</div>'
-                if panel.analysis
-                else empty_state(
-                    "No prose for this version yet.",
-                    "The analyst writes one when the cell completes.",
+            if not version_code:
+                return empty_state("No version given.", "Type a version code above."), None
+            panel = await results_panel(version_code)
+            numbers = metric_bars(panel.bars)
+            if not panel.analysis:
+                return (
+                    numbers
+                    + empty_state(
+                        "No reading for this version yet.",
+                        "The analyst writes one when the cell completes.",
+                    ),
+                    None,
                 )
-            )
+            return numbers + f'<div class="tl-card">{esc(panel.analysis)}</div>', None
 
         if agent_id == "checker":
-            if not twin_id:
-                return empty_state("No twin selected.", "Choose a twin above to test this agent.")
+            # Reads the codebook and the stored render, and calls no model, so it runs here.
             from twinlab.services.agent_config import checker_test_view
 
-            return _checker_html(await checker_test_view(twin_id))
+            return _checker_html(await checker_test_view(version_code or "")), None
 
-        if agent_id == "twin":
-            if not twin_id:
-                return empty_state("No twin selected.", "Choose a twin above to test this agent.")
-            from twinlab.services.agent_config import twin_test_view
+        if agent_id not in ("twin", "design"):
+            return empty_state("Nothing to test.", "Select an agent on the left."), None
+        if agent_id == "twin" and not twin_id:
+            return empty_state("No twin selected.", "Choose a twin above to test this agent."), None
 
-            try:
-                view = await twin_test_view(
-                    twin_id, version_code or "", edited_prompt=prompt_text
-                )
-            except Exception as exc:  # noqa: BLE001 — name it rather than render an empty card
-                from ..components import error_state
-
-                return error_state(
-                    "Could not test the twin agent.", type(exc).__name__, str(exc)[:300]
-                )
-            return _twin_html(view)
-
-        return empty_state("Nothing to test.", "Select an agent on the left.")
+        started = start_agent_test(
+            agent_id,
+            twin_id=twin_id,
+            version_code=version_code or "",
+            prompt_text=prompt_text or "",
+        )
+        return (
+            '<div class="tl-card">Running. The model is asked in the background and this takes a '
+            "while. Press <b>Show the result</b> when it is done.</div>",
+            started,
+        )
 
     run_test.click(
         _test,
         inputs=[selected, twin_for_test, version_for_test, prompt_box],
-        outputs=test_out,
+        outputs=[test_out, job],
     )
+
+    async def _show(started: str | None):
+        from twinlab.services.agent_config import agent_test_result
+
+        if not started:
+            return empty_state("Nothing has been tested yet.", "Press Test this agent first.")
+        result = agent_test_result(started)
+        if result["status"] == "running":
+            return (
+                '<div class="tl-card">Still running. Press Show the result again in a moment.</div>'
+            )
+        if result["status"] == "unknown":
+            return empty_state(
+                "That test is no longer in memory.", "Press Test this agent again."
+            )
+        if result["status"] == "failed":
+            from ..components import error_state
+
+            message = result["view"]["error"]
+            return error_state("Could not run this test.", "test", message)
+        view = result["view"]
+        renderers = {"twin": _twin_html, "design": _design_html}
+        return renderers[result["agent_id"]](view)
+
+    show_test.click(_show, inputs=job, outputs=test_out)
 
     async def _twins():
         from twinlab.services.studio import studio_twins
@@ -594,7 +472,20 @@ def render_agent_studio(badge: str | None = None) -> None:
                 v["prompt"],
                 v["provider"],
                 v["model_name"],
-                v["temperature"],
+                # WP-8 item 5. The twin's temperature is owned by `app_config['twin']` (Twin Lab
+                # → Settings), because that is the value a session freezes onto its config column
+                # and the subject of validity test 8. The box showed `1` while the twin ran at
+                # 0.25; now it shows the value in force and **cannot be edited here**, so there is
+                # one owner rather than a control whose number the runtime discards.
+                gr.update(
+                    value=v["temperature"],
+                    interactive=not v["temperature_read_only"],
+                    label=(
+                        "Temperature (set in Twin Lab → Settings)"
+                        if v["temperature_read_only"]
+                        else "Temperature"
+                    ),
+                ),
                 v["output_mode"],
                 f"Prompt version: v{v['version']} · hash {v['prompt_hash'][:8]}…"
                 + ("  ·  **frozen for the main study**" if v["frozen"] else ""),
@@ -648,13 +539,21 @@ def render_agent_studio(badge: str | None = None) -> None:
         async def _save(agent_id, role, prompt_text, prov, mname, temp, mode):
             from twinlab.services.agent_config import AgentFrozen, save_agent
 
+            # WP-8 item 5, completed. The twin's temperature box is read-only and shows the value
+            # in force from `app_config['twin']`, so sending it here would copy that number into
+            # the `agent_configs` row and leave two places holding it — the very shape of problem
+            # the read-only box removed. The key is omitted instead and `save_agent` merges `model`
+            # field-by-field, so the row keeps whatever temperature it had. One owner, one place.
+            ref = {"provider": prov, "name": mname}
+            if agent_id != "twin":
+                ref["temperature"] = float(temp)
             try:
                 await save_agent(
                     agent_id,
                     {
                         "role": role,
                         "system_prompt": prompt_text,
-                        "model": {"provider": prov, "name": mname, "temperature": float(temp)},
+                        "model": ref,
                         "output_mode": mode,
                     },
                 )

@@ -44,11 +44,26 @@ def _no_live_database():
             "InMemoryBackend inside that fixture rather than relying on the per-test one."
         )
 
+    def _refuse_storage(*_args, **_kwargs):
+        raise AssertionError(
+            "a test tried to construct a live SupabaseStorage. The raw-object mirror is as live "
+            "as the database and the ban covers it too: pass `storage=InMemoryStorage()` to the "
+            "function under test, or rely on the per-test fixture."
+        )
+
     original = client.SupabaseBackend
+    original_storage = client.SupabaseStorage
     client.SupabaseBackend = _refuse  # type: ignore[assignment]
+    # **Storage was not guarded until 2026-10-08.** `get_storage()` builds a `SupabaseStorage`
+    # whenever `settings.db_configured` is true, and a developer's `.env` is on the path when the
+    # suite runs locally — so a test that read a raw object reached the researcher's real bucket
+    # and said nothing. It surfaced as a 404 from `raw-surveys` inside a twin-import test, which
+    # is a live round trip that happened to fail; one that succeeded would have been invisible.
+    client.SupabaseStorage = _refuse_storage  # type: ignore[assignment]
     client.set_backend(client.InMemoryBackend())
     yield
     client.SupabaseBackend = original  # type: ignore[assignment]
+    client.SupabaseStorage = original_storage  # type: ignore[assignment]
     client.set_backend(None)
 
 
@@ -62,12 +77,16 @@ def backend():
     A higher-scoped fixture is **not** covered by this one — see :func:`_no_live_database`, which
     is what actually makes the guarantee hold.
     """
-    from twinlab.db.client import InMemoryBackend, set_backend
+    from twinlab.db.client import InMemoryBackend, InMemoryStorage, set_backend, set_storage
 
     instance = InMemoryBackend()
     set_backend(instance)
+    # Paired with the backend, exactly as `get_storage()` pairs them in the application: a live
+    # mirror behind an in-memory database would write objects nothing could read back.
+    set_storage(InMemoryStorage())
     yield instance
     set_backend(None)
+    set_storage(None)
 
 
 @pytest.hookimpl(tryfirst=True)

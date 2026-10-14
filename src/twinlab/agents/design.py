@@ -86,6 +86,21 @@ def build_user_prompt(brief: LeverBrief) -> str:
     return "\n\n".join(parts)
 
 
+def missing_instruction(missing: dict[str, str]) -> str:
+    """The one repair for a paragraph that left commitments out. Same agent, same prompt, one call.
+
+    It asks for the missing sentences only, and the caller appends them to the paragraph it already
+    has, so the rest of the text is never regenerated. The Checker then judges the combined text.
+    """
+    lines = "\n".join(f"- {text}" for text in missing.values())
+    return (
+        "Your previous paragraph left these commitments out. Write one sentence for each of them, "
+        "in the order given, stating each one's specific action and object in the same voice. Put "
+        "only those sentences in the text, joined by a single space. Do not restate anything else.\n"
+        f"{lines}"
+    )
+
+
 async def run_design(
     cfg: AgentConfig,
     brief: LeverBrief,

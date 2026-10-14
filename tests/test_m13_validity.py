@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import pytest
 
+from config.settings import settings
 from twinlab.agents.registry import StubModelClient, default_agent_configs
 from twinlab.db.client import DbError
 from twinlab.db.repositories import VariantRepo
 from twinlab.ingest.reference_store import reference
+from twinlab.models.reference import LEVER_BY_POSITION
 from twinlab.models.validity import (
     AblatedPersona,
     ProbeStimulus,
@@ -30,13 +32,16 @@ from twinlab.orchestrator.odometer import CONTROL_CODE, validate_code
 from twinlab.services import validity as service
 from twinlab.validity import tests as vt
 
+CONTROL_RUN_ID = "22222222-2222-2222-2222-222222222222"
 SESSION_ID = "11111111-1111-1111-1111-111111111111"
 
 
 # --------------------------------------------------------------------------- seeding
 
 
-async def _seed_twins(backend, n: int = 4, *, gap: int = 1) -> list[str]:
+async def _seed_twins(
+    backend, n: int = 4, *, gap: int = 1, prefix: str = "UBR"
+) -> list[str]:
     """`n` twins, each with a driver, a full battery, an arm and a stored H2 vector.
 
     ``gap`` is how far every twin's H2 answer sits from its **own** driver's, in points. The
@@ -49,7 +54,7 @@ async def _seed_twins(backend, n: int = 4, *, gap: int = 1) -> list[str]:
     h2 = ref.holdout_h2_item_ids
     twin_ids: list[str] = []
     for i in range(n):
-        twin_id = f"UBR-{i:03d}"
+        twin_id = f"{prefix}-{i:03d}"
         twin_ids.append(twin_id)
         base = 3 + (i % 3)          # drivers genuinely differ from one another
         await backend.insert(
@@ -82,7 +87,7 @@ async def _seed_twins(backend, n: int = 4, *, gap: int = 1) -> list[str]:
                     "The pay is unfair when a trip is cancelled. I can see how my fares "
                     "are worked out."
                 ),
-                "persona_hash": f"hash-{i}",
+                "persona_hash": f"hash-{prefix}-{i}",
             }],
         )
         await backend.insert(
@@ -97,12 +102,33 @@ async def _seed_twins(backend, n: int = 4, *, gap: int = 1) -> list[str]:
     return twin_ids
 
 
-async def _seed_session(backend, twin_ids: list[str], *, floor_index: float = 0.05) -> None:
-    """A session with a frozen panel and a completed `00000` control, so a floor exists."""
+async def _seed_session(
+    backend,
+    twin_ids: list[str],
+    *,
+    floor_index: float = 0.05,
+    control_bump: int = 1,
+    stimulus: bool = True,
+) -> None:
+    """A session with a frozen panel, a completed `00000` control, and a verified stimulus.
+
+    ``stimulus`` seeds a Checker-**passed** `variants` row for `settings.start_code`, which is the
+    code tests 4-8 default to. **It did not exist before M19 WP-6**, and the tests passed anyway:
+    `_paragraphs_for` returned `{}`, nothing checked it, and `_Recorder` accepted an empty
+    `paragraphs` dict without complaint — so three tests were asserting that the live tests put a
+    stimulus to the panel while the stimulus was empty. Against the real `ask_panel_twins` that
+    path raised `RoundPromptError("expected all five levers, got [])`, caught nowhere.
+
+    Set it ``False`` to exercise the refusal: no verified variant means INCONCLUSIVE and zero
+    model calls (I3).
+    """
+    from twinlab.services.config_match import current_fingerprint
+
     await backend.insert(
         "sessions",
         [{
-            "session_id": SESSION_ID, "name": "m13", "status": "completed", "config": {},
+            "session_id": SESSION_ID, "name": "m13", "status": "completed",
+            "config": {"config_fingerprint": await current_fingerprint(backend)},
             "panel_size": len(twin_ids), "panel_seed": 7,
         }],
     )
@@ -116,11 +142,46 @@ async def _seed_session(backend, twin_ids: list[str], *, floor_index: float = 0.
     await backend.insert(
         "runs",
         [{
-            "run_id": "22222222-2222-2222-2222-222222222222", "session_id": SESSION_ID,
+            "run_id": CONTROL_RUN_ID, "session_id": SESSION_ID,
             "version_code": CONTROL_CODE, "status": "completed", "twins_n": len(twin_ids),
             "index_value": floor_index, "is_latest_for_version": True,
         }],
     )
+    # The control's **answers**, not just its index. Since 2026-10-07 the floor is measured from
+    # these (`docs/07` §6); reading `index_value` gave an absolute-of-a-signed-mean, which cancels
+    # to zero while every statistic it gates is a mean-of-absolutes. A fixture that seeds only the
+    # index now describes a session whose floor was never measured, which is INCONCLUSIVE.
+    ref = reference()
+    battery = ref.battery_item_ids
+    await backend.insert(
+        "twin_answers",
+        [
+            {
+                "run_id": CONTROL_RUN_ID, "twin_id": twin_id,
+                # Each twin's own baseline, which is what a twin shown "no change" returns, plus
+                # `control_bump` on one item of the first twin so the floor is small and real
+                # rather than exactly zero.
+                "answers": {
+                    item: 3 + (i % 3) + (control_bump if i == 0 and item == battery[0] else 0)
+                    for item in battery
+                },
+                "lever_order": [0, 1, 2, 3, 4], "seed": 1, "wording": "A", "model": "stub",
+            }
+            for i, twin_id in enumerate(twin_ids)
+        ],
+    )
+    if stimulus:
+        await VariantRepo(backend).put(
+            version_code=settings.start_code,
+            style_version=settings.style_version,
+            delta_spec={"version_code": settings.start_code},
+            delta_hash="h",
+            paragraphs={
+                lever: {"text": f"Uber now does something different about {lever}."}
+                for lever in LEVER_BY_POSITION
+            },
+            checker={"passed": True},
+        )
 
 
 def _stub() -> StubModelClient:
@@ -151,9 +212,40 @@ async def test_tests_1_and_3_make_zero_model_calls(backend) -> None:
     assert three.test_id == "simple_guesses"
 
 
+
+def _floor(cell: float = 0.05, twin: float | None = None, **by_metric: float):
+    """A measured `NoiseFloor` for the tests. `docs/07` §6, `models.analysis.NoiseFloor`.
+
+    ``twin`` defaults to ``cell`` so a test that does not care about the distinction keeps the
+    single-number behaviour it had before 2026-10-07. A test that does care passes both.
+    """
+    from twinlab.models.analysis import NoiseFloor
+
+    twin = cell if twin is None else twin
+    metrics = by_metric or {"fairness": twin, "happiness": twin}
+    return NoiseFloor(
+        cell=cell,
+        twin=twin,
+        cell_by_metric={m: cell for m in metrics},
+        twin_by_metric=dict(metrics),
+        twins_n=7,
+    )
+
+
 def test_the_call_table_matches_the_specification() -> None:
-    """`docs/08` §4's table: 0, N, 0, N, 2N, N, N, 3N."""
-    assert vt.CALLS_PER_TWIN == {1: 0, 2: 1, 3: 0, 4: 1, 5: 2, 6: 1, 7: 1, 8: 3}
+    """`docs/08` §4's table: 0, N, 0, N, 2N, 3N, 2N, 3N.
+
+    Test 6 became 3N on 2026-10-07 when it gained its same-persona retest control
+    (`docs/DECISIONS.md`): with, retest, without.
+
+    Test 7 was corrected to 2N on 2026-10-08. It had always asked **both** models — it cannot
+    reuse the sweep's stored answers for model A, because `second_model` compares a paired
+    per-twin index and the pairing only holds if both sides were asked the same way in the same
+    test — while the table and the confirm card said N.
+    """
+    assert vt.CALLS_PER_TWIN == {1: 0, 2: 1, 3: 0, 4: 1, 5: 2, 6: 3, 7: 2, 8: 3}
+    assert service.calls_for(6, 20) == 60
+    assert service.calls_for(7, 20) == 40
     assert service.calls_for(1, 20) == 0
     assert service.calls_for(3, 20) == 0
     assert service.calls_for(5, 20) == 40
@@ -377,13 +469,13 @@ def test_the_impossible_version_verdict_can_fail() -> None:
     rose = vt.impossible_version(
         happiness_shift=0.9,
         per_twin_happiness_shift={f"t{i}": 0.9 for i in range(4)},
-        noise_floor=0.05,
+        noise_floor=_floor(),
     )
     assert rose.verdict == "FAIL"
     flat = vt.impossible_version(
         happiness_shift=0.01,
         per_twin_happiness_shift={f"t{i}": 0.01 for i in range(4)},
-        noise_floor=0.05,
+        noise_floor=_floor(),
     )
     assert flat.verdict == "PASS"
 
@@ -445,14 +537,136 @@ def test_the_ablation_verdict_has_no_fail() -> None:
     """`docs/08` §4 test 6 names `pass` and `check` only — there is no `FAIL` to be had."""
     moved = vt.ablation(
         fairness_with={"a": 5.0, "b": 5.0}, fairness_without={"a": 3.0, "b": 3.2},
-        noise_floor=0.05,
+        noise_floor=_floor(),
     )
     assert moved.verdict == "PASS"
     stuck = vt.ablation(
         fairness_with={"a": 5.0, "b": 5.0}, fairness_without={"a": 5.0, "b": 5.0},
-        noise_floor=0.05,
+        noise_floor=_floor(),
     )
     assert stuck.verdict == "CHECK"
+
+
+def test_the_ablation_is_judged_against_the_twins_own_retest_not_only_the_floor() -> None:
+    """`docs/08` §4 test 6 — the control added 2026-10-07 (`docs/DECISIONS.md`).
+
+    `fairness_with` and `fairness_without` come from two separate model calls, so their difference
+    holds the twin's own call-to-call variance as well as any sensitivity to the ablation. A twin
+    that ignores its persona entirely produces a large difference for the first reason alone, and
+    against the floor by itself that read as `PASS` — the test's own question answered backwards.
+    """
+    # The ablation moves the answer 2 points. So does asking the same persona twice.
+    noisy = vt.ablation(
+        fairness_with={"a": 5.0, "b": 5.0},
+        fairness_without={"a": 3.0, "b": 3.0},
+        fairness_retest={"a": 3.0, "b": 3.0},
+        noise_floor=_floor(),
+    )
+    assert noisy.verdict == "CHECK"
+    assert noisy.statistics["retest_difference"] == pytest.approx(2.0)
+    assert "retest" in noisy.headline
+
+    # Same ablation, but this twin is stable under a repeat: now the 2 points are the ablation.
+    real = vt.ablation(
+        fairness_with={"a": 5.0, "b": 5.0},
+        fairness_without={"a": 3.0, "b": 3.0},
+        fairness_retest={"a": 5.0, "b": 5.0},
+        noise_floor=_floor(),
+    )
+    assert real.verdict == "PASS"
+    assert real.statistics["retest_difference"] == pytest.approx(0.0)
+
+    # Without the control the test still runs, and says so rather than implying it compared.
+    uncontrolled = vt.ablation(
+        fairness_with={"a": 5.0}, fairness_without={"a": 3.0}, noise_floor=_floor()
+    )
+    assert uncontrolled.statistics["retest_difference"] is None
+    assert "No same-persona retest was available" in uncontrolled.headline
+
+
+async def test_test_6_asks_a_same_persona_retest_before_the_ablated_round(backend) -> None:
+    """The control is a real third round, not a number assembled from the other two."""
+    ref = reference()
+    twin_ids = await _seed_twins(backend)
+    await _seed_session(backend, twin_ids)
+    ask = _Recorder({t: {i: 3 for i in ref.battery_item_ids} for t in twin_ids})
+
+    outcome = await service.run_validity_test(
+        6, session_id=SESSION_ID, backend=backend, ask=ask, append=False
+    )
+
+    assert outcome.test_id == "ablation"
+    purposes = [r["purpose"] for r in ask.rounds]
+    assert purposes == ["fairness_with", "fairness_retest", "fairness_without"]
+    # The retest carries no `personas` override, so it runs on the twin's real passage — the
+    # whole point of it. The ablated round does carry one.
+    assert not ask.rounds[1].get("personas")
+    assert ask.rounds[2].get("personas")
+    assert outcome.statistics["retest_difference"] is not None
+
+
+def test_a_cancelling_floor_cannot_make_every_twin_an_improvement() -> None:
+    """`docs/08` §4 test 4 — "a **clear** improvement", judged per twin.
+
+    With the old single floor, `share_improved` counted twins whose happiness rose above a
+    cell-level number that cancels toward zero, so the question degraded to "did this twin move up
+    at all" — ~50% under any noise, and never below the 25% the test needs to pass. The per-twin
+    floor is what the word "clear" refers to.
+    """
+    # Twins wobble by a point in both directions; the cell has not moved.
+    floor = _floor(cell=0.0, twin=1.0, happiness=1.0)
+    wobble = vt.impossible_version(
+        happiness_shift=0.0,
+        per_twin_happiness_shift={"a": 0.5, "b": -0.5, "c": 0.5, "d": -0.5},
+        noise_floor=floor,
+    )
+    assert wobble.statistics["share_improved"] == 0.0
+    assert wobble.verdict == "PASS"
+
+    # A real improvement clears the per-twin floor and is still caught.
+    real = vt.impossible_version(
+        happiness_shift=1.5,
+        per_twin_happiness_shift={"a": 1.5, "b": 1.5, "c": 1.5, "d": 1.5},
+        noise_floor=floor,
+    )
+    assert real.statistics["share_improved"] == 1.0
+    assert real.verdict == "FAIL"
+
+
+def test_simple_guesses_reports_an_interval_beside_its_verdict() -> None:
+    """A FAIL on nine twins is a claim about a difference, and differences have intervals."""
+    twins = [f"t{i}" for i in range(9)]
+    outcome = vt.simple_guesses(
+        twin_errors={t: 0.67 for t in twins},
+        nochange_errors={t: 0.40 + 0.01 * i for i, t in enumerate(twins)},
+        groupshift_errors={t: 0.56 for t in twins},
+    )
+    assert outcome.verdict == "FAIL"
+    # Negative: the naive predictor is ahead. The interval says how firmly.
+    assert outcome.statistics["advantage_over_nochange"] < 0
+    assert outcome.statistics["advantage_over_nochange_ci_lower"] is not None
+    assert outcome.statistics["advantage_over_groupshift"] == pytest.approx(-0.11, abs=1e-9)
+
+
+def test_wrong_person_reports_the_distance_a_flawless_twin_could_not_exceed() -> None:
+    """Reported, never thresholded — `docs/08` §4 test 1's 0.5 is unchanged.
+
+    A gap of 0.4 means something different when the two drivers are 0.8 apart than when they are
+    3 apart, and the row has to carry enough to tell those cases apart afterwards.
+    """
+    outcome = vt.wrong_person(
+        own_errors={"a": 0.2, "b": 0.3},
+        other_errors={"a": 0.6, "b": 0.75},
+        between_person_distance=0.8,
+    )
+    assert outcome.statistics["between_person_distance"] == 0.8
+    assert outcome.statistics["gap_share_of_distance"] == pytest.approx(0.425 / 0.8, abs=1e-3)
+    # Still a CHECK: the threshold did not move.
+    assert outcome.verdict == "CHECK"
+    # Absent is None, never zero — a distance nobody measured is not a distance of nothing.
+    bare = vt.wrong_person(own_errors={"a": 0.2}, other_errors={"a": 0.6})
+    assert bare.statistics["between_person_distance"] is None
+    assert bare.statistics["gap_share_of_distance"] is None
 
 
 # ------------------------------- accept 7: test 7 records both models and fails on a sign flip
@@ -511,7 +725,7 @@ def test_test_8_reports_per_metric_spread_across_three_temperatures() -> None:
         1.0: {"fairness": 0.55, "happiness": 0.12},
     }
     outcome, recommendation = vt.temperature_sweep(
-        index_by_temp=index_by_temp, shifts_by_temp=shifts_by_temp, noise_floor=0.05
+        index_by_temp=index_by_temp, shifts_by_temp=shifts_by_temp, noise_floor=_floor()
     )
     assert outcome.statistics["spread_fairness"] == pytest.approx(0.25, abs=1e-6)
     assert outcome.statistics["spread_happiness"] == pytest.approx(0.02, abs=1e-6)
@@ -569,6 +783,127 @@ class _Recorder:
         return {t: dict(self.answers[t]) for t in ids if t in self.answers}
 
 
+async def test_the_call_table_matches_the_rounds_each_test_actually_asks(backend) -> None:
+    """The budget is checked against the **code**, not against the table restating itself.
+
+    `CALLS_PER_TWIN` is what the confirm card turns into a number a researcher approves, and it
+    was wrong for test 7 for as long as test 7 existed: the table said N, the implementation asked
+    both models, so the approved budget was half the spend. A table asserted only against its own
+    literal cannot catch that. This asks each test with a recorder and counts the rounds.
+
+    One round per `ask` call, each covering the whole panel, so rounds == calls per twin.
+    """
+    ref = reference()
+    twin_ids = await _seed_twins(backend)
+    await _seed_session(backend, twin_ids)
+
+    for number in (4, 5, 6, 7, 8):
+        ask = _Recorder({t: {i: 3 for i in ref.battery_item_ids} for t in twin_ids})
+        await service.run_validity_test(
+            number, session_id=SESSION_ID, backend=backend, ask=ask,
+            second_model_name="some-other-model" if number == 7 else None,
+            append=False,
+        )
+        assert len(ask.rounds) == vt.CALLS_PER_TWIN[number], (
+            f"test {number} asked {len(ask.rounds)} rounds but the budget card promises "
+            f"{vt.CALLS_PER_TWIN[number]} calls per twin"
+        )
+        assert service.calls_for(number, len(twin_ids)) == len(ask.rounds) * len(twin_ids)
+
+
+async def test_test_7_asks_both_models_and_records_both_names(backend) -> None:
+    """`docs/08` §4 test 7. The second model is a **name on the same provider**.
+
+    `resolve_model` routes every supported provider at `settings.ollama_base_url`, so anything
+    that endpoint serves — `mistral-large-4`, `deepseek-v4-pro:0813` — is reachable by name with
+    no code change. The test overrides `cfg.model.name` and nothing else.
+    """
+    ref = reference()
+    twin_ids = await _seed_twins(backend)
+    await _seed_session(backend, twin_ids)
+    ask = _Recorder({t: {i: 3 for i in ref.battery_item_ids} for t in twin_ids})
+
+    outcome = await service.run_validity_test(
+        7, session_id=SESSION_ID, backend=backend, ask=ask,
+        second_model_name="mistral-large-4", append=False,
+    )
+
+    assert [r["purpose"] for r in ask.rounds] == ["model_a", "model_b"]
+    assert ask.rounds[0]["model"] == settings.twinlab_model
+    assert ask.rounds[1]["model"] == "mistral-large-4"
+    # Both names on the row: a comparison that does not say what it compared is not evidence.
+    assert outcome.models == [settings.twinlab_model, "mistral-large-4"]
+
+
+async def test_test_7_refuses_a_model_the_endpoint_does_not_serve(backend) -> None:
+    """M21 — catch a typo before it costs a round of calls, and **never** on a listing failure.
+
+    Test 7 asks model A first, so a misspelled second model spends a full panel of calls on the
+    model already in use before dying on the one that does not exist. The box being non-empty was
+    the only check.
+    """
+    from twinlab.agents import registry
+
+    twin_ids = await _seed_twins(backend)
+    await _seed_session(backend, twin_ids)
+    registry.reset_served_models()
+    registry._SERVED_MODELS[settings.ollama_base_url.rstrip("/")] = frozenset(
+        {"gpt-oss:120b", "mistral-large-4", "mistral-large-3:675b"}
+    )
+    try:
+        bad = await service.test_readiness(
+            7, session_id=SESSION_ID, second_model_name="mistral-large-5", backend=backend
+        )
+        assert bad["ready"] is False
+        # Names the near miss rather than only refusing.
+        assert "mistral-large-4" in bad["reason"]
+
+        good = await service.test_readiness(
+            7, session_id=SESSION_ID, second_model_name="mistral-large-4", backend=backend
+        )
+        assert good["ready"] is True
+
+        # A model cannot be asked whether its finding is a property of itself.
+        same = await service.test_readiness(
+            7, session_id=SESSION_ID, second_model_name=settings.twinlab_model, backend=backend
+        )
+        assert same["ready"] is False
+
+        # **Fails open.** `None` is "could not ask the endpoint", never "serves nothing": a
+        # listing that is blocked must not become a second gate in front of a test.
+        registry._SERVED_MODELS[settings.ollama_base_url.rstrip("/")] = None
+        unknown = await service.test_readiness(
+            7, session_id=SESSION_ID, second_model_name="anything-at-all", backend=backend
+        )
+        assert unknown["ready"] is True
+    finally:
+        registry.reset_served_models()
+
+
+async def test_the_model_listing_is_never_fetched_without_a_live_provider(monkeypatch) -> None:
+    """`CLAUDE.md` Testing: no live provider, ever — not even for a readiness line.
+
+    The guard is load-bearing rather than theoretical: a developer's `.env` is on the path when
+    the suite runs locally, so `settings.ollama_api_key` is often set and an unguarded
+    `served_model_names` would issue a real request from a unit test. Asserted by making the key
+    empty and proving no transport is reached, rather than by assuming the environment is clean.
+    """
+    from twinlab.agents import registry
+
+    def _no_transport(*_a, **_k):  # pragma: no cover — reaching it is the failure
+        raise AssertionError("served_model_names tried to reach the network in mock mode")
+
+    monkeypatch.setattr(registry.settings, "ollama_api_key", "", raising=False)
+    monkeypatch.setattr("httpx.AsyncClient", _no_transport)
+    registry.reset_served_models()
+    try:
+        assert await registry.served_model_names() is None
+        # And nothing is cached from the refusal, so setting a key later still works.
+        assert not registry._SERVED_MODELS
+    finally:
+        registry.reset_served_models()
+
+
 async def test_a_live_test_without_a_wired_twin_call_is_inconclusive(backend) -> None:
     """Honest rather than invented: no live twin path means no result, not a made-up one."""
     twin_ids = await _seed_twins(backend)
@@ -596,8 +931,14 @@ async def test_test_4_puts_the_probe_to_the_panel_and_stores_no_variant(backend)
     assert outcome.twins_n == len(twin_ids)
     assert ask.rounds and ask.rounds[0]["purpose"] == "probe"
     assert "minimum payment" in ask.rounds[0]["paragraphs"]["L1"]
-    # Nothing was filed. `variants` is what makes a stimulus reachable from the Dial board.
-    assert await backend.select("variants", None) == []
+    # The **probe** was not filed. `variants` is what makes a stimulus reachable from the Dial
+    # board, and a contradictory probe must never become a cell anyone can run. The one row
+    # present is the ordinary stimulus the fixture seeded for the panel to be asked about at all.
+    rows = await backend.select("variants", None)
+    assert [r["version_code"] for r in rows] == [settings.start_code]
+    assert all(
+        "minimum payment" not in str(r.get("paragraphs")) for r in rows
+    ), "the contradictory probe reached `variants` (docs/08 §4 test 4)"
 
 
 async def test_test_5_asks_twice_and_test_8_asks_three_times(backend) -> None:
@@ -682,14 +1023,14 @@ def test_the_placebo_verdict_can_fail() -> None:
     big = vt.placebo_change(
         sham_shifts={"fairness": 0.6, "happiness": 0.6},
         per_twin_abs_move={"a": 0.8, "b": 0.7},
-        noise_floor=0.05,
+        noise_floor=_floor(),
         median_live_shift=0.7,
     )
     assert big.verdict == "FAIL"
     assert big.statistics["share_moved"] == 1.0
     quiet = vt.placebo_change(
         sham_shifts={"fairness": 0.01}, per_twin_abs_move={"a": 0.01},
-        noise_floor=0.05, median_live_shift=0.7,
+        noise_floor=_floor(), median_live_shift=0.7,
     )
     assert quiet.verdict == "PASS"
 
@@ -698,11 +1039,11 @@ def test_the_order_and_wording_verdict_can_fail() -> None:
     """Presentation moving the metrics as much as the change itself is a `FAIL`."""
     confounded = vt.order_and_wording(
         diff_per_metric={"fairness": 0.5, "happiness": 0.5}, twins_n=10,
-        noise_floor=0.05, cell_own_shift=0.6,
+        noise_floor=_floor(), cell_own_shift=0.6,
     )
     assert confounded.verdict == "FAIL"
     clean = vt.order_and_wording(
-        diff_per_metric={"fairness": 0.01}, twins_n=10, noise_floor=0.05, cell_own_shift=0.6
+        diff_per_metric={"fairness": 0.01}, twins_n=10, noise_floor=_floor(), cell_own_shift=0.6
     )
     assert clean.verdict == "PASS"
 
@@ -775,3 +1116,130 @@ async def test_the_confirm_step_shows_a_budget_for_every_test(backend) -> None:
     assert costly.calls == 60
     with pytest.raises(service.ValidityRunError):
         await service.validity_budget_view(9, twins=20, backend=backend)
+
+
+# --------------------------------------- M19 WP-7: budget, provenance, drop visibility
+
+
+async def test_the_budget_reads_the_sessions_true_panel_size(backend) -> None:
+    """A typed-in twin count used to feed the confirm step's budget while the run always used
+    the session's frozen panel (I14), so the two numbers could disagree. `session_id` is now
+    authoritative whenever one is given; the explicit override still works without one."""
+    twin_ids = await _seed_twins(backend, n=5)
+    await _seed_session(backend, twin_ids)
+
+    view = await service.validity_budget_view(2, session_id=SESSION_ID, backend=backend)
+    assert view.calls == 5          # test 2 costs one call per twin, and the panel holds 5
+
+    fallback = await service.validity_budget_view(2, twins=9, backend=backend)
+    assert fallback.calls == 9      # no session: the explicit override still applies
+
+
+async def test_version_code_is_recorded_on_every_appended_row(backend) -> None:
+    """`006_validity_version_code.sql`. `None` for tests 1 and 3, the resolved stimulus for 4-8 —
+    before this a `validity_results` row said what a test found but never what it was shown."""
+    ref = reference()
+    twin_ids = await _seed_twins(backend)
+    await _seed_session(backend, twin_ids)
+    ask = _Recorder({t: {i: 3 for i in ref.battery_item_ids} for t in twin_ids})
+
+    await service.run_validity_test(1, session_id=SESSION_ID, backend=backend)
+    await service.run_validity_test(4, session_id=SESSION_ID, backend=backend, ask=ask)
+
+    rows = {r["test_id"]: r for r in await backend.select("validity_results", None)}
+    assert rows["wrong_person"]["version_code"] is None
+    assert rows["impossible_version"]["version_code"] == settings.start_code
+
+
+async def test_a_dropped_twin_is_named_in_the_headline(backend) -> None:
+    """A twin test 1 cannot score used to vanish into a `log.warning` line nobody watching the
+    Results table would see. It is now in the headline next to the result."""
+    twin_ids = await _seed_twins(backend, n=3)
+    # An H2 vector with nobody behind it — no `twins` row, no `survey_answers` — so
+    # `_human_answers` returns `{}` for it and test 1 can score neither side (I17 drops it, and
+    # drags down whichever real twin the derangement paired it with).
+    h2 = reference().holdout_h2_item_ids
+    await backend.insert(
+        "twin_quality_runs",
+        [{
+            "twin_id": "ORPHAN-001", "holdout_set": "H2", "arm": "BASE", "items_n": len(h2),
+            "mae": 0.5, "pct_within_1": 0.9, "kept": None, "model": "stub", "repeats": 1,
+            "is_latest": True,
+            "detail": {service.H2_ANSWERS_KEY: {item: 4 for item in h2}},
+        }],
+    )
+    await _seed_session(backend, twin_ids)
+
+    outcome = await service.run_validity_test(
+        1, session_id=SESSION_ID, backend=backend, append=False
+    )
+
+    assert outcome.twins_n < 4, "the orphan (and its pair) must not be silently counted as scored"
+    assert "excluded" in outcome.headline
+
+
+# ------------------------------- scoping tests 1 and 3 to one batch (2026-10-13, Route A)
+
+
+async def test_tests_1_and_3_can_be_scoped_to_one_batch_and_say_so_on_the_row(backend) -> None:
+    """Two generator versions in one database must not be read as one population.
+
+    `docs/08` §4 test 1 asks whether a twin is closer to its own driver than to **a stranger's**,
+    and a stranger drawn under a different construct mapping, lever matrix or reaction gain is not
+    the stranger the test means. Pooling is what made one reading of test 3 meaningless
+    (`docs/DECISIONS.md`, 2026-10-13), and `tools/gate_diagnostic.py` has required `--prefix` ever
+    since. This is the same guard on the validity path.
+
+    Scored on twins whose answers differ between the two batches, so a pooled read and a scoped
+    read cannot coincide by luck.
+    """
+    old_batch = await _seed_twins(backend, n=4, gap=3, prefix="SYN-OLD")
+    new_batch = await _seed_twins(backend, n=4, gap=0, prefix="SYN-NEW")
+    await _seed_session(backend, old_batch + new_batch)
+
+    pooled = await service.run_validity_test(
+        1, session_id=SESSION_ID, backend=backend, append=False
+    )
+    scoped = await service.run_validity_test(
+        1, session_id=SESSION_ID, backend=backend, append=False, twin_prefix="SYN-NEW"
+    )
+
+    assert pooled.twins_n == 8, "unscoped must still read every twin that has a vector"
+    assert scoped.twins_n == 4, "a scoped read sees one batch"
+    assert scoped.statistics["mae_own"] != pooled.statistics["mae_own"], (
+        "the two batches answer differently, so pooling them changes the number"
+    )
+    # The appended row must say which batch it describes; `validity_results` is read months later.
+    assert "SYN-NEW" in scoped.detail
+    assert "SYN-NEW" not in pooled.detail and "only" not in pooled.detail
+
+    three = await service.run_validity_test(
+        3, backend=backend, append=False, twin_prefix="SYN-NEW"
+    )
+    assert three.twins_n == 4
+    assert "SYN-NEW" in three.detail
+
+
+async def test_scoping_a_panel_test_to_a_batch_is_refused_rather_than_ignored(backend) -> None:
+    """`CLAUDE.md` rule 7. Tests 2 and 4-8 read the session's frozen panel (I10), not a prefix.
+
+    Accepting the argument and ignoring it would suggest a filter that never applied, and the
+    researcher would read the result as scoped when it was not.
+    """
+    for number in (2, 4, 5, 6, 7, 8):
+        with pytest.raises(service.ValidityRunError, match="frozen panel"):
+            await service.run_validity_test(
+                number, session_id=SESSION_ID, backend=backend, twin_prefix="SYN-NEW"
+            )
+
+
+async def test_a_scope_that_matches_no_twin_is_inconclusive_never_a_pass(backend) -> None:
+    """I15 — a test that ran on nobody concluded nothing, however clean the filter was."""
+    twin_ids = await _seed_twins(backend, n=4, prefix="SYN-NEW")
+    await _seed_session(backend, twin_ids)
+
+    outcome = await service.run_validity_test(
+        1, session_id=SESSION_ID, backend=backend, append=False, twin_prefix="SYN-ABSENT"
+    )
+    assert outcome.twins_n == 0
+    assert outcome.verdict == "INCONCLUSIVE"

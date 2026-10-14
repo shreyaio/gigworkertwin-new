@@ -25,7 +25,13 @@ from twinlab.agents.contract import ContractOutcome, run_answer_ladder
 from twinlab.agents.registry import ModelClient, resolve_prompt
 from twinlab.models.agent import AgentConfig
 from twinlab.models.reference import LEVER_BY_POSITION
-from twinlab.models.twin import AnswerVector, RoundPrompt, TwinAnswerSet
+from twinlab.models.twin import (
+    AnswerVector,
+    BatteryItem,
+    H3RoundPrompt,
+    RoundPrompt,
+    TwinAnswerSet,
+)
 
 #: The four labelled fences, in the order `docs/02` §3.3 fixes. **Order is part of the contract**:
 #: a reordered prompt is a different stimulus.
@@ -57,7 +63,7 @@ def build_round_prompt(
     persona_hash: str,
     paragraphs: dict[str, str],
     baseline: dict[str, int],
-    battery: dict[str, tuple[str, int]],
+    battery: dict[str, BatteryItem],
     seed: int,
     wording: str = "A",
     show_baseline: bool = True,
@@ -103,8 +109,7 @@ def build_user_prompt(round_prompt: RoundPrompt, persona_text: str) -> str:
             f"{item_id} = {value}" for item_id, value in sorted(round_prompt.baseline.items())
         ),
         "BATTERY": "\n".join(
-            f"{item_id}: {stem} (answer 1 to {points})"
-            for item_id, (stem, points) in _battery_in_order(round_prompt)
+            _battery_line(item_id, item) for item_id, item in _battery_in_order(round_prompt)
         ),
     }
     parts: list[str] = []
@@ -119,7 +124,176 @@ def build_user_prompt(round_prompt: RoundPrompt, persona_text: str) -> str:
     return "\n\n".join(parts)
 
 
-def _battery_in_order(round_prompt: RoundPrompt) -> list[tuple[str, tuple[str, int]]]:
+# --------------------------------------------------------------------------- Part 17, one round
+
+#: The H3 round's three fences, in order. **Order is part of the contract.** There is no
+#: `BASELINE`: `docs/08` §2.1 step 2 is explicit that the human had none either, and an empty
+#: fence would tell the twin a baseline exists and was withheld.
+H3_BLOCK_ORDER: tuple[str, ...] = ("PERSONA", "SCENARIO", "BATTERY")
+
+#: How a version is named to the twin. **Never the version code.** `assert_no_forbidden_content`
+#: refuses a round naming a code (I8), and a digit in the prompt is a channel through which "this
+#: is the strong version" could reach the answer and become a confound.
+H3_VERSION_LABEL = "Version {position}"
+
+
+def build_h3_prompt(
+    *,
+    persona_hash: str,
+    paragraphs_by_version: dict[int, dict[str, str]],
+    items_by_version: dict[int, dict[str, BatteryItem]],
+    seed: int,
+    wording: str = "A",
+) -> H3RoundPrompt:
+    """Assemble the whole of Part 17 as **one** round. M19 WP-3.
+
+    ``paragraphs_by_version`` and ``items_by_version`` are keyed by ``version_shown`` (1..6) — the
+    order the human respondent saw, which is the order the blocks appear in. Each version draws
+    its **own** lever order from ``seed`` combined with its position, so paragraph position cannot
+    become a confound within a version, and the six orders are not identical to each other (which
+    would let a twin learn one position's meaning and carry it across).
+
+    Deterministic: the same ``(seed, codes, twin)`` rebuilds the same six orders, which is what
+    makes the round reconstructible (I11).
+    """
+    if not paragraphs_by_version:
+        raise RoundPromptError(
+            "the H3 round was given no stimuli. A gate scored on nothing is not a gate (I15)."
+        )
+    if set(paragraphs_by_version) != set(items_by_version):
+        raise RoundPromptError(
+            f"H3 stimuli cover versions {sorted(paragraphs_by_version)} but the items cover "
+            f"{sorted(items_by_version)}. A version with no items, or an item with no version, is "
+            "a data defect and is not skipped."
+        )
+
+    scenario: dict[int, list[str]] = {}
+    orders: dict[int, list[int]] = {}
+    for position in sorted(paragraphs_by_version):
+        paragraphs = paragraphs_by_version[position]
+        if set(paragraphs) != set(LEVER_BY_POSITION):
+            raise RoundPromptError(
+                f"version {position} has levers {sorted(paragraphs)}, not all five — a round "
+                "with a missing lever is not a cell"
+            )
+        order = lever_order_for(h3_version_seed(seed, position))
+        orders[position] = order
+        scenario[position] = [paragraphs[LEVER_BY_POSITION[i]] for i in order]
+
+    return H3RoundPrompt(
+        persona_hash=persona_hash,
+        scenario=scenario,
+        lever_order=orders,
+        battery={p: dict(items_by_version[p]) for p in sorted(items_by_version)},
+        wording=wording,
+        seed=seed,
+    )
+
+
+def h3_version_seed(seed: int, position: int) -> int:
+    """The lever-order seed for one version block of an H3 round.
+
+    Derived from the round seed and the version's position rather than drawn, so all six orders
+    rebuild from the one stored number (I11) while still differing from each other.
+    """
+    digest = hashlib.sha256(f"{seed}|h3|{position}".encode()).hexdigest()
+    return int(digest[:8], 16)
+
+
+def build_h3_user_prompt(round_prompt: H3RoundPrompt, persona_text: str) -> str:
+    """The three labelled fences of an H3 round. `docs/02` §3.3.
+
+    The six scenario blocks are labelled by position, never by code (:data:`H3_VERSION_LABEL`), and
+    the battery is grouped under the same labels so a twin can see which statements belong to which
+    version. Each item still renders with **its own range** (`docs/02` §4.2 rule 6).
+    """
+    scenario_parts: list[str] = []
+    for position in sorted(round_prompt.scenario):
+        label = H3_VERSION_LABEL.format(position=position)
+        body = "\n\n".join(round_prompt.scenario[position])
+        if not body.strip():
+            raise RoundPromptError(f"H3 scenario block for version {position} is empty")
+        scenario_parts.append(f"{label}\n{body}")
+
+    battery_parts: list[str] = []
+    for position in sorted(round_prompt.battery):
+        label = H3_VERSION_LABEL.format(position=position)
+        lines = [
+            _battery_line(item_id, item)
+            for item_id, item in round_prompt.battery[position].items()
+        ]
+        if not lines:
+            raise RoundPromptError(f"H3 battery block for version {position} is empty")
+        battery_parts.append(f"{label}\n" + "\n".join(lines))
+
+    blocks = {
+        "PERSONA": persona_text,
+        "SCENARIO": "\n\n".join(scenario_parts),
+        "BATTERY": "\n\n".join(battery_parts),
+    }
+    parts: list[str] = []
+    for name in H3_BLOCK_ORDER:
+        body = blocks[name]
+        if not body:
+            raise RoundPromptError(f"H3 round prompt block {name} is empty")
+        parts.append(f"<<<{name}>>>\n{body}\n<<<END {name}>>>")
+    return "\n\n".join(parts)
+
+
+def rebuild_h3_prompt(
+    *,
+    persona_hash: str,
+    paragraphs_by_version: dict[int, dict[str, str]],
+    items_by_version: dict[int, dict[str, BatteryItem]],
+    seed: int,
+    lever_order: dict[int, list[int]],
+    wording: str = "A",
+) -> H3RoundPrompt:
+    """Reconstruct a stored H3 round. I11, `docs/09` §6.
+
+    The stored orders are **checked against** what the seed regenerates, not merely trusted: if
+    they disagree the round is not reconstructible, which means the orders drawn were not the
+    orders shown and every verdict built on them is unattributable.
+    """
+    rebuilt = build_h3_prompt(
+        persona_hash=persona_hash,
+        paragraphs_by_version=paragraphs_by_version,
+        items_by_version=items_by_version,
+        seed=seed,
+        wording=wording,
+    )
+    stored = {int(k): list(v) for k, v in lever_order.items()}
+    if rebuilt.lever_order != stored:
+        raise RoundPromptError(
+            f"stored H3 lever_order {stored} != {rebuilt.lever_order} regenerated from seed "
+            f"{seed}. The round is not reconstructible (I11) and the verdict built on it cannot "
+            "be attributed to a known stimulus."
+        )
+    return rebuilt
+
+
+def _battery_line(item_id: str, item: BatteryItem) -> str:
+    """One `<<<BATTERY>>>` line: the stem, the range, and **what each end of the range means**.
+
+    `docs/02` §4.2 rule 6 — the item's own range travels with it — is satisfied by the range *and*
+    by the anchors, because a range alone does not say which direction it runs in. The human saw a
+    labelled radio row; this is the nearest text equivalent.
+
+    Only the two ends and the midpoint are named, not all seven labels. Naming every point would
+    make an 18-item H3 round a wall of repeated scale text, and the ends plus the middle are what
+    fix direction and calibration. The midpoint is omitted on an even-pointed scale, where there
+    is none to name — never faked by picking a neighbour.
+    """
+    low, high = item.anchors[0], item.anchors[-1]
+    if item.points % 2 == 1:
+        middle = item.anchors[item.points // 2]
+        scale = f"1 = {low}, {item.points // 2 + 1} = {middle}, {item.points} = {high}"
+    else:
+        scale = f"1 = {low}, {item.points} = {high}"
+    return f"{item_id}: {item.stem} (answer 1 to {item.points}; {scale})"
+
+
+def _battery_in_order(round_prompt: RoundPrompt) -> list[tuple[str, BatteryItem]]:
     """The battery in its register order, which `dict` preserves from the caller."""
     return list(round_prompt.battery.items())
 
@@ -138,7 +312,7 @@ def rebuild_round_prompt(
     persona_hash: str,
     paragraphs: dict[str, str],
     baseline: dict[str, int],
-    battery: dict[str, tuple[str, int]],
+    battery: dict[str, BatteryItem],
     seed: int,
     lever_order: list[int],
     wording: str = "A",

@@ -152,8 +152,14 @@ async def test_the_reliability_tab_shows_the_nine_constructs(completed):
     html = page._reliability_html(payload)
     for code in ("EXPO", "CTRL", "FAIR", "TRAN", "SATI", "LOYA", "VOIC", "EXIT", "EDEP"):
         assert code in html, f"{code} is missing from the reliability tab"
-    # The formative blocks are the only rows allowed to read "Not tested" here.
-    assert html.count("Not tested") <= 2 * 6
+    # The formative blocks are the only rows allowed to read "Not tested" here. Counted from the
+    # spec rather than hard-coded: there are four of them since 2026-10-11 (one per arm plus the
+    # interaction term), and a literal here would have to be edited every time the antecedent's
+    # shape changes, which is exactly when this assertion matters most.
+    from twinlab.stats.spec import build_model_spec
+
+    formative = sum(1 for c in build_model_spec().constructs if not c.reflective)
+    assert html.count("Not tested") <= formative * 6
 
 
 async def test_the_paths_tab_shows_every_structural_path(completed, spec):

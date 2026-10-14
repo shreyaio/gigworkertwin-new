@@ -249,6 +249,47 @@ AGENT_CARDS: tuple[tuple[str, str, str], ...] = (
     ("analyst", "Results Analyst", "Writes prose about numbers Python computed."),
 )
 
+#: `agent_id` → (the model-free step, the step that costs a model call). M19 WP-8 item 6.
+#:
+#: Several of these agents do deterministic work that the card hid behind the word "agent". The
+#: Policy Designer is the one that matters: **choosing what changes consults no model at all** —
+#: it is a frozen lookup over `dial_lookup.json` and `gaps.json`, byte-identical for a given
+#: version code, every run, forever (I1) — and only writing that set in Uber's voice uses one.
+#: The researcher reading "Policy Designer" could not see that, so the agent looked more
+#: discretionary than it is.
+#:
+#: Presentation only. Nothing here changes behaviour; it makes an existing structural fact
+#: legible, which is `ARCHITECTURE.md` §1.1's "the chain is the product" applied to this screen.
+AGENT_STEPS: dict[str, tuple[str, str]] = {
+    "manager": (
+        "Ordering the versions and checkpointing after every unit — the odometer and the state "
+        "machine, no model.",
+        "Nothing. This agent is switched off and calls no model.",
+    ),
+    "design": (
+        "Choosing what changes: a frozen lookup from the five dials to a commitment set. "
+        "No AI model. Identical input gives byte-identical output, every run (I1).",
+        "Writing it in Uber's voice: one AI call per (lever, dial, style version) — ten per "
+        "style version for all 243 cells (I4).",
+    ),
+    "twin": (
+        "Building the persona passage from the survey row, and validating the answer vector "
+        "against the item register. Both pure Python (I13).",
+        "Answering the battery as that driver: one AI call per twin per cell.",
+    ),
+    "checker": (
+        "Four of the five gates: containment, word band and reading grade, the dial-0 identity "
+        "check and the sham check. All deterministic, all free.",
+        "Coverage only: one AI call per commitment, asking whether the paragraph entails it.",
+    ),
+    "analyst": (
+        "Every number it is given — the metrics, the shifts, the index, the interactions — is "
+        "computed in Python before it is called. It never produces a metric (I12).",
+        "Writing prose about those numbers: one AI call per cell, grounded against its own "
+        "input bundle.",
+    ),
+}
+
 
 async def agent_cards(backend: DbBackend | None = None) -> list[AgentCardView]:
     """The five agent cards with their live enabled state and latest operational line.
@@ -256,6 +297,8 @@ async def agent_cards(backend: DbBackend | None = None) -> list[AgentCardView]:
     The Manager is seeded ``enabled: false`` and nothing calls it yet; the card says so rather
     than showing a green dot for an agent that has never run (`HANDOFF.md` §2.2).
     """
+    from twinlab.services.agent_config import UNDISABLEABLE
+
     db = backend or get_backend()
     rows = {r["agent_id"]: r for r in await db.select("agent_configs", None)}
     out: list[AgentCardView] = []
@@ -281,6 +324,7 @@ async def agent_cards(backend: DbBackend | None = None) -> list[AgentCardView]:
                 if status == "running"
                 else "pending"
             )
+        deterministic, model_step = AGENT_STEPS.get(agent_id, ("", ""))
         out.append(
             AgentCardView(
                 agent_id=agent_id,
@@ -289,6 +333,11 @@ async def agent_cards(backend: DbBackend | None = None) -> list[AgentCardView]:
                 state=state,
                 latest=latest if enabled else "Not enabled; nothing calls it yet.",
                 enabled=enabled,
+                deterministic_step=deterministic,
+                model_step=model_step,
+                undisableable=agent_id in UNDISABLEABLE,
+                undisableable_reason=UNDISABLEABLE.get(agent_id, ""),
+                live_version=int(row["version"]) if row.get("version") is not None else None,
             )
         )
     return out

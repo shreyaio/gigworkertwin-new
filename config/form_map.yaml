@@ -20,7 +20,7 @@
 # A question absent from this file raises at intake; nothing is dropped (CLAUDE.md rule 6).
 # Re-wording a Form question is an edit here, not a code change.
 
-version: v1
+version: v2
 map:
   "PART 1 — A FEW QUICK CHECKS|Are you aged 18 years or above?": screen:age_18_plus
   "PART 1 — A FEW QUICK CHECKS|Have you driven with Uber, by cab, auto rickshaw, or motorcycle, for at least three continuous months up to today?": screen:tenure_3_months
@@ -64,6 +64,47 @@ map:
   "PART 14 — YOUR WORK IN YOUR OWN WORDS|Tell us about a time you needed help from Uber, or your account was blocked or penalised. How was it handled?": own_words:OWN3
   "PART 14 — YOUR WORK IN YOUR OWN WORDS|What do you and other drivers do when you have a problem with the platform?": own_words:OWN4
   "PART 14 — YOUR WORK IN YOUR OWN WORDS|Who depends on your earnings, and where do you see yourself in a year or two?": own_words:OWN5
+
+  # --- the why-probe layer (SURVEY_SCALES_AND_WHY_PROBES.md section 3.1) ---
+  # One optional free-text probe per battery item, with constant wording so it cannot cue
+  # content or valence. The key carries the item's stem because a section holds several items
+  # and the probe wording is identical across them; the driver is shown the wording alone.
+  # PAC11, SAT1 and DEP1 are absent on purpose: they already carry the instrument's own
+  # part-level open questions above, and `survey_answers.why_text` is one column per item.
+  "PART 5 — THE APP AND YOUR WORK|Why did you choose that? — An automated system tracks me carefully to ensure I am completing my tasks.": why:WHY_AMQ1
+  "PART 5 — THE APP AND YOUR WORK|Why did you choose that? — My daily tasks are assigned by an automated system.": why:WHY_AMQ2
+  "PART 5 — THE APP AND YOUR WORK|Why did you choose that? — My work schedule is made by an automated system.": why:WHY_AMQ3
+  "PART 5 — THE APP AND YOUR WORK|Why did you choose that? — The evaluation of my work performance is handled by an electronic system.": why:WHY_AMQ4
+  "PART 5 — THE APP AND YOUR WORK|Why did you choose that? — A large part of my compensation is determined by an automated system.": why:WHY_AMQ5
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm assigns my tasks intelligently.": why:WHY_PAC1
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm provides normative instructions for my work according to the platform standard.": why:WHY_PAC2
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm provides me with considerable information support related to the completion of work tasks.": why:WHY_PAC3
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm provides me with real time feedback on performance information.": why:WHY_PAC4
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm tracks my location in real time.": why:WHY_PAC5
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm keeps track of my work progress.": why:WHY_PAC6
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm tracks my work attitude in real time.": why:WHY_PAC7
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm automatically evaluates the quality of my service.": why:WHY_PAC8
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm ranks me according to my performance.": why:WHY_PAC9
+  "PART 6 — HOW THE APP GUIDES YOU|Why did you choose that? — The algorithm provides me a monetary incentive to work hard for a specific period.": why:WHY_PAC10
+  "PART 7 — HOW FAIR THE APP IS|Why did you choose that? — Do you consider that the app's matching procedures are based on accurate information?": why:WHY_FAIR1
+  "PART 7 — HOW FAIR THE APP IS|Why did you choose that? — Have you been able to express your views and feelings during the evaluation procedure?": why:WHY_FAIR2
+  "PART 7 — HOW FAIR THE APP IS|Why did you choose that? — Are you able to appeal the rides assigned to you by the app?": why:WHY_FAIR3
+  "PART 7 — HOW FAIR THE APP IS|Why did you choose that? — Do you consider that the app's matching procedures are free of bias?": why:WHY_FAIR4
+  "PART 8 — HOW CLEAR THE APP IS|Why did you choose that? — I think I could understand the decision making process of platform algorithms very well.": why:WHY_CLAR1
+  "PART 8 — HOW CLEAR THE APP IS|Why did you choose that? — I think I can see through platform algorithms' decision making process.": why:WHY_CLAR2
+  "PART 8 — HOW CLEAR THE APP IS|Why did you choose that? — I think the decision making process of platform algorithms are clear and transparent.": why:WHY_CLAR3
+  "PART 9 — YOUR JOB|Why did you choose that? — In general, I don't like my job.": why:WHY_SAT2
+  "PART 9 — YOUR JOB|Why did you choose that? — In general, I like working here.": why:WHY_SAT3
+  "PART 10 — STAYING WITH UBER|Why did you choose that? — I hope this job will continue in the future.": why:WHY_CONT1
+  "PART 10 — STAYING WITH UBER|Why did you choose that? — I hope my job will continue in the future.": why:WHY_CONT2
+  "PART 11 — WORKING AROUND THE APP|Why did you choose that? — I do not enjoy working under the supervision of algorithms.": why:WHY_ALGO1
+  "PART 11 — WORKING AROUND THE APP|Why did you choose that? — I experience the platform's algorithms as unfair.": why:WHY_ALGO2
+  "PART 11 — WORKING AROUND THE APP|Why did you choose that? — I would rather have more human management than algorithmic management.": why:WHY_ALGO3
+  "PART 11 — WORKING AROUND THE APP|Why did you choose that? — I deliberately change my behavior to get assigned better tasks by the platform's algorithm.": why:WHY_ALGO4
+  "PART 12 — LEAVING UBER|Why did you choose that? — I will probably look for a new job in the next year.": why:WHY_TURN1
+  "PART 12 — LEAVING UBER|Why did you choose that? — I often think about quitting.": why:WHY_TURN2
+  "PART 12 — LEAVING UBER|Why did you choose that? — How likely is it that you will actively look for a new job in the next year?": why:WHY_TURN3
+  "PART 13 — YOUR INCOME|Why did you choose that? — To maintain the standard of living I desire for myself, I must keep working via a platform.": why:WHY_DEP2
 
   # --- the 73-item register, from data/reference/instrument.json (frozen) ---
   "PART 5 — THE APP AND YOUR WORK|An automated system tracks me carefully to ensure I am completing my tasks.": AMQ1

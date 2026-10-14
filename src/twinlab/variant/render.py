@@ -22,7 +22,7 @@ import yaml
 
 from config.settings import CONFIG_DIR, settings
 from twinlab.agents.design import run_design
-from twinlab.agents.registry import ModelClient, default_agent_configs, get_client
+from twinlab.agents.registry import ModelClient, get_client, live_agent
 from twinlab.ingest.reference_store import ReferenceData, reference
 from twinlab.models.reference import LEVER_BY_POSITION, MET_CRITERIA, Chunk
 from twinlab.models.variant import (
@@ -90,11 +90,85 @@ def validate_style_contract(contract: dict) -> dict:
             f"settings.style_version {settings.style_version!r} — the cache key is built from it, "
             "so the two must never drift"
         )
-    if not contract["word_min"] <= contract["word_max"]:
+    for key in _BAND_KEYS:
+        if key not in contract:
+            raise RenderFailed(
+                f"style_contract is missing {key!r}. From v3 the word band is resolved per "
+                "(lever, dial) from the commitment count, so all six coefficients must be "
+                "present — a missing one would silently become a different band."
+            )
+    if not contract["word_floor"] <= contract["word_ceiling"]:
         raise RenderFailed(
-            f"style_contract word band [{contract['word_min']}, {contract['word_max']}] is empty"
+            f"style_contract clamp [{contract['word_floor']}, {contract['word_ceiling']}] "
+            "is empty"
         )
+    # Checked across the whole range the frozen lookup can actually produce, not just at one n:
+    # a per-commitment coefficient pair that crosses over would give an empty band at some
+    # commitment count and nowhere else, and the cell that hit it would be the first to know.
+    for n in range(1, _BAND_CHECK_MAX + 1):
+        low, high = band_for(n, contract)
+        if low > high:
+            raise RenderFailed(
+                f"style_contract resolves to the empty band [{low}, {high}] at "
+                f"{n} commitment(s)"
+            )
     return contract
+
+
+#: The six keys that define the resolved word band. All must be present: from v3 the band is a
+#: function of the commitment count, and a missing coefficient would not fail — it would quietly
+#: become a *different* band, which is the confound the `style_version` key exists to prevent.
+_BAND_KEYS: tuple[str, ...] = (
+    "word_min_base",
+    "word_min_per_commitment",
+    "word_max_base",
+    "word_max_per_commitment",
+    "word_floor",
+    "word_ceiling",
+)
+
+#: How far :func:`validate_style_contract` probes the band for a crossover. The frozen lookup
+#: never exceeds 8 commitments on a lever (`ARCHITECTURE.md` §5) and the sham announces at most 3,
+#: so 16 is double the real ceiling — enough that a reference-data change cannot walk past it
+#: before the guard notices.
+_BAND_CHECK_MAX = 16
+
+
+def band_for(n: int, style: dict) -> tuple[int, int]:
+    """The resolved word band for a brief carrying ``n`` commitments. Pure. `docs/03` §4.2.
+
+    From `style_version: v3`, one band cannot serve every lever: the commitment count per
+    `(lever, dial)` ranges 2 to 8, so a single 150-word cap gave `L1` dial 1 seventy-five words
+    per commitment and `L3` dial 2 nineteen. The design prompt asks for each commitment in its own
+    short sentence and the Checker probes each one for entailment, so at eight commitments the
+    model had to compress and the compression lost the entailments. See the HISTORY note in
+    `config/style_contract.yaml` for the calibration table.
+
+    **This is not a per-cell parameter.** ``n`` comes from the frozen lookup, so the band is
+    constant for a given `(lever, dial)` and identical in every one of the 243 cells that uses
+    that paragraph. I4 is untouched.
+    """
+    low = style["word_min_base"] + style["word_min_per_commitment"] * n
+    high = style["word_max_base"] + style["word_max_per_commitment"] * n
+    floor, ceiling = style["word_floor"], style["word_ceiling"]
+    return (
+        min(max(low, floor), ceiling),
+        min(max(high, floor), ceiling),
+    )
+
+
+def resolved_style(style: dict, n: int) -> dict:
+    """``style`` with ``word_min`` and ``word_max`` resolved for ``n`` commitments.
+
+    A copy, never a mutation: the loaded contract is `@lru_cache`d and shared by every brief in
+    the process, so resolving in place would give the last lever rendered the band of all five.
+
+    The two resolved keys are what :func:`agents.design.style_block` shows the agent and what
+    :func:`variant.checker.check_invariance` gates on, so the agent and the gate read the same two
+    numbers by construction rather than by two call sites agreeing.
+    """
+    low, high = band_for(n, style)
+    return {**style, "word_min": low, "word_max": high}
 
 
 def select_anchors(chunks: list[Chunk], limit: int = ANCHOR_CHUNKS_PER_BRIEF) -> list[str]:
@@ -147,7 +221,10 @@ def build_brief(
         dial=int(spec.version_code[LEVER_BY_POSITION.index(lever)]),
         commitments=commitments,
         anchor_chunks=select_anchors(ref.anchor_chunks(gap_ids)),
-        style_contract=style,
+        # Resolved from THIS lever's commitment count, so the agent is shown the band it will
+        # actually be graded against (v3). A dial-0 brief resolves a band it never uses: dial 0
+        # short-circuits to the constant before the agent or gate 3 is reached (I5).
+        style_contract=resolved_style(style, len(commitments)),
         do_not_say=[_text_of(identifier, ref) for identifier in do_not_say(spec, lever, ref)],
     )
 
@@ -213,10 +290,29 @@ def sham_briefs(
             dial=SHAM_DIAL,
             commitments=commitments,
             anchor_chunks=select_anchors(_lever_chunks(lever, ref)),
-            style_contract=style,
+            style_contract=resolved_style(style, _sham_band_n(lever, ref)),
             do_not_say=forbidden_everything,
         )
     return briefs
+
+
+def _sham_band_n(lever: str, ref: ReferenceData) -> int:
+    """The commitment count whose word band the sham's ``lever`` paragraph is held to.
+
+    **Not** the number of slots the lever announces. `ARCHITECTURE.md` §5.2 requires the sham to
+    render as "five ordinary paragraphs, **same word band and voice as a live cell**", and from
+    `style_version: v3` the band is a function of that count — so taking the sham's own count
+    would put four of its five levers in `[45, 55]` while every live lever sits at `[51, 85]` or
+    wider. The sham would then be the shortest cell in the study, recognisable as the control by
+    length alone, and a twin that can tell it is looking at a control is not measuring the demand
+    characteristic the cell exists to measure.
+
+    So the band is **that lever's dial-1 band**: the smallest real intervention the lever can
+    carry, read straight out of the frozen ``dial_lookup``. Deterministic, constant, and with zero
+    free parameters — nothing here is chosen, averaged or tuned, which is the property §5.2 cares
+    about most. `docs/DECISIONS.md` M19 WP-1.
+    """
+    return len(ref.dial_lookup[lever]["1"])
 
 
 def _lever_of_criterion(criterion_id: str, ref: ReferenceData) -> str:
@@ -311,7 +407,10 @@ class ParagraphPool:
             # spend a design call on it, which is I4 at the concurrency boundary.
             if key in self._cache:
                 return self._cache[key]
-            cfg = default_agent_configs()["design"]
+            # The **live** config (WP-8), so an Agent Studio edit to the design prompt
+            # reaches the ten paragraphs. `validate_config` runs on every merged config, so a
+            # stored row still cannot give this agent a tool (I2).
+            cfg = live_agent("design")
             paragraph = await run_design(cfg, brief, self.client)
             self._cache[key] = paragraph
             return paragraph

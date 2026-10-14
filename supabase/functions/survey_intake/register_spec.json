@@ -1,4 +1,16 @@
 {
+  "armIds": [
+    "BASE",
+    "CON1",
+    "MGT1",
+    "REP1"
+  ],
+  "armLabels": {
+    "a drivers' forum and union recognition": "REP1",
+    "human appeals with no penalty for complaints": "MGT1",
+    "no change": "BASE",
+    "safety equipment, training, and accident cover": "CON1"
+  },
   "attention": {
     "ALGO5": 6,
     "AMQ6": 2
@@ -193,8 +205,42 @@
     "TURN3": 7
   },
   "whyProbeAnchor": {
+    "WHY_ALGO1": "ALGO1",
+    "WHY_ALGO2": "ALGO2",
+    "WHY_ALGO3": "ALGO3",
+    "WHY_ALGO4": "ALGO4",
+    "WHY_AMQ1": "AMQ1",
+    "WHY_AMQ2": "AMQ2",
+    "WHY_AMQ3": "AMQ3",
+    "WHY_AMQ4": "AMQ4",
+    "WHY_AMQ5": "AMQ5",
+    "WHY_CLAR1": "CLAR1",
+    "WHY_CLAR2": "CLAR2",
+    "WHY_CLAR3": "CLAR3",
+    "WHY_CONT1": "CONT1",
+    "WHY_CONT2": "CONT2",
     "WHY_CONTROL": "PAC11",
+    "WHY_DEP2": "DEP2",
+    "WHY_FAIR1": "FAIR1",
+    "WHY_FAIR2": "FAIR2",
+    "WHY_FAIR3": "FAIR3",
+    "WHY_FAIR4": "FAIR4",
     "WHY_OTHER_WORK": "DEP1",
-    "WHY_SATISFACTION": "SAT1"
+    "WHY_PAC1": "PAC1",
+    "WHY_PAC10": "PAC10",
+    "WHY_PAC2": "PAC2",
+    "WHY_PAC3": "PAC3",
+    "WHY_PAC4": "PAC4",
+    "WHY_PAC5": "PAC5",
+    "WHY_PAC6": "PAC6",
+    "WHY_PAC7": "PAC7",
+    "WHY_PAC8": "PAC8",
+    "WHY_PAC9": "PAC9",
+    "WHY_SAT2": "SAT2",
+    "WHY_SAT3": "SAT3",
+    "WHY_SATISFACTION": "SAT1",
+    "WHY_TURN1": "TURN1",
+    "WHY_TURN2": "TURN2",
+    "WHY_TURN3": "TURN3"
   }
 }

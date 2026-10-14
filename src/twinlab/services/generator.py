@@ -14,11 +14,19 @@ from typing import Any
 from twinlab.db.client import DbBackend, StorageBackend, get_backend, get_storage
 from twinlab.generator.synthetic import (
     SYNTHETIC_DATA_TYPE,
+    clipping_share,
     generate_batch,
+    salience_mix,
     spec_from_config,
 )
 from twinlab.ingest.survey_intake import form_map
-from twinlab.models.view import GeneratorCounts, GeneratorPreview, GeneratorSpec
+from twinlab.models.view import (
+    GeneratorClipping,
+    GeneratorCounts,
+    GeneratorPreview,
+    GeneratorSalience,
+    GeneratorSpec,
+)
 from twinlab.services.surveys import (
     DeleteBlocked,
     counts_by_type,
@@ -87,6 +95,27 @@ BATCH_SLIDERS: tuple[tuple[str, str, float, float, float], ...] = (
     ("How much drivers differ", "disposition_spread", 0.0, 2.0, 0.1),
     ("Shared overall mood", "shared_mood", 0.0, 1.0, 0.05),
     ("Answer noise", "likert_sd", 0.1, 2.0, 0.05),
+    # `v6` added these two to `GeneratorSpec` and never put them on the screen, so a batch could
+    # only be drawn at their defaults. Exposed with the `v8` pair rather than left config-only:
+    # a dial nobody can see is a dial nobody checks, and `between_driver_swing` is the one that
+    # decides whether the panel has any ceiling for a wrong-person test at all.
+    ("How far the extremes sit from the mean", "between_driver_swing", 0.0, 4.0, 0.1),
+    ("Share with a support or blocking story", "incident_share", 0.0, 1.0, 0.05),
+    # `v8`. The gain is the one generator number with an external check — see
+    # `GeneratorSpec.reaction_gain` and `synthetic.calibrate_reaction_gain`. On the screen because
+    # a researcher reading a batch's results needs to see which gain drew it without opening the
+    # config row.
+    ("How far a change moves a driver (calibrated)", "reaction_gain", 0.0, 8.0, 0.01),
+    ("How much drivers differ in that", "reactivity_spread", 0.0, 0.9, 0.05),
+    # `v10`. The spread on WHICH lever a driver weights. The means stay on the reaction sliders
+    # below; this is only how far respondents sit from them, so a researcher can see that the
+    # batch admits differing drivers without the means having moved.
+    ("How much drivers differ in which change matters", "salience_spread", 0.0, 0.9, 0.05),
+    # `v11`. Calibrated against the one real respondent's Part 17 answers, and on the screen
+    # because it is the parameter that decides how much of the six versions' difference a twin is
+    # scored on. It governs the HOLDOUT ANSWERS only; the lever matrix below is untouched by it.
+    ("How much a driver's answer depends on which package (calibrated)",
+     "holdout_version_differentiation", 0.0, 1.0, 0.01),
 )
 
 #: `docs/06` §4's *how strongly they react to each change*, one row per lever in the odometer's
@@ -172,6 +201,79 @@ def preview(spec: GeneratorSpec, *, n: int = PREVIEW_N) -> list[GeneratorPreview
     return out
 
 
+#: A construct above this share of its batch on the scale's end is worth the researcher's eye.
+#: A fifth is the point at which the pile-up stops being a tail and starts being a mode: at 20%
+#: one pair of respondents in twenty-five is identical at the wall on that construct before any
+#: noise is added. CONFIG in the sense of `ARCHITECTURE.md` §10 — a reporting threshold, read
+#: nowhere but the note below, and changing it cannot change a drawn batch.
+CLIPPING_NOTICE_SHARE = 0.20
+
+
+def clipping(spec: GeneratorSpec) -> list[GeneratorClipping]:
+    """Which constructs this spec would pin to an end of the scale, worst first. **Derives only.**
+
+    The pre-flight half of `docs/06` §4's preview: *Preview 3 drivers* shows three respondents, and
+    three respondents cannot show that a fifth of the batch shares one construct's floor. Takes no
+    backend, for the same reason :func:`preview` takes none.
+
+    Returns every construct over :data:`CLIPPING_NOTICE_SHARE`, and an empty list when none is —
+    which the screen reports as such rather than silently showing nothing (`CLAUDE.md` rule 7).
+    """
+    labels = {code: label for label, code in SENTIMENT_SLIDERS}
+    shares = clipping_share(spec)
+    out = [
+        GeneratorClipping(
+            construct_code=code,
+            label=labels.get(code, code),
+            share=f"{share:.0%}",
+            share_value=share,
+        )
+        for code, share in shares.items()
+        if share >= CLIPPING_NOTICE_SHARE
+    ]
+    # Worst first, then by code so the order is stable for two constructs on the same share.
+    return sorted(out, key=lambda c: (-c.share_value, c.construct_code))
+
+
+#: A lever carrying more than this share of the batch as its top salience is worth the
+#: researcher's eye. Two-thirds, because above it the `salience:*` clause is effectively one
+#: sentence the whole batch speaks: the persona discloses the batch's weighting (which is `v10`'s
+#: repair) but carries no between-driver signal a twin could discriminate on. CONFIG in the sense
+#: of `ARCHITECTURE.md` §10 — a reporting threshold, read nowhere but the note below, and
+#: changing it cannot change a drawn batch.
+SALIENCE_NOTICE_SHARE = 0.67
+
+
+def salience(spec: GeneratorSpec) -> list[GeneratorSalience]:
+    """Which change each share of the batch would care about most, largest first. **Derives only.**
+
+    The `v10` half of the pre-flight, beside :func:`clipping`. `salience_spread` is centred on
+    `lever_reactions`, so a batch whose mean weights pay at `2.0` still weights pay highest for
+    most of its respondents — 84% at the default spread. That is the researcher's own weighting,
+    now stated in every persona rather than hidden, and the number says which of the two claims
+    the batch actually carries: *the personas disclose the weighting*, or *the drivers differ in
+    what matters to them*.
+
+    Returns every lever with a non-zero share, so the mix is legible rather than only its mode,
+    and an empty list under `docs/06` §4's no-reaction null — which the screen reports as such
+    rather than showing nothing (`CLAUDE.md` rule 7).
+    """
+    labels = {lever: label for label, lever in REACTION_SLIDERS}
+    shares = salience_mix(spec)
+    out = [
+        GeneratorSalience(
+            lever=lever,
+            label=labels.get(lever, lever),
+            share=f"{share:.0%}",
+            share_value=share,
+        )
+        for lever, share in shares.items()
+        if share > 0
+    ]
+    # Largest first, then by lever so two levers on the same share order by the odometer (I2).
+    return sorted(out, key=lambda s: (-s.share_value, s.lever))
+
+
 def _answer(payload: dict[str, Any], target: str) -> str:
     """One answer out of a Form-shaped payload, by its `form_map.yaml` target.
 
@@ -233,6 +335,12 @@ async def generate_and_store(
         **result,
         "answers": len(batch["answers"]),
         "raw_objects": len(batch["payloads"]),
+        # Returned so the screen can state it. The seed is already persisted on
+        # `synthetic_batches.seed`, so the batch *is* reproducible — but `docs/09` §2 makes the
+        # batch reproducible from `(seed, count, spec)` and the test protocol asks the researcher
+        # to record the seed, which they cannot do from a message that names only the batch id.
+        "seed": spec.seed,
+        "count": spec.count,
     }
 
 
@@ -242,17 +350,34 @@ def default_spec(seed: int, **overrides: Any) -> GeneratorSpec:
 
 
 async def delete_all_synthetic(
-    backend: DbBackend | None = None, *, skip_blocked: bool = False
+    backend: DbBackend | None = None,
+    *,
+    skip_blocked: bool = False,
+    purge_sessions: bool = False,
 ) -> dict[str, Any]:
     """`docs/06` §4's *Delete all synthetic surveys*. Confirmed in the UI, counted here.
 
     A thin pass-through to :func:`services.surveys.delete_synthetic`, which is where the safety
-    properties live — keyed on `data_type` alone, twins matched by source *and* id, no run touched,
-    and the pre-flight that refuses with a sentence rather than a foreign-key traceback
+    properties live — keyed on `data_type` alone, twins matched by source *and* id, and the
+    pre-flight that refuses with a sentence rather than a foreign-key traceback
     (`ARCHITECTURE_UPDATE.md` §3.4). It is re-exported rather than reimplemented so there is
     exactly one delete.
+
+    ``purge_sessions`` additionally withdraws the **test sessions** holding the blocked twins,
+    with their runs, panels and validity verdicts — the researcher's answer to "these were my own
+    test runs, take them". Every such session is synthetic-contaminated by construction, so no
+    reportable result is in the set.
+
+    **This path never puts a real row at risk**, whatever the caller passes. *Delete all
+    synthetic surveys* means synthetic, so `allow_real_loss` is deliberately not plumbed through:
+    a session mixing synthetic twins with a real driver is left alone, and the synthetic twins on
+    it stay too. Clearing those is a per-twin decision the researcher makes in Twin Lab → Twins.
     """
-    return await delete_synthetic(backend or get_backend(), skip_blocked=skip_blocked)
+    return await delete_synthetic(
+        backend or get_backend(),
+        skip_blocked=skip_blocked,
+        purge_sessions=purge_sessions,
+    )
 
 
 async def delete_preflight(backend: DbBackend | None = None) -> dict[str, Any]:
@@ -272,8 +397,11 @@ __all__ = [
     "REACTION_SLIDERS",
     "SENTIMENT_PRESETS",
     "SENTIMENT_SLIDERS",
+    "CLIPPING_NOTICE_SHARE",
     "SYNTHETIC_WARNING",
     "DeleteBlocked",
+    "clipping",
+    "salience",
     "default_spec",
     "delete_all_synthetic",
     "delete_preflight",

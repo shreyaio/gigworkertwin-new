@@ -56,6 +56,16 @@ def build_register_spec() -> dict:
         "batteryItemIds": list(ref.battery_item_ids),
         "attention": _attention_expectations(ref),
         "whyProbeAnchor": dict(sorted(WHY_PROBE_ANCHOR.items())),
+        # Part 15 offers the four arms by label; `survey_submissions.mc_correct` is
+        # `mc_answer = arm`, which compares against an id. Without this map the Edge Function
+        # would store the label and `mc_correct` would be false for every real respondent.
+        # Case-folded keys, because the comparison is on wording a driver picked, not on a code.
+        "armIds": sorted(ref.arms),
+        "armLabels": {
+            str(arm.label).strip().casefold(): arm_id
+            for arm_id, arm in sorted(ref.arms.items())
+            if getattr(arm, "label", None)
+        },
     }
 
 

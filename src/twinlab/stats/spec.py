@@ -32,10 +32,19 @@ catch (`docs/07` §10):
 from __future__ import annotations
 
 from twinlab.ingest.reference_store import ReferenceData, reference
-from twinlab.models.stats import ConstructSpec, ModelSpec, PathEdge
+from twinlab.models.stats import ConstructSpec, ModelSpec, ModelVariant, PathEdge
 
-#: The experimental antecedent as one formative block of arm dummies. `docs/01` §5.
-ARM_CONSTRUCT = "ARM"
+#: Prefix of the experimental antecedent's constructs: one per non-reference arm, each carrying a
+#: single dummy. `docs/01` §5.
+#:
+#: **Until 2026-10-11 this was one `ARM` composite of three dummies** — "the conventional treatment
+#: of a categorical antecedent", which is true for a *control* variable and wrong for the
+#: manipulation. A composite yields one `ARM -> EXPO` coefficient, so the model produced no per-arm
+#: contrast: there was no estimate of the form "MGT1 raised perceived fairness by x", which is the
+#: reportable output of a four-arm between-subjects experiment
+#: (`docs/AUDIT_PROTOTYPE_PARITY.md` §A2). Three single-indicator constructs give three directly
+#: bootstrappable contrasts against `BASE` instead.
+ARM_PREFIX = "ARM_"
 
 #: `docs/01` §5: the no-change control every other arm is measured against.
 ARM_REFERENCE = "BASE"
@@ -57,6 +66,26 @@ STRUCTURAL_EDGES: tuple[tuple[str, str], ...] = (
     ("CTRL", "TRAN"),
     ("FAIR", "SATI"),
     ("TRAN", "SATI"),
+)
+
+#: The edges the **partial-mediation robustness check** adds, and nothing else. `docs/07` §7.2.
+#:
+#: These are the prototype's three direct justice->intention paths. The reported model imposes full
+#: mediation, which the researcher chose deliberately (`docs/DECISIONS.md`) — but `FAIR -> VOIC` is
+#: the central claim of the algoactivism literature, so its absence is the first thing a reviewer
+#: asks about, and the check costs no extra data: same matrix, same engine call
+#: (`docs/AUDIT_PROTOTYPE_PARITY.md` §A1).
+#:
+#: The variant is **nested**: the full model plus these three edges. Each added path's own bootstrap
+#: interval is therefore directly interpretable as the test of that mediation restriction.
+#:
+#: **Deliberately not added: `EDEP x FAIR` and `EDEP x TRAN`.** `docs/DECISIONS.md` records that the
+#: researcher was asked and chose `EDEP x SATI` alone; adding the others here would quietly convert
+#: the robustness check into the partial-mediation model that was declined.
+PARTIAL_MEDIATION_EDGES: tuple[tuple[str, str], ...] = (
+    ("FAIR", "VOIC"),
+    ("FAIR", "LOYA"),
+    ("CTRL", "VOIC"),
 )
 
 #: The antecedent's targets — the algorithmic-management perceptions. `docs/07` §8.6.
@@ -131,24 +160,54 @@ def interaction_columns(ref: ReferenceData | None = None) -> tuple[str, ...]:
     return tuple(f"{m}_x_{t}" for m in mod for t in tgt)
 
 
-def build_model_spec(ref: ReferenceData | None = None) -> ModelSpec:
-    """The whole model. Built once, pinned by the golden test through its fingerprint.
+def arm_constructs(ref: ReferenceData | None = None) -> tuple[ConstructSpec, ...]:
+    """One single-indicator construct per non-reference arm, in `arms.json` order. `docs/01` §5.
 
-    Implements `docs/07` §7.2: all nine register constructs reflective (Mode A), the arm dummies
-    formative (Mode B), and the moderation carried by a product-indicator interaction construct.
+    Each carries exactly its own dummy column, so each gets its own path coefficient and its own
+    bootstrap interval: the per-arm contrast against `BASE` that a composite cannot express.
+
+    ``reflective=False`` is what routes them correctly through stages that already handle the
+    formative case — `stage_reliability` reports ``na`` with a reason, `stage_discriminant` and
+    `stage_outer_model` skip them. A single indicator has its loading fixed at 1 and an AVE of 1 by
+    construction; reporting those as measurement quality would be meaningless, and flagging the
+    block is how that is avoided without a stage exception.
+
+    Mode B for the same reason the composite was: an observed dummy is not a reflective measurement
+    of a latent arm. With one indicator the two modes coincide anyway — the weight is 1 either way.
     """
     ref = ref or reference()
-
-    constructs: list[ConstructSpec] = [
+    return tuple(
         ConstructSpec(
-            code=ARM_CONSTRUCT,
-            label="Experimental arm",
+            code=f"{ARM_PREFIX}{arm_id}",
+            label=f"Arm: {ref.arms[arm_id].label}",
             mode="B",
-            items=arm_dummy_columns(ref),
+            items=(f"arm_{arm_id}",),
             scale_id=None,
             reflective=False,
         )
-    ]
+        for arm_id in ref.arms
+        if arm_id != ARM_REFERENCE
+    )
+
+
+def build_model_spec(
+    ref: ReferenceData | None = None, *, variant: ModelVariant = "full"
+) -> ModelSpec:
+    """The whole model. Built once, pinned by the golden test through its fingerprint.
+
+    Implements `docs/07` §7.2: all nine register constructs reflective (Mode A), one
+    single-indicator formative construct per non-reference arm, and the moderation carried by a
+    product-indicator interaction construct.
+
+    ``variant`` selects the mediation structure. ``"full"`` is the reported model;
+    ``"partial"`` adds :data:`PARTIAL_MEDIATION_EDGES` and is a **robustness check**, never the
+    headline. The two differ in their fingerprint, so an analysis under one can never be mistaken
+    for an analysis under the other.
+    """
+    ref = ref or reference()
+
+    arms = arm_constructs(ref)
+    constructs: list[ConstructSpec] = list(arms)
     for construct in ref.constructs.values():
         constructs.append(
             ConstructSpec(
@@ -173,14 +232,20 @@ def build_model_spec(ref: ReferenceData | None = None) -> ModelSpec:
         )
     )
 
+    # One path per arm per antecedent target: three arms x two targets = six coefficients, each
+    # with its own interval. The composite this replaced had two.
     edges: list[PathEdge] = [
-        PathEdge(source=ARM_CONSTRUCT, target=target) for target in ANTECEDENT_TARGETS
+        PathEdge(source=arm.code, target=target)
+        for arm in arms
+        for target in ANTECEDENT_TARGETS
     ]
     edges += [PathEdge(source=s, target=t) for s, t in STRUCTURAL_EDGES]
     for target in INTENTIONS:
         edges.append(PathEdge(source=MODERATED, target=target))
         edges.append(PathEdge(source=MODERATOR, target=target))
         edges.append(PathEdge(source=INTERACTION_CONSTRUCT, target=target))
+    if variant == "partial":
+        edges += [PathEdge(source=s, target=t) for s, t in PARTIAL_MEDIATION_EDGES]
 
     spec = ModelSpec(
         constructs=tuple(constructs),

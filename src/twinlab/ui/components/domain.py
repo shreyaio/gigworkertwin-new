@@ -20,6 +20,9 @@ from __future__ import annotations
 
 from twinlab.models.stats import AnalysisProvenance, StatsTableSpec
 from twinlab.models.view import (
+    BASELINE_COLUMN_HEADER,
+    BASELINE_NOT_MEASURED,
+    BASELINE_NOT_MEASURED_NOTE,
     AgentCardView,
     BudgetView,
     DialBoard,
@@ -287,12 +290,43 @@ def side_panel(title: str, body_html: str) -> str:
 
 
 def agent_card(agent: AgentCardView) -> str:
-    """One of the five. `docs/06` §3.1."""
+    """One of the five. `docs/06` §3.1.
+
+    From M19 WP-8 item 6 the card names each agent's **two steps**: the deterministic one that
+    costs nothing and the one that costs a model call. For the Policy Designer this is the whole
+    point — choosing what changes is a frozen lookup with no model in it (I1), and a card that
+    said only "renders a commitment set" made the model-free half invisible.
+
+    ``live_version`` is shown when a stored `agent_configs` row is in force, so the screen says
+    which version of the configuration is actually running (WP-8 item 7). No badge means the YAML
+    seed, which is a real and different state.
+    """
     state = pill("enabled", "green") if agent.enabled else pill("not enabled", "grey")
+    version = (
+        pill(f"config v{agent.live_version}", "blue")
+        if agent.live_version is not None
+        else ""
+    )
+    steps = ""
+    if agent.deterministic_step or agent.model_step:
+        steps = (
+            '<div class="tl-agent-steps">'
+            f'<div class="tl-agent-step"><span class="tl-pill">no AI model</span> '
+            f"{esc(agent.deterministic_step)}</div>"
+            f'<div class="tl-agent-step"><span class="tl-pill tl-pill-amber">uses AI</span> '
+            f"{esc(agent.model_step)}</div>"
+            "</div>"
+        )
+    locked = (
+        f'<div class="tl-agent-locked">{esc(agent.undisableable_reason)}</div>'
+        if agent.undisableable and agent.undisableable_reason
+        else ""
+    )
     return (
         f'<div class="tl-card tl-agent-card"><div class="tl-agent-name">{esc(agent.name)}'
-        f" {state}</div>"
+        f" {state}{version}</div>"
         f'<div class="tl-agent-role">{esc(agent.description)}</div>'
+        f"{steps}{locked}"
         f'<div class="tl-agent-latest">{status_dot(agent.state, agent.state)} '
         f"{esc(agent.latest)}</div></div>"
     )
@@ -362,7 +396,19 @@ def answer_compare(panel: TwinPanel) -> str:
     """
     code = panel.selected_code
     variant_header = f"Twin, version {code}" if code else "Twin, version —"
-    blocks = []
+    # WP-10. The column header names the cell the numbers come from. "Twin today" alone reads as
+    # "whatever the twin currently thinks", when it is specifically the twin's answers to the
+    # `00000` control — its noise floor, and the thing every shift on this screen is measured
+    # against.
+    baseline_header = BASELINE_COLUMN_HEADER
+    note = (
+        f'<div class="tl-note tl-note-info">{esc(BASELINE_NOT_MEASURED_NOTE)}</div>'
+        if panel.baseline_state == BASELINE_NOT_MEASURED
+        else '<div class="tl-prov">Twin today is this twin&rsquo;s answers to the 00000 '
+        "control cell &mdash; what it says when shown no change. The orchestrator runs it once "
+        "at the start of every session.</div>"
+    )
+    blocks = [note]
     for block in panel.blocks:
         rows = []
         for row in block.rows:
@@ -378,7 +424,7 @@ def answer_compare(panel: TwinPanel) -> str:
             )
         blocks.append(
             section_title(block.label)
-            + data_table(["Item", "Question", "Driver", "Twin today", variant_header], rows)
+            + data_table(["Item", "Question", "Driver", baseline_header, variant_header], rows)
         )
     return "".join(blocks)
 

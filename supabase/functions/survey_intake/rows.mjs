@@ -58,6 +58,26 @@ function textOrNone(value) {
   return text === '' ? null : text;
 }
 
+/**
+ * Part 15's manipulation check, stored as an ARM ID so `mc_correct` can mean something.
+ *
+ * `survey_submissions.mc_correct` is `generated always as (mc_answer = arm)`. Part 15 offers the
+ * four arms by their labels while `arm` holds an id, so storing the label made `mc_correct` false
+ * for every real respondent, silently and forever. An answer matching no arm is kept verbatim:
+ * it is still what the driver picked, and `mc_correct` is simply false.
+ *
+ * Must stay identical to `_mc_answer` in `src/twinlab/ingest/survey_intake.py` — the contract
+ * test compares both implementations over one fixture.
+ */
+function mcAnswer(value, spec) {
+  const text = textOrNone(value);
+  if (text === null) return null;
+  const ids = spec.armIds ?? [];
+  if (ids.includes(text)) return text;
+  const labels = spec.armLabels ?? {};
+  return labels[text.trim().toLowerCase()] ?? text;
+}
+
 /** Group answers by target prefix. Throws UnmappedQuestion — nothing is ever dropped. */
 export function mapAnswers(payload, formMap) {
   const grouped = {};
@@ -184,7 +204,7 @@ export function buildRows(payload, options) {
     outcome,
     arm,
     arm_source: armSource,
-    mc_answer: textOrNone(checks.manipulation),
+    mc_answer: mcAnswer(checks.manipulation, spec),
     city: textOrNone(fields.city),
     service: textOrNone(fields.service),
     language: meta.language ?? null,

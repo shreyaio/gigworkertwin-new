@@ -52,6 +52,24 @@ def _instrument_html(status: dict) -> str:
     )
 
 
+def _hosted_html(status: dict) -> str:
+    """The link a driver is sent, and what it costs to serve it here. `docs/06` §2.1.
+
+    The path is rendered as a relative link rather than an absolute URL because the origin
+    depends on where this is deployed — localhost now, a Space later — and a hard-coded host is a
+    link that works on the researcher's machine and nowhere else.
+    """
+    path = esc(status["hosted_path"])
+    return (
+        '<div class="tl-card"><strong>The questionnaire drivers fill in</strong>'
+        f'<div><a href="{path}" target="_blank" rel="noopener">{path}</a></div>'
+        f'<div class="tl-link-desc">{status["hosted_stops"]} stops · '
+        f'{status["questions"]} questions · {status["hosted_probes"]} optional why-probes. '
+        "Send this link; nothing on it links back into this application.</div></div>"
+        f'<div class="tl-note tl-note-warn">{esc(status["hosted_note"])}</div>'
+    )
+
+
 def _intake_html(status: dict) -> str:
     """Live intake status and the form link (`docs/06` §2).
 
@@ -138,13 +156,16 @@ def render_driver_survey(badge: str | None = None) -> None:
         gr.HTML(section_title("What the instrument is"))
         instrument = gr.HTML("")
 
-        gr.HTML(section_title("Intake"))
+        gr.HTML(section_title("The hosted questionnaire"))
+        hosted = gr.HTML("")
+
+        gr.HTML(section_title("Google Form intake"))
         intake = gr.HTML("")
 
         gr.HTML(section_title("Four-arm balance by city and service"))
         balance = gr.HTML("")
 
-        async def _load() -> tuple[str, str, str]:
+        async def _load() -> tuple[str, str, str, str]:
             """One read for the whole page. Off the render path, never inside it."""
             from twinlab.services.surveys import survey_status
 
@@ -156,14 +177,15 @@ def render_driver_survey(badge: str | None = None) -> None:
                 message = error_state(
                     "Could not read intake status.", type(exc).__name__, str(exc)[:200]
                 )
-                return message, message, message
+                return message, message, message, message
             return (
                 _instrument_html(status),
+                _hosted_html(status),
                 _intake_html(status),
                 _balance_html(status),
             )
 
-        load_once(_load, outputs=[instrument, intake, balance])
+        load_once(_load, outputs=[instrument, hosted, intake, balance])
 
 
 __all__ = ["render_driver_survey"]

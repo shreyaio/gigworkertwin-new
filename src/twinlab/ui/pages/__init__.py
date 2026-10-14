@@ -8,6 +8,7 @@ from .main_menu import render_main_menu
 from .research_model import render_research_model
 from .statistics import render_statistics
 from .studio import render_studio
+from .survey_take import render_survey_take
 
 __all__ = [
     "render_agent_studio",
@@ -18,4 +19,5 @@ __all__ = [
     "render_research_model",
     "render_statistics",
     "render_studio",
+    "render_survey_take",
 ]

@@ -35,6 +35,12 @@ The gate that decides whether a twin counts. Run per twin, independently of any 
 4. Score against the human's own 18 answers from `survey_answers`.
 5. Repeat `quality_runs_per_twin` times (default 3) and average, so one bad sample does not discard
    a good twin.
+6. **Answer the two control cells, once each** (RESEARCHER 2026-10-05): `00000` and `SHAM`, one
+   battery round per control, over the same paragraphs a session would show, with the twin's own
+   baseline. These are the floors every session's cells are measured against (§6 of `docs/07`). A
+   control already stored under this config is not asked again. A twin whose control answer fails
+   gets no verdict, because a verdict without its floors qualifies a twin for a panel that cannot
+   be measured against them.
 
 ### 2.2 The score
 
@@ -68,6 +74,17 @@ Typical reported outcome: *"17 of 20 twins kept (error 1.0 or less, 80 per cent 
 **Attrition is a stated limitation.** A dropped twin is excluded from all cells rather than flagged
 per cell, which keeps N constant across the grid at the cost of some data
 (`ARCHITECTURE.md` §10.4).
+
+### 2.4a Config matching (RESEARCHER 2026-10-05)
+
+A verdict and a twin's control answers belong to the config they were made under. The config
+fingerprint is a hash of the model, temperature, prompt, wording, battery, style version and the
+kept thresholds (`services/config_match.py`). A verdict counts for a twin only when it is the latest
+H3 verdict under the live fingerprint **and** both control answers exist under it. Every stage that
+uses a twin checks this first: the Dial board and sweeps, resume (which also refuses a session
+started under another config), the validity tests (INCONCLUSIVE, with the reason, appended to the
+record), and the Studio, which requires at least one validated twin under the live config. Changing
+the model or temperature makes every earlier verdict stale until the gate is run again.
 
 ### 2.5 Propagation
 
@@ -138,8 +155,8 @@ not free. Three of the eight need **no new calls at all**.
 | 3 | Beating simple guesses | **none** | 0 |
 | 4 | Impossible version | yes | N |
 | 5 | Order and wording swap | yes | 2N |
-| 6 | Leave out the fairness items | yes | N |
-| 7 | A second AI model | yes | N |
+| 6 | Leave out the fairness items | yes | 3N |
+| 7 | A second AI model | yes | 2N |
 | 8 | Temperature sweep | yes | 3N |
 
 ### Test 1 — Wrong person
@@ -157,6 +174,14 @@ pass:       gap ≥ 0.5 points AND the paired CI excludes 0
 check:      gap > 0 but CI includes 0
 fail:       gap ≤ 0
 ```
+
+`between_person_distance` — the mean distance between the two drivers' own vectors on the same
+items — is **reported on every row and never thresholded** (2026-10-07). It is the gap a flawless
+twin would score, since `mae_own = 0` leaves `gap = mae_other`, which cannot exceed how far apart
+the two humans are. A gap of 0.4 means one thing when the drivers sit 3 points apart and quite
+another when they sit 0.8 apart, and without it on the row the two cases cannot be told apart
+afterwards. **The 0.5-point threshold is unchanged**; whether it should be expressed as a share of
+that distance is an open research question, not a mechanical one.
 
 **This is the most important of the eight**, because it is the one that distinguishes "a twin" from
 "a plausible gig-driver chatbot". It needs **no new model calls** — it re-scores stored vectors —
@@ -201,6 +226,11 @@ check:      beats one
 fail:       beats neither
 ```
 
+The verdict is the comparison of means `docs/08` specifies, but the row also carries the **paired
+95% interval** on each advantage (`advantage_over_nochange`, `advantage_over_groupshift`), added
+2026-10-07. A `FAIL` on nine twins is a claim about a difference, and test 1 one screen away
+reports an interval for the same shape of quantity.
+
 No new calls. **A twin that cannot beat "nothing changed" is not adding information**, whatever its
 absolute MAE looks like — and a low MAE achieved by predicting no movement is exactly the failure
 mode §3.3 warns about.
@@ -213,10 +243,17 @@ Construct a deliberately self-contradictory stimulus — a guaranteed minimum wa
 the same work — and show it.
 
 ```
-statistic:  mean shift in happiness; share of twins treating it as a clear improvement
+statistic:  mean shift in happiness                      vs the CELL-level happiness floor
+            share of twins treating it as a clear        vs the TWIN-level happiness floor
+            improvement
 pass:       happiness does not rise materially; < 25% treat it as an improvement
 fail:       it reads as an ordinary improvement
 ```
+
+The two levels are not decoration (`docs/07` §6.1). "A **clear** improvement" is a statement about
+one twin, so its threshold is how far one twin's happiness moves when nothing changed. Against a
+cell-level floor — which cancels toward zero — the question degrades to "did this twin move up at
+all", whose answer is about half the panel under any noise, and no panel can get that below 25%.
 
 Needs a live model. **The contradictory spec bypasses the lookup and the Checker by construction**,
 so it is built by a dedicated fixture, flagged `synthetic_probe = true`, never written to `variants`,
@@ -248,19 +285,33 @@ sensitive to their removal.
 
 ```
 statistic:  |fairness_with − fairness_without|
-pass:       materially different — the twin was using its own history
-check:      barely different — possibly a stock response
+            |fairness_with − fairness_retest|   same persona, asked again — the control
+pass:       the ablation difference exceeds BOTH the retest difference and the 00000 floor
+check:      it does not — possibly a stock response, or just call-to-call variance
 ```
+
+Costs `3N`: with, retest, without.
 
 Needs a live model and an **ablated persona**. That persona violates the losslessness of I6 by
 design: it is built by a test fixture, flagged `ablated = true`, never hashed into `twins`, and
 never used in a study run. The ablation is the experiment.
 
+> **The retest control, added 2026-10-07** (`docs/DECISIONS.md`). `fairness_with` and
+> `fairness_without` are two *separate model calls*, so their difference contains the twin's own
+> call-to-call variance as well as any sensitivity to the ablation. With nothing to subtract that
+> against, the test could not distinguish "the twin used its fairness history" from "two calls to
+> one twin differ" — and would report `PASS` for a twin that ignored its persona entirely, which is
+> the opposite of what it is asked to detect. The third round asks the **unablated** persona the
+> same question again; the comparator is `max(retest, floor)`, because the two are alternative
+> explanations of the same difference rather than components of it. On the study database the
+> observed ablation difference was 0.571 against a 0.000 floor — a `PASS` that the control would
+> have been needed to believe.
+
 ### Test 7 — A second AI model
 
 **Is the finding about the drivers or the model?**
 
-Run a sample of twins on a different Ollama Cloud model, same cell, same personas.
+Ask the same twins the same cell on **both** models, same personas.
 
 ```
 statistic:  correlation of per-twin index between models; mean |difference| per metric
@@ -274,6 +325,24 @@ different *directions* mean the finding is a property of one model.
 
 Record both model names on the result. Ollama Cloud's model list is the pool
 (`ARCHITECTURE.md` §3.3).
+
+**Costs `2N`, not `N`** (corrected 2026-10-08). The wording above once read "run a sample of twins
+on a different model", which sounds like one extra round on top of the sweep's stored answers. It
+cannot be: `second_model` compares a **paired** per-twin index, and the pairing only holds if both
+sides were asked the same way, in the same test, under the same seed and wording. So both models
+are asked, and the confirm card has to say so — it said `N`, so a researcher approved half the
+calls they spent.
+
+**The second model is a name on the same endpoint.** `resolve_model` sends every live provider at
+`settings.ollama_base_url`, so anything Ollama Cloud serves is reachable by typing its name —
+`mistral-large-4` and `deepseek-v4-pro:0813` among them. A second *provider* is a different thing,
+needs `OPENAI_BASE_URL`, and test 7 does not require one. A good pairing crosses model families:
+two variants of one base model agreeing with each other is not evidence about the drivers.
+
+The name is checked against the endpoint's own catalogue before the test runs
+(`services.validity._model_not_served`), because model A is asked **first** — so a typo otherwise
+costs a full panel of serial calls before anything notices. The check **fails open**: a listing
+that cannot be read is "not known", never "not served", and never blocks the test.
 
 ### Test 8 — Temperature sweep
 

@@ -189,15 +189,51 @@ is affordable — a claim no small vignette study can support.
 Every live cell is reported against both.
 
 ```
-noise floor        = |index(00000)|          the twin moves when nothing changed
+noise floor (cell) = mean over the six metrics of |mean over twins of shift(00000)|
+noise floor (twin) = mean over the six metrics of mean over twins of |shift(00000)|
 demand floor       = index(SHAM) - index(00000)
 ```
+
+### 6.1 Why the noise floor has two levels (RESEARCHER 2026-10-07)
+
+It was `|index(00000)|` until 2026-10-07. That is an **absolute value of a signed mean**: the index
+applies `index_sign` and averages the six metrics, so a twin moving up and a twin moving down leave
+it where it started. Every statistic it gates — tests 2, 4, 5, 6 and 8 — is a **mean of absolute
+values**, and by Jensen's inequality `|E[X]| <= E[|X|]`. The floor could therefore never exceed the
+quantity it was judging, and every floor-judged test leaned toward `FAIL` for a reason that had
+nothing to do with the twins.
+
+On the study database this was not a small bias. Session `7a1b78a6` stored
+`shifts = {clarity: 0, leaving: 0, staying: 0, fairness: 0, pushback: 0, happiness: 0}` for `00000`
+and a floor of `0.000`, against which five tests were judged.
+
+The two levels are the two functionals the tests actually compute, so each is compared with
+something built the same way:
+
+| Test | Statistic | Level |
+|---|---|---|
+| 2 | mean over metrics of \|mean shift\| | **cell** |
+| 4 | mean happiness shift | **cell**, happiness only |
+| 4 | share of twins reading it as a clear improvement | **twin**, happiness only |
+| 5 | mean over metrics of mean \|A − B\| per twin | **twin** |
+| 6 | mean over twins of \|with − without\| | **twin**, fairness only |
+| 8 | range of mean shifts across temperatures | **cell** |
+
+Tests 4 and 6 judge a single metric, so they take that metric's own floor: a six-metric average is
+not the floor for fairness.
+
+The **demand floor is unchanged and stays signed.** It is a directional quantity — how much further
+SHAM moves the index than `00000` — and an absolute value there would discard the direction that
+makes it interpretable.
 
 **A cell whose index does not exceed the demand floor is not interpretable**, and the Analyst is
 required to say so (`docs/02` §4.4). The UI shows the floor on every Results panel and marks cells
 below it.
 
-Both are computed per session, from that session's panel, and never pooled across sessions.
+All are computed per session, from that session's panel, and never pooled across sessions. Each
+twin's control answers were given once in the quality test under the session's own config
+fingerprint, so a session's floors are assembled from stored answers and no session asks a control
+(RESEARCHER 2026-10-05).
 
 ---
 
@@ -218,6 +254,26 @@ screening:  Literal["strict", "none"]
 `strict` drops a respondent who failed either attention check (`AMQ6`, `ALGO5`), completed in under
 8 minutes, or straight-lined.
 
+**Straight-lining is a dispersion rule: the standard deviation of a respondent's _raw_ battery
+answers, below `0.30`.** Two things about it are load-bearing.
+
+*Raw, meaning pre-reversal.* The prototype computed this SD **after** reverse-coding, so an all-7s
+respondent had their three reversed items sitting at 1, an SD near 2.8, and passed. That rule only
+ever caught straight-lining at the scale midpoint. Reading raw answers is the only ordering under
+which the statistic means what its name says.
+
+*The threshold was fixed on 2026-10-11, before any real data existed*, and it is the prototype's own
+`0.30` so it can be cited as pre-specified. A rule chosen after seeing results is a researcher
+degree of freedom — which is the paragraph below — so the number carries a date.
+
+The rule is enforced in `stats/dataset.py`, not at intake. The stored `straight_liner` column is a
+**fact** ("every battery answer was identical"), written by the Edge Function and
+`ingest/survey_intake.py` in lockstep; the threshold is a **judgement**, and keeping it in the
+analysis layer is what lets it change without an Edge Function deploy and without rewriting a
+single stored row (rule 6). Both tests run: the stored flag still screens out a respondent whose
+answers are no longer loadable. `analysis_runs.config.straight_line_sd_min` records which threshold
+produced each analysis.
+
 **Failing the Part 15 manipulation check (`MC1`) does not drop a respondent.** Decided 2026-09-28:
 the switch is built and defaults **off**. `mc_answer` and `mc_correct` are captured on every
 submission and the failure rate is reported on Fieldwork, so the decision can be revisited against
@@ -230,8 +286,50 @@ which analysis so the choice is visible.
 
 ### 7.2 The nine constructs as measurement model
 
-All nine are **reflective**, each with its items from `docs/01` §3.3. `EDEP` enters as a moderator;
-`arm` enters as the experimental antecedent.
+All nine are **reflective**, each with its items from `docs/01` §3.3. `EDEP` enters as a moderator.
+
+**`arm` enters as one single-indicator construct per non-reference arm** — `ARM_MGT1`, `ARM_CON1`,
+`ARM_REP1`, with `BASE` omitted as the reference — each carrying its own dummy and its own path to
+`EXPO` and `CTRL`. Six coefficients, each separately bootstrapped.
+
+Until 2026-10-11 these were one formative `ARM` composite of three dummies. That collapses three
+degrees of freedom to one: a composite yields a single `ARM → EXPO` coefficient, so there was no
+estimate of the form *"MGT1 raised perceived exposure by β"* — which is the reportable output of a
+four-arm between-subjects experiment. A composite is the conventional treatment of a categorical
+**control** variable, not of the manipulation under test.
+
+The arm constructs are flagged formative, so reliability, AVE and discriminant validity read `na`
+for them: a single indicator has a loading of 1 and an AVE of 1 by construction, and reporting
+those as measurement quality would be meaningless. The three dummies are mutually exclusive with
+the reference omitted, so they sum to ≤ 1, never to 1 — the block is estimable and inner VIF stays
+modest. A fourth dummy would be a rank deficiency.
+
+### 7.3 Mediation structure, and the robustness check
+
+The reported model imposes **full mediation**: justice perceptions reach the behavioural intentions
+only through satisfaction, so every arm effect on an intention is entirely indirect. That is the
+researcher's decision, recorded in `docs/DECISIONS.md`.
+
+A second variant, `partial`, adds exactly three edges — `FAIR → VOIC`, `FAIR → LOYA`,
+`CTRL → VOIC` — and nothing else. It exists because `FAIR → VOIC` is the central claim of the
+algoactivism literature and its absence is the first thing a reviewer asks about, and because the
+check costs **no extra data**: same matrix, same engine call.
+
+```python
+build_model_spec(variant="full")     # the reported model, and the default
+build_model_spec(variant="partial")  # the robustness check, never a second headline
+```
+
+The variant is **nested** — the full model plus three edges, with nothing removed — so each added
+path's own bootstrap interval is the test of that mediation restriction.
+
+`EDEP × FAIR` and `EDEP × TRAN` are deliberately **not** added. `EDEP × SATI` was chosen over them
+after the question was put twice (`docs/DECISIONS.md`); adding them here would quietly convert the
+robustness check into the partial-mediation model that was declined.
+
+The two variants produce different `ModelSpec.fingerprint()` values and `model_variant` is recorded
+in `analysis_runs.config`, so a result under one can never be read as a result under the other, and
+a resumed run rebuilds the model its own matrix was built for.
 
 ---
 

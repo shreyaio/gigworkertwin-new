@@ -3120,3 +3120,2721 @@ here because they move a documented rule; everything else is mechanical.
   conservative reading of `docs/03` §9.1. The case for allowing it is that `origin='studio'` and
   `twins_n` are on every surface, so a reader can judge it; the case against is that the gate exists
   precisely so that judgement does not have to be made per number. **Researcher's call.**
+
+## M19 — the system audit and remediation (`SYSTEM_AUDIT_AND_PLAN.md`)
+
+The three research questions of §3.2 were **put to the researcher and answered on 2026-10-03**;
+they are recorded here as taken, not as chosen by the agent.
+
+### Researcher decisions, 2026-10-03
+
+- **Q1 / WP-1 — the word band is a function of the commitment count, and `style_version` → `v3`.**
+  One band `[45, 150]` served sets of 2 to 8 commitments, giving `L1` dial 1 seventy-five words per
+  commitment and `L3`/`L4` dial 2 nineteen. The design prompt asks for each commitment in its own
+  short sentence and the Checker probes each one for entailment, so at eight commitments the model
+  had to compress and the compression lost the entailments — permanently, because the one durable
+  re-render was already spent. The formula is `word_min = 15 + 18n`, `word_max = 25 + 30n`, clamped
+  into `[45, 300]`, and it is **calibrated against the eight paragraphs this project actually
+  rendered**: it accepts all six that passed and rejects both that failed, for being too *short*.
+  Bumping to v3 restores the paragraph budget by the principled route — the cache key contains
+  `style_version` — rather than by hand-editing a counter.
+  **The confound this makes explicit:** paragraph length now varies systematically with dial, about
+  90 words at dial 1 against about 180 at dial 2. That was already true under v2's unverified 150
+  and is unavoidable, since more commitments is more text; the formula makes the covariance
+  declared and deterministic rather than leaving it to be whatever the model compressed to.
+  **It belongs in the paper's limitations**, and §7.2 item 3's question — whether the analysis
+  should carry a word-count covariate — is still open.
+  Rejected alternative: `paragraphs_per_lever: 2` at dial 2, which changes the *shape* of the
+  stimulus between dials rather than its length, a larger confound than the one it fixes.
+- **Q2 / WP-3 — the quality gate asks all six Part-17 versions in one call.** Six calls per repeat
+  became one. The argument is **fidelity, not cost**: `docs/01` §3.6 describes Part 17 as one
+  section of one questionnaire, "18 items: six versions × three questions", answered in one sitting
+  by a respondent who could see and compare the six worlds, and `docs/08` §3.3 scores the twin on
+  Pearson `r` **across** the six — on whether it *orders* them as its driver did. A respondent
+  orders by comparing; a twin asked in six isolated contexts cannot. The saving (9,000 calls → 1,500
+  at N=500 × 3) is a consequence.
+  **Six-in-one-context and six-in-isolation are different measurements and cannot be pooled.**
+  `twin_quality_runs.detail["protocol"]` records `h3_single_call_v1` on every row, the Validation
+  tab names it, and a table carrying two protocols says so rather than averaging across them.
+  `twin_quality_runs` was empty, so there is nothing to migrate.
+- **Q3 / WP-5 — the Dial board asks an editable panel size, with a "use every eligible twin"
+  preset.** Reading (b) of the plan: the panel stays **frozen** at the chosen size, so every cell in
+  the session is answered by the same twins and the indices remain differenceable against each other
+  and against the `00000` and `SHAM` floors (I14). Reading (a), a census with no frozen panel, was
+  declined — its index is not differenceable against a sweep cell. `panel_size` became a
+  `TwinConfig` field, so it is versioned on write and frozen onto every run; `PANEL_SIZE` in the
+  environment is now only the seed it starts from.
+
+### Mechanical, taken here
+
+- **2026-10-03 — a stored *failing* variant caches the verdict, not the attempt (WP-2, D1).**
+  `render_and_check` short-circuited on **any** stored row, and the gate stores a report pass or
+  fail. Each half is defensible and documented; together they made a cell that failed once fail for
+  ever, with no path in the application to clear it and nothing on screen distinguishing "genuinely
+  unrenderable" from "unlucky once in September". No document specified that behaviour — it was an
+  accident of two independently correct lines. It now re-renders when the stored report did not pass
+  **and the durable paragraph budget allows it**, and the budget is read *before* anything is
+  re-assembled so an exhausted re-entry costs zero model calls — not even a coverage probe. I3 is
+  untouched: the refusal is at every read of a non-passing variant, and this re-opens the attempt,
+  never the verdict. A re-entry emits a `run_events` row, so a free second press says that it was
+  free.
+- **2026-10-03 — the sham's word band is its lever's *dial-1* band, not a function of its own slot
+  count (WP-1).** **Not in the plan; raised by it.** The plan says the sham's `n` is "the number of
+  slots that lever announces", which is 1 or 2 — so four of five sham levers would have landed in
+  `[45, 55]` while every live lever sits at `[51, 85]` or wider. `ARCHITECTURE.md` §5.2 requires the
+  sham to render as "five ordinary paragraphs, **same word band and voice as a live cell**", and a
+  sham that is the shortest cell in the study is recognisable as the control by length alone — a
+  twin that can tell it is looking at a control is not measuring the demand characteristic the cell
+  exists to measure. The dial-1 count is read straight out of the frozen `dial_lookup`, so the sham
+  keeps its zero free parameters.
+- **2026-10-03 — gate 3's band is passed per lever and a missing one raises (WP-1).** From v3 there
+  is no global `word_min`/`word_max` to fall back on, so `build_report` takes `bands` and raises
+  `CheckerMisuse` for a non-dial-0 paragraph it was given no band for. Grading against a guessed
+  band and skipping gate 3 because none arrived would both let an ungraded stimulus reach a twin.
+- **2026-10-03 — `_render_stimuli` renders and reports all six H3 codes, then halts (WP-4, D2).**
+  The halt is unchanged and still correct — a twin scored on fewer than 18 items is a different
+  measurement. What was wrong was the granularity: `12220` is first in `h3_version_codes`, so three
+  renders that would also have failed were never attempted, and the researcher was told about one
+  bad code when four of six were affected. `docs/08` §2.1 step 1 says render the six; it does not
+  say stop at the first.
+- **2026-10-03 — the H3 gate is costed at its own rate (WP-3).** An H3 call carries the persona once
+  but six scenarios, so it is estimated at 20 s and 6,500 tokens in rather than the battery round's
+  8 s and 2,300. `_budget` gained a `seconds_per_call` parameter; the tokens were already
+  parameterised and the seconds were quietly the battery's, which understated the gate's wall-clock
+  by about 2.5×. `ARCHITECTURE.md` §7.2 is explicit that no researcher should discover the cost of a
+  long action by running one.
+- **2026-10-03 — the validity task is held and its death is reported (WP-6, D4).**
+  `enqueue_validity_test` returned a task the UI discarded, with no module-level set and no
+  done-callback — the one background path in the codebase that did not guard against it, while every
+  other one carries a comment calling it the documented failure mode. It is now held in `_TASKS` and
+  a done-callback appends a `validity_results` row with `verdict="INCONCLUSIVE"` naming the
+  exception. `INCONCLUSIVE` and not `FAIL`: the test did not fail, it did not run, and recording
+  `FAIL` would put an opinion about the instrument into the evidence table on the strength of a
+  traceback.
+- **2026-10-03 — `_paragraphs_for` honours the Checker verdict (WP-6).** **An I3 hole the plan did
+  not name.** The function's docstring said "Checker-passed"; its query filtered on
+  `(version_code, style_version)` only and returned the latest row whatever its verdict, so a
+  variant the Checker had *rejected* would have been handed to validity tests 4-8 and put to the
+  panel. It was the third read site of a stored variant and the only one that did not check
+  `passed`.
+- **2026-10-03 — a validity test defaults to the newest session that has a *frozen panel* (WP-6).**
+  It defaulted to the newest session of any kind, which on the study database was `Render 01000`
+  (`kind='render'`, `panel_size=0`). A render session and a quality session have no panel by
+  construction. Filtered by an actual `session_panel` row rather than by `kind`, because a session
+  whose draw failed has the right kind and no panel.
+- **2026-10-03 — `RoundPromptError` is caught where a twin round is made (WP-6).** It is a
+  `ValueError` and was caught **nowhere** in the codebase, so a malformed round killed a whole
+  validity test instead of that twin's turn in it.
+- **2026-10-03 — the Validation tab's button is a refresh, and is named as one (WP-7).** The tab is
+  a read-only view over `twin_quality_runs`; there is no separate validation run to start. It had a
+  primary-styled `interactive=False` button with no handler, above a table whose empty state told
+  the researcher to press it. The empty state now names the quality gate and counts what is missing.
+- **2026-10-03 — Agent Studio's edits govern the runtime (WP-8).** This reverses the holding
+  position recorded under "Still open after M18". The five call sites read
+  `registry.live_agent_configs()`, which merges the stored `agent_configs` row over the YAML seed —
+  the precedence `docs/09` §4 already defines for `TwinConfig`. The merge lives in
+  `agents/registry.py` and the database read in `services/agent_config.py`, because `agents/` may not
+  import `db/` and `variant/` importing `services/` would invert the layering.
+  **I11 is strengthened, not weakened:** `sessions.config["agent_versions"]` freezes
+  `{agent_id: version}` onto every session, gate and Studio ask, so two sessions under different
+  agent configurations can never be silently compared — which is `ARCHITECTURE.md` §1.1's "frozen
+  onto every run that used them", satisfied in the data. `validate_config` runs on every merged
+  config, so a stored row cannot give the design agent or the twin a tool (I2, I6) or introduce
+  `native` output (I13); a row that will not validate falls back to the seed **for that agent
+  only**, logged once.
+- **2026-10-03 — `enabled` gates the runtime, and the Quality Checker cannot be disabled (WP-8).**
+  The flag had exactly one read in the whole codebase — a pill. Now: `design` or `twin` disabled
+  fails loudly, `analyst` disabled uses the existing deterministic template with its
+  `FALLBACK_PREFIX` and makes **no** model call, and `checker` is **refused at save**, naming I3 —
+  disabling the coverage probe would let an unverified stimulus reach a twin, and a probe that did
+  not run must never look like one that passed. Refused in the service rather than hidden in the UI,
+  because the refusal has to hold for an API wrapper and a direct call too.
+- **2026-10-03 — the twin's temperature has one owner, and Agent Studio says so (WP-8).** It comes
+  from `app_config['twin']` because that is what a session freezes onto its config column and what
+  validity test 8 sets. The box is read-only and carries the sentence; the state that must not
+  survive is a control showing a number the runtime silently discards.
+- **2026-10-03 — the agent cards name each agent's two steps (WP-8 item 6).** Presentation only. The
+  researcher's instinct that the Policy Designer "doesn't really need a live AI model" is half
+  right, and that half was invisible: choosing the commitment set is a frozen lookup over
+  `dial_lookup.json` and `gaps.json` with no model in it (I1), and only writing it in Uber's voice
+  uses one. Replacing the *rendering* half with a template was considered and **rejected** — it
+  would turn the stimulus from Uber-voice prose into a bulleted list of commitments, which is a
+  different experiment.
+- **2026-10-03 — the Settings tab's save message states what is true (WP-9).** It said *"This does
+  not change what the next session runs under yet… Edit the YAML to change behaviour."* That had
+  stopped being true: `refresh_twin_config` reads the row, `load_twin_config` merges it, and
+  `session_config` calls the refresh before every session. A researcher who believed the message
+  edited YAML by hand — unversioned, unaudited, outside the `config_version` that
+  `twin_quality_runs` records — which actively undoes the reproducibility chain the button exists to
+  maintain.
+- **2026-10-03 — `app_config['style']` disagreeing with `settings.style_version` warns at boot
+  (WP-9).** The row is read by nothing, which is why it is dangerous: it is a second, wrong
+  declaration of the render cache key sitting in the evidence database. A warning rather than a
+  refusal, because nothing reads it and a stale row cannot produce a wrong stimulus;
+  `ingest/seed_db.py` writes it from the YAML, so a reseed corrects it.
+- **2026-10-03 — "Twin today" is labelled, and an unmeasured baseline is a sentence (WP-10).** The
+  column is the twin's answers to the `00000` control cell — its noise floor, and what every shift
+  on the screen is measured against. `00000` runs once per session by the orchestrator, so with no
+  session run the column is empty for every twin and nothing said why. The header is now
+  `Twin today (00000)` and `TwinPanel.baseline_state` carries `measured` / `not measured`, rendered
+  as one sentence above the table rather than a column of dashes — a dash can be read as a zero,
+  and I17 forbids rendering an unmeasured cell as anything that could be.
+- **2026-10-03 — the demand floor is reported on the Dial board too, and an unmeasured floor is
+  stated (WP-12).** **Not in the plan.** `ARCHITECTURE.md` §5.2 requires `SHAM − 00000` to be
+  reported "alongside every live cell" and §9 that a cell below it is not interpretable. The Results
+  panel passed `floor=`; the Dial board's cached-result path did not, so a researcher could read an
+  uninterpretable index there as a finding. Separately, `floor=None` rendered as silence, which is
+  indistinguishable from "it cleared the floor" — the same defect WP-10 fixed for the baseline.
+  There are now three states: below the floor, above it, and not measured, each said plainly.
+- **2026-10-03 — `test_m19_remediation`'s fixture saves and restores `services.config._override`.**
+  WP-9's test saves `quality_runs_per_twin = 2`, and `refresh_twin_config` installs it as a
+  **process-level** override — so the next test file in the run inherited it and
+  `test_m6_twin_quality`'s assertion of the seeded 3 failed **in the full suite only**, which is
+  the worst shape of test pollution to find. The save-and-restore pattern is
+  `test_m16_settings_apply`'s, which already had it for exactly this reason. Recorded rather than
+  quietly fixed, because a full-suite-only failure is worth knowing the cause of.
+
+### M19 continuation — the two loose ends in `HANDOFF_M19_CONTINUATION.md` §2, 2026-10-04
+
+- **2026-10-04 — a twin save no longer writes the in-force temperature into its `agent_configs`
+  row (§2.2).** WP-8 item 5 made the box read-only; the save path still sent its value, so saving
+  copied `app_config['twin']`'s number into the row and left two places holding it — the shape of
+  problem the read-only box existed to remove. `ui/pages/agent_studio._save` omits `temperature`
+  when `agent_id == "twin"`. The alternative — leave it, since `twin_agent_config` overrides the row
+  regardless — was rejected: nothing ran differently either way, so the deciding argument is which
+  state a future reader is misled by, and a row that silently mirrors a value it does not own is
+  worse than one that visibly does not own it.
+- **2026-10-04 — `save_agent` merges the nested `model` dict field-by-field instead of replacing
+  it.** Required by the above (omitting `temperature` from a replaced dict would hand it to
+  `ModelRef`'s default of 0.2, which is a *change*, not a no-op), and it fixes a latent defect of
+  its own that was not in the plan: Agent Studio's save only ever sent `provider`, `name` and
+  `temperature`, so **every save silently reset a stored `max_tokens` to 2048 and a stored `seed` to
+  `None`**. A reset seed is a provenance loss (I11) and a reset `max_tokens` changes what the agent
+  can emit. A partial `model` now means "change these fields", which is what every caller already
+  assumed it meant.
+- **2026-10-04 — `app_config['style']` is corrected by a one-row patch, not a reseed (§2.3).** The
+  handoff left the choice open. A reseed is the destructive option: `ingest/seed_db.build_rows`
+  rewrites `app_config['twin']` — on the live project at **version 3**, holding the researcher's
+  0.25 twin temperature and `quality_runs_per_twin`, the live subject of validity test 8 — and every
+  `agent_configs` row with it. So the row's value is read from `config/style_contract.yaml` and
+  upserted alone, with its `version` bumped so the move is recorded. The boot warning in
+  `services/config._check_style_version_row` stays, because the row can drift again on the next
+  `style_version` bump.
+
+### Still open after M19
+
+- **The word-length confound (Q1).** Paragraph length covaries with dial by construction. Declared
+  above and in the paper's limitations; whether the analysis should carry a word-count covariate is
+  the researcher's call.
+- **`quality_runs_per_twin` is 2, against `docs/08` §2.1's 3.** The reason for the reduction was
+  cost, and WP-3 largely removes it: 3 repeats at 10 twins is now 30 calls instead of 180.
+  **Worth revisiting.**
+- **Twin temperature** is 0.25 in `app_config` against a seeded 0.7, chosen by neither measurement.
+  Validity test 8 is what sets it, and WP-6 is what makes test 8 runnable. Do not pick it before
+  then.
+- **Should a Studio result from a quality-dropped twin be filed?** Unchanged from M18. Still the
+  researcher's call, still one line.
+- **The sweep population.** Unchanged from M18. WP-5 extends the explicit control to the Dial board;
+  which population a *study* sweep runs on remains a decision taken at the moment of running it.
+
+### Documents this supersedes, which need correcting at write-up
+
+- **`docs/10`'s "the quality gate is the dominant cost of the study, not the sweep"** no longer
+  holds arithmetically. After WP-3 the gate is 1,500 calls at N=500 × 3 and a full 243-cell sweep at
+  K=20 is 4,915, so the sweep is now about 3.3× larger. The *structural* claim is unchanged and is
+  what the comparison was ever for: the gate is paid on every consented twin, the sweep only on the
+  frozen panel, so the gate is the cost that grows with fieldwork.
+  `tests/test_m7_orchestrator.py::test_the_gate_scales_with_the_population_and_the_sweep_with_the_panel`
+  pins both the inversion and the structural claim.
+- **`SYSTEM_AUDIT_AND_PLAN.md`'s acceptance check A-2** asks for `items_n = 18` on each
+  `twin_quality_runs` row. `validity.quality.average_scores` deliberately *sums* `items_n` across
+  repeats — it is a count of measurements taken, so the verdict says how much evidence it rests on —
+  so the correct figure is `18 × quality_runs_per_twin`. The code's reading is kept; **A-2's wording
+  needs correcting.**
+- **`docs/11` M5's word-band bullets** ("a 41-word or 80-word render fails `in_band`") are now
+  superseded twice over: by the 2026-09-29 widening and by v3's per-commitment band. The intent —
+  the gate rejects a render that is too short or too long, at both ends — is what
+  `tests/test_m5_render_checker.py` asserts, against the three-commitment band `[69, 115]`.
+
+## 2026-10-04 — Checker: word band and reading grade are informational (`style_version: v4`)
+
+**Researcher decision.** Gate 3's word band and Flesch–Kincaid grade no longer fail a cell. They are
+still computed and written to the report as `info:` notes. Forbidden terms, refusals, coverage,
+containment and the dial-0 / sham checks are unchanged and still fail a cell.
+
+**Why.** The band and grade measure style, not content. Both were rejecting paragraphs that differ
+from the intended policy in no way that matters to a twin, and they were the most common cause of
+the quality gate halting. **Bumped to v4** because a change to what the Checker enforces changes which
+cached paragraphs are valid under the contract (I4).
+
+**Not decided here.** Coverage and containment tolerance. I3 currently says one containment hit fails
+the cell with no threshold; softening it needs an explicit amendment to I3 and its test, and is
+pending the researcher's decision.
+
+## 2026-10-04 — Containment is recorded, not enforced; coverage gets more repair rounds
+
+**Containment (I3, amended by researcher decision).** A containment hit is detected on every render
+and written to the report as `info: containment hit (recorded, not enforced)`. It does not fail the
+cell. Reason: two predefined commitments can legitimately share wording, so a hit is not evidence of
+a leak by itself. The hits remain in `checker.containment` so the overlap is visible in the data.
+The I3 test was rewritten to assert this rule and that hits are still detected and reported.
+
+**Coverage (researcher instruction: address the faults, do not tolerate them).** Not yet changed.
+The L3 dial-2 and L4 dial-2 paragraphs have spent their two durable render attempts
+(`RENDER_ATTEMPTS_MAX = 2`, mirrored as a DB check constraint and specified by `docs/03` §5 as one
+re-render) while still missing `3.2.c`, `3.2.d` and `4.1.a`. Raising the budget needs a migration and
+a `docs/03` change, so it is pending the researcher's decision.
+
+**Not solved by this.** A dial-2 cell that still cannot be rendered (L5, the `5.1.c` / `4.1.d`
+overlap in the frozen reference data) is still refused. That needs a reference-data decision.
+
+## 2026-10-04 — `style_version: v5` (containment becomes informational)
+
+Bumped because the Checker's enforcement changed (containment no longer fails a cell). Stored
+`variants` and `lever_paragraphs` rows under v4 carry verdicts computed under the old rule, and the
+gate replays a stored failing verdict verbatim, so without a bump the old failures were never
+re-judged. v5 forces fresh renders and fresh checks under the current rules.
+
+## 2026-10-04 — `style_version: v6` (forbidden terms are a warning)
+
+Researcher decision: forbidden *terms* (`config/style_contract.yaml` `forbidden_terms`) no longer fail
+a cell; they are reported as `info:`. The design prompt still names them, so the agent is still told
+to avoid them. Forbidden *intensifiers* remain enforced. Bumped because the Checker's enforcement
+changed (I4; see the v5 note).
+
+## 2026-10-04 — `style_version: v7`: design prompt v2 (coverage by prompt, not by call count)
+
+**Researcher decision.** Coverage misses are fixed in the design prompt, not by more model calls and
+not by a higher repair budget. `design_v2.md` treats the commitments as a checklist, requires each
+to be stated by its own substance, and asks the agent to check its draft against the list before
+answering. Calls stay at one per lever. Rejected: one design call per commitment (raises calls for
+every lever and changes the paragraph's shape).
+
+Bumped because the design prompt is part of the style contract (`STYLE_KEYS_SHOWN`, I4). The stored
+`design` agent row is saved to `file:design_v2.md` through `services.agent_config.save_agent`, so the
+change is in the audit history. `design_v1.md` is kept, unedited.
+
+## 2026-10-04 — `style_version: v8`: design prompt v3 (condensed, same meaning)
+
+Researcher request: the prompt was too long. `design_v3.md` is `design_v2.md` condensed, with duplicate
+statements merged (the coverage rule was stated three times, the forbidden-word rule twice). No rule
+was added, removed or weakened. Bumped because the prompt text changed (I4). The stored `design` row
+is saved to `file:design_v3.md` through `services.agent_config.save_agent`. `design_v2.md` is kept.
+
+## 2026-10-04 — `style_version: v9`: coverage repair appends the missing sentences
+
+**Researcher decision.** On a coverage miss, the one repair no longer regenerates the whole paragraph.
+The same design agent (no new agent) is asked, once, for only the sentences for the commitments the
+paragraph left out. Python appends them to the text already written. The Checker then judges the
+combined paragraph. The repair is still the one `RENDER_ATTEMPTS_MAX` allows, so the budget is
+unchanged at 2. Calls per lever are unchanged apart from the repair itself.
+
+**Known limit.** If a cell also fails a non-coverage rule (a forbidden intensifier), the append does
+not fix it, and that cell still fails. Bumped because the repair path is part of what the cache
+represents.
+
+## 2026-10-05 — Dial board wiring: budget counts stored paragraphs, resume takes the newest, runs push to the screens
+
+**Mechanical fixes, no research decision changed.**
+
+* *Ask the twins* now prices lever paragraphs from `lever_paragraphs`: a paragraph already stored for
+  `(lever, dial, style_version)` costs nothing (`services/runs.py: missing_paragraph_calls`). The
+  breakdown names the twin calls and the unwritten paragraphs separately. The twin figure is
+  unchanged: three cells (the version, `00000`, `SHAM`) × panel size, one call per twin per cell.
+* Resume takes the newest paused session by `created_at`. It used to sort by `session_id`, a uuid,
+  so the button resumed an arbitrary session (`services/runs.py: paused_sessions`).
+* Starting or rerunning from the Dial board wakes the Agents poll. A finished session writes a
+  completion signal, which repaints the Dial board's cached result and reloads the Results grid,
+  with no page reload (`ui/pages/lab.py: _LabSignals`). The idle-page rule (`ARCHITECTURE_UPDATE.md`
+  §3.1) still holds: nothing polls until a session starts.
+
+**Superseded by the 2026-10-05 amendment below.** The paragraph above said every session re-answers
+`00000` and `SHAM`. That is no longer true.
+
+## 2026-10-05 — Amendment: the control cells move into the quality test, and verdicts are config-matched
+
+**Researcher decision.** Keep both controls, `00000` and `SHAM`. Answer each once per twin per config,
+inside the twin quality test. No session asks them. Every session records its floors from its panel's
+stored answers under its own config fingerprint. Remove the per-session control runs.
+
+**Config matching.** A verdict and a twin's control answers are valid only for the config they were
+made under (model, temperature, prompt, wording, battery, style version, kept thresholds). A twin
+qualifies for the live config only with the latest H3 verdict under that fingerprint and both control
+answers. The Dial board and sweeps, resume, the validity tests and the Studio all refuse on a
+mismatch and say which config to re-run. Migration `005_config_matched_controls.sql`; the function
+is `services/config_match.py`.
+
+**Choices I made that you may want to change.**
+* The Studio requires at least one validated twin under the live config, not that the twin it asks is
+  one. A hand-built twin has no driver, so it can never pass the gate.
+* A validity test on a mismatched session is INCONCLUSIVE and still appended, so the attempt stays on
+  the record.
+* Quality verdicts made before `005` have no fingerprint, so they qualify nobody. The gate has to be
+  run again for the live config. That costs `2 + quality_runs_per_twin` calls per twin, once.
+* The two control floors' prose is written by the deterministic template, not the Analyst, so a session
+  makes no model call for them (`services/twin_runtime.py: _reading`). The numbers were never the
+  Analyst's to produce (I12), so they are unchanged.
+* Interactions and the headline interaction rows pair only tested versions. A control is not a dial
+  vector, and pairing it raised `ValueError` and blanked the Results side panel (`services/results.py:
+  shifts_by_code`).
+
+
+## 2026-10-05 — Agent Studio: the wiring audit, and the three tests show the agent's own output
+
+**Superseded in part by the 2026-10-05 revision below: the Twin Interviewer shows two columns and the Quality Checker shows a side-by-side, with no verdict and no model call.**
+
+**What was wrong, found by reading the call sites.**
+* A save of a prompt missing a mandatory section said *Saved.* and then every session silently
+  ran the seed (`live_agent_configs` falls back per agent). `save_agent` now runs the skeleton
+  check and refuses with the reason.
+* A save reached the process only at the next session. `save_agent`, `restore_agent` and
+  `set_frozen` now install the new config in the process before they return, so the Test buttons
+  and the sessions read the same thing.
+* `differs_from_seed` compared a file reference with a stored text and reported every saved row
+  as different from the shipped default. It now compares the resolved prompts.
+* The Quality Checker panel read the stored quality numbers and never ran the Checker's prompt.
+  It now runs `agents/checker.run_coverage_probe` once per commitment on the paragraph the design
+  agent rendered for the version, and shows the verdict and the reason.
+* The Twin Interviewer panel showed the driver's answers and the six index metrics beside the
+  twin's. It now shows the twin's answers, the `Answer checked?` verdict and the twin's reason, one
+  column per instruction set.
+* The Policy Designer panel showed the stored paragraphs. It now runs `agents/design` once per lever
+  with a dial set, on the brief the render path builds, and shows what it wrote and its word count
+  against the band. It writes nothing to `lever_paragraphs`.
+* The three model-calling tests run as background tasks (`services/agent_config.start_agent_test`),
+  and the screen reads the result with *Show the result*. A model call on the handler's own path
+  is what `CLAUDE.md` rule 12 forbids, and the old Twin test was doing it.
+* The analyst's bundle labels did not match `agents/prompts/analyst_v1.md`, which names `CODE`,
+  `TEXT` and `COMBINATIONS`, and the bundle sent `CELL`, `SCENARIO` and `INTERACTIONS`. The bundle now
+  uses the prompt's labels. Only the labels changed. The prompt was not edited.
+
+**Left as it is, deliberately. These are research-validity questions, not mechanical ones, so they
+are the researcher's to decide.**
+1. **A design prompt edit does not reach paragraphs already in `lever_paragraphs`.** The cache is
+   keyed `(lever, dial, style_version)`, which is I4's frozen key, so a saved design prompt governs
+   only the paragraphs not yet rendered. Options: key the cache on the prompt hash too (a schema
+   change to a frozen key), or bump `style_version` when the design prompt changes. The Policy
+   Designer's note says this on screen.
+2. **The H3 quality gate does not read the Studio's twin prompt.** `twin_runtime.H3_PROMPT_REF`
+   swaps in `twin_h3_v1.md` for the six-stimulus round. An edit in Agent Studio governs the battery
+   and the sessions, not the H3 gate.
+3. **Twin Studio's free-text question prompt is hard-coded.** `services/studio.QUESTION_PROMPT` is
+   not one of the five agents and is not editable in Agent Studio.
+4. **`design_v3.md` says "numbered checklist"** and the brief sends a bulleted list. It is a frozen
+   stimulus prompt, so a text change is a new version file, not an edit.
+
+**Not converted.** The Results Analyst's test still reads the stored reading for a version. Its
+input is a finished cell's computed shifts, which the Studio does not store, so re-running it is
+not a small change. It shows the reading only, with the metric bars removed.
+
+**The Run Manager's test is unchanged.** It is a plan built from counts and settings, and it calls
+no model.
+
+
+## 2026-10-07 — `show_baseline` default reversed to `false`: a twin no longer sees its own numbers
+
+**Researcher decision, overriding the `docs/03` §8 design this project shipped with.** The earlier
+text argued: *"Anchoring is deliberate and bounded. Showing a twin its own baseline numbers pulls
+answers toward them — that is what keeps a twin recognisably its own driver. The bound on it is
+`SHAM − 00000`, reported with every cell."* That argument was considered and rejected, not missed.
+
+**Why it was reversed.** Debugging the validity tests (`docs/08` §4) surfaced that the bound was not
+holding. In the one live session inspected (7 twins, `gpt-oss:120b`, temperature 0.25):
+
+* The `00000` control — five "no change from today" paragraphs, baseline shown — returned the
+  twin's own stored baseline on **all 37 items for 6 of 7 twins**. The control's index was exactly
+  `0.000` in 3 of 5 control runs checked across the database.
+* `SHAM` — five paragraphs restating existing policy as if new, same twins, same session — changed
+  **10 to 26 of 37 items per twin**, with every one of the six metrics moving in the "improvement"
+  direction.
+* With the floor at `0.000`, every validity test judged against it (2, 4, 5, 6, 8) could not
+  distinguish a real effect from the floor itself: any movement at all counted as "above the floor."
+  Test 4 (`impossible version`) reported "57% of twins read the contradiction as an improvement,"
+  which was arithmetically "4 of 7 twins moved happiness at all" — not a meaningful share.
+
+**Why this isn't just noisy data.** The twin prompt (`twin_v1.md`) did not merely show the baseline —
+it told the model, in words, that *"leaving a number exactly where it was is a real and common
+answer"* and to *"move one only where the change would genuinely move this person's view."* That is
+an explicit demand cue layered on top of a documented LLM failure mode: models shown a reference
+number before answering measurably anchor to it (anchoring-bias literature, e.g. arXiv:2412.06593,
+arXiv:2508.21137). The `00000` floor was not measuring the twin's natural stability; it was measuring
+how well the twin followed an instruction to be stable. `SHAM − 00000` cannot bound a demand effect
+when `00000` itself is manufactured by the same kind of demand cue the bound exists to catch.
+
+**What changed.**
+* `TwinConfig.show_baseline` default: `true` → `false` (`src/twinlab/models/twin.py`,
+  `config/twin.default.yaml`).
+* New prompt `twin_v2.md`, superseding `twin_v1.md`: drops the `<<<BASELINE>>>` input and the two
+  rules about keeping or moving a prior number. A twin now answers each round the way it already
+  answers H2 and H3 — from persona and scenario alone, with no earlier numbers in view. The twin
+  agent's `system_prompt` in `config/agents.default.yaml` now points at `file:twin_v2.md`, and its
+  `context_sources` no longer list `baseline_answers` as required.
+* Three call sites that hard-coded `show_baseline=True`, bypassing the config entirely, were fixed to
+  read the live `TwinConfig` instead: `services/twin_runtime.ask_panel_twins` (every validity test
+  that makes a fresh call), `services/studio`'s battery-ask path (Twin Studio), and
+  `services/agent_config`'s Twin Interviewer diagnostic (Agent Studio). Before this fix those three
+  paths would have kept showing the baseline regardless of the config flip, silently diverging from
+  what the main sweep actually does — the same class of defect as the Agent Studio temperature box
+  already flagged in `ARCHITECTURE_UPDATE.md` §5.5.
+
+**What this does not change.** `compute_shifts`/`compute_index` (`docs/07` §3–§4) are untouched: a
+cell's shift is still the twin's stimulus-conditioned answer minus the **human's own real survey
+answer**, read from `survey_answers`, never from a twin call. Removing `show_baseline` only removes
+the baseline from what the *twin sees before answering*; it does not change what a shift is computed
+against. H2 and H3 are unaffected — both already ran with no baseline (`docs/08` §2.1, §3.1).
+
+**Consequence, and why nothing breaks silently.** `show_baseline` and the prompt's hash are both
+inputs to `services/config_match.current_fingerprint`. Every twin's H3 qualification and both control
+answers (`00000`, `SHAM`) are stamped with the fingerprint they were produced under, and
+`run_validity_test` already refuses to score a session against a live config it no longer matches
+(`services/validity.py`, the `RESEARCHER 2026-10-05` block). So every twin qualified before this
+change goes stale automatically the next time anything reads `current_fingerprint()` — no twin is
+silently reused under an instrument it was not qualified for. The quality gate (Agents → Run twin
+quality test) needs to be re-run before a new sweep or a new validity-test pass under the new
+instrument. Existing `runs`, `twin_answers`, `twin_quality_runs` and `validity_results` rows are
+untouched (append-only, rule 6) and remain correctly attributed to the config that produced them.
+
+**Still open, not decided here.** Test 3 (`docs/08` §4) compares a twin's H2 answers — which never
+showed a baseline, by that test's own spec (§3.1 step 3) — against a "no-change" predictor that is
+handed the human's exact baseline answer. That asymmetry predates this decision, is unrelated to it
+(H2 never showed a baseline either way), and is not addressed here.
+
+
+## 2026-10-05 — Revision: Twin Interviewer is two columns; Quality Checker is a side-by-side
+
+**Researcher decision after a live run.** The earlier panels were too much. The researcher wanted:
+
+* **Twin Interviewer: always two columns, for this twin and this version.** `Driver said` (the
+  driver's own answer to each item) and `Twin said` (the twin acting on the stored, Checker-passed
+  version). The shape is the same whether or not the prompt box was edited, so no saved-versus-edit
+  columns, no `Answer checked?` column, and no reason. An empty box runs the saved prompt. A twin that
+  gives no valid answer leaves its column *Not tested* and says so in a note; it is never filled with a
+  number (I13, I17). `services/agent_config.twin_test_view`.
+* **Quality Checker: the codebook policy beside how the design agent framed it.** One row per area: the
+  commitments the codebook gives this version on the left, the stored paragraph the design agent wrote
+  on the right. No verdict, no reason, and **no model call**, so the screen only reads (CLAUDE.md rule 3
+  and rule 12 are then trivially met). `services/agent_config.checker_test_view`. The Checker's gate
+  verdict is still recorded on the render itself; this screen does not restate it.
+
+**Consequences the researcher should know.**
+* The Checker prompt is no longer run from Agent Studio. Editing it changes the gate's future verdicts
+  (`variant/checker` reads the live config through `run_coverage_probe`), but nothing on this screen
+  will show that. If a
+  side-by-side verdict is wanted back, it is a yes/no column added to this table, not a reason.
+* The twin's rationale is no longer shown on the screen. It is still stored with the twin's answers.
+* The Test buttons for the Twin and the Policy Designer still run as background jobs. The Checker no
+  longer needs one.
+
+## 2026-10-05 — Analyst test shows the computed numbers beside the reading
+
+**Researcher decision.** The Analyst test shows the six movements, the index and the floors again, as
+the metric bars the Results screen uses, above the analyst's reading. The earlier revision removed them
+on the grounds that they were not the agent's output. The researcher wants them back as the reference
+the reading is read against: the analyst is grounded on those numbers (I12), so the screen shows both.
+Presentation only. The numbers are the stored, computed ones from `services/results.results_panel`, and
+the analyst still makes no call from this screen. `ui/pages/agent_studio.py`, the Analyst branch of
+`_test_panel`.
+
+---
+
+## 2026-10-07 — the noise floor becomes two measured levels, not `|index(00000)|`
+
+**Found while auditing the six validity verdicts from session `7a1b78a6`.** Five of the eight tests
+judge against the `00000` noise floor, and the floor they were judging against was `0.000`.
+
+Two separate faults produced that, and the second survives the fix for the first.
+
+**Fault 1 — the control echoed.** With `show_baseline: true` the twin was shown its own numbers and
+returned them verbatim: all 37 items, 6 of 7 twins, every metric shift exactly `0.000`. That is the
+decision above, and it is already reversed in `config/twin.default.yaml`, `models/twin.py` and
+`twin_v2.md`. **It is not yet applied** — `app_config.twin` still reads `show_baseline: true` and
+`temperature: 0.25`, and `app_config` is what runs. The YAML is a seed, read by `seed_db.py`.
+
+**Fault 2 — the floor's functional form.** `noise_floor = |index(00000)|` is an **absolute value of
+a signed mean**: `compute_index` applies `index_sign` and averages the six metrics, so a twin moving
+up and a twin moving down cancel before the absolute value is taken. Every statistic the floor gates
+is a **mean of absolute values**, and by Jensen `|E[X]| <= E[|X|]` — the floor could never exceed the
+quantity it judged, so every floor-judged test was biased toward `FAIL` for reasons unrelated to the
+twins. Fixing fault 1 makes this one *worse*, not better: unanchored twins scatter in sign, so the
+index cancels toward zero while the mean-of-absolutes does not. Fixed first, so the `show_baseline`
+change can be read for what it does.
+
+**What replaced it.** `analysis.metrics.measure_noise_floor` measures from the control run's own
+answer vectors and returns a `models.analysis.NoiseFloor` carrying both functionals the tests
+actually compute — `cell` (mean over metrics of |mean shift|) and `twin` (mean over metrics of mean
+|per-twin shift|) — each broken down per metric, because tests 4 and 6 judge a single metric and a
+six-metric average is not that metric's floor. **Each test selects its own level**, beside its own
+docstring, rather than the caller choosing: whether a figure is a mean-of-absolutes or an
+absolute-of-a-mean is a property of the test. The mapping is tabulated in `docs/07` §6.1.
+
+`demand_floor` is unchanged and stays signed — it is directional by design.
+
+`twins_n` on `NoiseFloor` is `gt=0`: a floor measured on nobody is not a floor (I15's shape), and
+`services.validity.noise_floor` returns `None` rather than a zero when the control has no stored
+answers. A fixture that seeds only `runs.index_value` now describes a session whose floor was never
+measured, which is `INCONCLUSIVE` — correctly.
+
+---
+
+## 2026-10-07 — validity test 6 gains a same-persona retest control; cost N → 3N
+
+`fairness_with` and `fairness_without` come from two **separate model calls**. Their difference
+therefore contains the twin's own call-to-call variance as well as any sensitivity to the ablation,
+and the test had nothing to subtract that against. It could not distinguish *"the twin used its
+fairness history"* from *"two calls to one twin differ"* — and would report `PASS` for a twin that
+ignored its persona entirely, which is the opposite of what test 6 is asked to detect. On the study
+database it reported `PASS` at 0.571 against a 0.000 floor, which is a verdict about nothing.
+
+A third round asks the **unablated** persona the same question again. The comparator is
+`max(retest, floor)`: the two are alternative explanations of the same difference, not components of
+it, so they are not summed and not subtracted from one another.
+
+`CALLS_PER_TWIN[6]` is 3 — with, retest, without — and `docs/08` §4's table says 3N. The retest runs
+**before** the ablated round so a provider failure costs the control rather than the comparison.
+`fairness_retest` is optional on `vt.ablation` so an outcome stored before this existed can still be
+reconstructed; when it is absent the headline says so rather than implying the comparison was made.
+
+---
+
+## 2026-10-07 — two reported statistics added; no threshold moved
+
+Both are **reported and never thresholded**, because changing a pass rule is a research decision and
+`CLAUDE.md` says not to pick one.
+
+**Test 1 — `between_person_distance`.** The mean distance between the two paired drivers' own
+vectors on the same items. It is the gap a flawless twin would score: `mae_own = 0` leaves
+`gap = mae_other`, which cannot exceed how far apart the two humans are. A gap of 0.4 reads very
+differently against drivers 3 points apart than against drivers 0.8 apart, and without it on the row
+those cases cannot be told apart afterwards. `gap_share_of_distance` is carried beside it. The
+0.5-point threshold is unchanged. **Open question:** whether the threshold should be a share of this
+distance rather than a fixed point value.
+
+**Test 3 — paired 95% intervals** on `advantage_over_nochange` and `advantage_over_groupshift`,
+computed with the same `paired_gap` machinery test 1 uses. The verdict stays the comparison of means
+`docs/08` §4 specifies. A `FAIL` on nine twins is a claim about a difference and differences have
+intervals; test 1, one screen away, already reported one for the same shape of quantity.
+
+---
+
+## 2026-10-07 — `metrics.noise_floor` removed rather than deprecated
+
+It had one caller — `tests/test_m8_analysis.py`. The production floor has always been computed in
+`services.validity.noise_floor`. Leaving a function that returns the old, biased number beside the
+new one invites a future caller to pick the wrong one, and there is no stored value or external
+contract that depends on the name.
+
+---
+
+## 2026-10-07 — the Settings screen is wired to `app_config`, and cannot write `show_baseline`
+
+Applying `show_baseline: false` surfaced that the Settings tab was reading and writing the wrong
+thing. `_settings_tab` evaluated `cfg = load_twin_config()` **while the Blocks were being built** —
+before anything had called `refresh_twin_config`, so the process override was empty and `cfg` was
+`config/twin.default.yaml`, the seed. Two consequences, both silent:
+
+1. **Every control displayed the seed, not what was in force.** The screen showed `temperature: 0.7`
+   and `quality_runs_per_twin: 3` while `app_config` held `0.25` and `2`. A researcher reading the
+   screen was reading a file, not the instrument.
+2. **Any Save wrote the seed's `show_baseline` over the stored one.** `_save` passed
+   `show_baseline=cfg.show_baseline` into the `TwinConfig` it dumped to `save_settings`. So saving
+   an unrelated field — a threshold, the panel size — would silently flip `show_baseline` back to
+   whatever the YAML said. This is how `false` could sit in three files for a day while
+   `app_config` went on running `true`.
+
+**Fixed two ways, because one of them is structural.** `_refresh` repaints every control from
+`refresh_twin_config()` on page load (`load_once`, off the render path per `docs/05` §8.4 rule 2),
+and `_save` now re-reads the live row before validating. More importantly, `_save` writes only the
+keys in `EDITABLE` — `temperature`, `wording`, `quality_runs_per_twin`, `mae_max`,
+`pct_within_1_min`, `panel_size`. `save_settings` merges, so **a key the screen never sends is a key
+it cannot clobber**, whatever a future handler does with the form. `show_baseline` is not in that
+tuple and `tests/test_m16_settings_apply.py` pins it there.
+
+`show_baseline` is now **displayed read-only** beside the environment-owned values. `docs/03` §321
+makes it a researcher-set default rather than a UI control, and that is kept — but a value that
+governs every twin round and appears on no screen is a value nobody can check.
+
+---
+
+## 2026-10-07 — `agent_configs.twin` pointed at `twin_v1.md`; which prompt ran depended on the process
+
+`config/agents.default.yaml` had been updated to `system_prompt: "file:twin_v2.md"`. The stored
+`agent_configs` row still said `file:twin_v1.md`, and `registry.live_agent` prefers the stored row
+and falls back to the YAML seed only when `_LIVE` is empty. So **which twin prompt ran depended on
+whether `refresh_agent_configs` had run in that process yet**: a session (`services/runs.py` calls
+the refresh before every one) got v1, while a cold-start path got v2.
+
+That split mattered more than a version number. v1 declares a `<<<BASELINE>>>` input and carries
+rule 3, *"Leaving a number exactly where it was is a real and common answer"*, and rule 4, *"keep the
+number you gave"* — the wording the entry above blames for the `00000` control returning the stored
+baseline on all 37 items. With `show_baseline: false` the baseline block renders empty, so v1 would
+have instructed the twin about numbers it was no longer being shown: worse than either consistent
+option.
+
+Aligned to `file:twin_v2.md` through `save_agent`, so it is versioned (`agent_configs.version` 1 → 2)
+and appended to the agent history like any researcher edit, rather than written at the table. Both
+resolution paths now agree and `resolve_prompt` returns `sha256(twin_v2.md) = 0dd86eba66e461d3`.
+
+**The seed and the stored row are two declarations of one value and they drift.** The same shape as
+`twin.default.yaml` vs `app_config['twin']`, and as `max_concurrency`. Nothing here detects it; a
+start-up check that compares every seeded agent's prompt reference against its stored row would, and
+is not built.
+
+---
+
+## 2026-10-07 — live config applied; every stored verdict is stale
+
+`app_config['twin']` v3 → v4, `show_baseline: true → false`, written through `save_settings` so the
+rest of the row is untouched. `agent_configs['twin']` v1 → v2. The config fingerprint moved to
+`35411b382053eda1`; every session on the database was run under `a77e706099a4a7bd`.
+
+By `docs/08` §2.4a **every H3 verdict and every stored control answer is now stale**, so no twin is
+qualified until the quality gate is run again. That is the intended consequence, not a side effect:
+the twins were qualified under an elicitation the study no longer uses.
+
+`temperature` stays at the stored `0.25` and `quality_runs_per_twin` at `2`. Both are Settings-screen
+values and are the researcher's to set from there (above); the YAML's `0.7` and `3` are seeds and are
+deliberately not applied here.
+
+---
+
+## 2026-10-08 — validity test 7 costs `2N`, not `N`; the budget card had always understated it
+
+`CALLS_PER_TWIN[7]` was `1` and `docs/08` §4's table said `N`. `_test_with_calls` has always asked
+**two** full rounds — `purpose="model_a"` on the configured model, then `purpose="model_b"` on the
+named one — so the confirm card a researcher presses OK on promised half the calls it spent. At a
+20-twin panel that is 20 approved against 40 spent, serially, on a one-concurrent-request tier.
+
+It cannot be reduced to `N` by reusing the sweep's stored answers for model A. `second_model`
+compares a **paired** per-twin index, and the pairing only holds if both sides were asked the same
+way in the same test — same seed, same wording, same stimulus. Reusing a sweep round would compare
+two different elicitations and call the difference a model effect.
+
+**The table is no longer asserted against its own literal.**
+`test_the_call_table_matches_the_rounds_each_test_actually_asks` drives each of tests 4–8 with a
+recording stub and counts the rounds. A table that restates itself cannot catch this class of
+defect, which is how it survived; the same test now also covers test 6's `3N`.
+
+---
+
+## 2026-10-08 — `provider: "openai"` refuses instead of silently resolving to Ollama
+
+`resolve_model` sent both live providers to `OpenAIProvider(base_url=settings.ollama_base_url,
+api_key=settings.ollama_api_key)`, on the correct observation that Ollama Cloud speaks the OpenAI
+wire format. The consequence was that selecting `openai` in Agent Studio **changed nothing**: the
+call went to Ollama Cloud, with the Ollama key, and the run recorded `openai` as the provider it had
+reached. A provider written onto evidence that the call never touched is a provenance failure (I11),
+and it is invisible precisely because both endpoints answer.
+
+`openai` now resolves against new, empty-by-default `OPENAI_BASE_URL` / `OPENAI_API_KEY` settings and
+raises `ConfigError` while the base URL is unset, naming `ollama` as the thing that works. **Not
+defaulted to the Ollama endpoint** — the default is what made it a no-op.
+
+Nothing in the study uses it today. It is worth fixing now rather than when a second endpoint is
+added, because at that point the failure stops being benign and starts being wrong numbers.
+
+---
+
+## 2026-10-08 — test 7's model name is checked against the endpoint, and the check fails open
+
+`test_readiness(7)` checked only that the second-model box was **non-empty**. Test 7 asks model A
+first, so a typo — `mistral-large-5` — passed readiness, spent a full panel of calls on the model
+already in use, and only then died on model B. The death was handled correctly (an `INCONCLUSIVE`
+row via `_report_validity_death`, never `FAIL`), but N serial calls had already been spent to learn
+that a name was misspelled.
+
+`agents.registry.served_model_names` lists the endpoint's catalogue once per process and caches it,
+**including the failure**: the readiness line is repainted on every change of the session or version
+dropdown, and one GET per repaint is a request storm against the endpoint the sweep is queued on.
+
+Three properties, each deliberate:
+
+* **Fails open.** `None` means "could not ask", never "serves nothing". A listing that is slow,
+  blocked or unreadable lets the test run. This exists to catch a typo, not to become a second gate
+  between the researcher and a test they are entitled to run — a check that can refuse wrongly costs
+  more than the typo it prevents.
+* **No key, no request.** Mock mode returns `None` without touching a transport, so `CLAUDE.md`'s
+  "no live LLM in CI, ever" holds on a UI readiness path. This is load-bearing rather than
+  theoretical: a developer's `.env` is on the path when the suite runs locally, so the guard is
+  asserted by emptying the key and proving no transport is reached, not by assuming a clean
+  environment.
+* **Names the near miss.** `mistral-large-5` is refused with *"Did you mean mistral-large-4?"*,
+  matched on the name's stem.
+
+Readiness also now refuses the **currently configured model** as the second one: a model cannot be
+asked whether a finding is a property of itself.
+
+**What this makes possible, for the record.** The endpoint served 18 models when this was written,
+including `mistral-large-4` and `mistral-large-3:675b`. A second model therefore needs **no second
+provider and no code change** — test 7 overrides `cfg.model.name` and nothing else. Crossing model
+families is the point; two variants of one base model agreeing with each other is not evidence about
+the drivers.
+
+## M22 — The hosted questionnaire (`/take`), 2026-10-08
+
+Asked for directly: a page a driver can be sent a link to, whose answers land in the database and
+the raw mirror, and whose persona is built by the existing deterministic path.
+
+### The one research-affecting choice, made by the researcher
+
+- **The questionnaire is hosted in the Space, overriding `ARCHITECTURE.md` §8.2 rule 2.** Rule 2
+  puts intake in the Supabase Edge Function precisely so that a free Space sleeping after 48 hours
+  idle cannot silently drop a driver's submission, and **hosting does not mitigate that**: a
+  request that never arrives cannot be stored by code that is asleep. The researcher asked for the
+  hosted path knowing this. The Edge Function path is untouched and still works; both now write
+  the same rows through the same `build_rows`. For unattended fieldwork on a sleeping Space, keep
+  the Edge Function configured as well — `services/surveys.HOSTED_SURVEY_NOTE` says so on screen.
+
+### Mechanical choices
+
+- **The hosted page is a third client of one intake contract, not a second pipeline.** It emits
+  the same `"<section>|<title>"` payload the Apps Script emits, over the same `form_map.yaml`,
+  into the same `build_rows`. `survey/instrument.py` refuses to build unless its question keys are
+  **exactly** the map's keys, both directions: a drawn-but-unmapped question would be rejected at
+  intake after the driver answered it, and a mapped-but-undrawn one is a question silently missing
+  from the instrument. Both are rule 7 failures and both now fail at import.
+- **73 of the 112 original questions are derived from `data/reference/instrument.json`,** not
+  retyped — stem, scale, points and anchors. A second copy of frozen text is a copy that can
+  drift from the register `survey_answers.item_id` is foreign-keyed to.
+- **Nine stops.** The reference screens fix stops 1, 2, 3 and 5 (*Start*, *Check*, *Consent*, and
+  Part 5's AMQ block headed "Part 4"), from which the "Part" label is one less than the stop index
+  and the instrument's Parts 3 and 4 share stop 4. The rest follows. **No item moves relative to
+  another**; only the page breaks are decided here. Parts 15–17 are one contiguous stop so the
+  holdout material (I6) is one block rather than interleaved with persona material. The partition
+  is `survey/instrument._stops` and nothing else depends on it.
+- **`persona/from_payload.twin_from_payload` was lifted out of `services/lab.py` unchanged.** Two
+  callers now need it; two copies is how an imported twin and a hosted twin come to carry
+  different field shapes with no test able to see it.
+- **`twin_gate` is one predicate used in three places** — the hosted submit, the Generator's bulk
+  import and the Settings count. `importable_submissions` now applies it in Python rather than
+  restating it as a database filter, so the single-row and bulk paths cannot drift.
+- **Numeric answers are text boxes, not `gr.Number`.** Gradio renders a `Number` whose value is
+  `None` as a box containing `0`, so a driver who skipped "how many people depend on your
+  earnings?" would submit a zero — a real and very different answer. This was caught in the
+  browser, not by a unit test, which asserted the Python-side value was `None` and passed. The
+  Google Form sent these as strings too, so the two channels stay comparable through `build_rows`.
+- **Nothing is written until the driver presses send.** No autosave and no draft table: the cover
+  sheet says a driver may stop at any time and that no partial response is retained.
+- **`/take` is a real route deliberately absent from `ROUTES`.** `global_nav` builds its strip
+  from `ROUTES`, so this is what keeps a strip of links into the Dial board off a driver's screen.
+  `PARTICIPANT_ROUTES` carries it instead, and a test asserts the separation rather than trusting
+  whoever next edits the list.
+
+### Degraded, and noted per `CLAUDE.md` → "When Gradio cannot do it"
+
+- **Likert rows are restyled radios.** Gradio has no button-group control. The content — N boxes,
+  one per scale point, numbered, selectable, with the anchors at the ends — is intact; only the
+  mechanism differs. Below 560px the row wraps to four columns rather than shrinking tap targets
+  below 44px, because a mis-tap is a data defect.
+- **No "Skip this question" link,** which the reference screens show under each rating. Every
+  battery item is already optional, so the control would do nothing; the probe's help text says
+  the box may be left blank instead. Adding 37 no-op controls would be 37 more components to
+  gather on every navigation for no change in what can be answered.
+
+## The why-probe layer, 2026-10-08
+
+Applies `additional_data/SURVEY_SCALES_AND_WHY_PROBES.md` §3, which the v2 instrument lists under
+`not_yet_applied`. Both questions below were put to the researcher and answered.
+
+- **34 new probes; PAC11, SAT1 and DEP1 keep the instrument's own part-level open questions.**
+  §3.1 asks for one probe per Likert item, but `survey_answers.why_text` is one column per item
+  and those three already carry richer, question-specific probes. The named three stay exactly
+  where they are; the other 34 battery items get the constant probe. Nothing changes storage and
+  no existing answer is reinterpreted. The instrument goes 112 → 146 questions.
+- **The probe wording is constant across every item,** verbatim from §3.1. A per-item wording
+  would cue content; a valenced one ("why are you unhappy with this?") would bias the persona
+  toward grievance and propagate into every counterfactual the twin answers.
+- **The map key carries the item's stem; the driver is shown the wording alone.** Five AMQ probes
+  titled "Why did you choose that?" would collide into one `form_map.yaml` key and four answers
+  would be lost. `Question.prompt` holds what the driver reads.
+- **No probe on an attention check, a screener, a demographic, or Parts 15–17** (§3.2). An
+  attention check has no experiential content to explain, and the counterfactual blocks are
+  hypotheticals that are also holdout, so a why there could never be used.
+- **`TEMPLATE_VERSION` v1 → v2, and the why is now inline on its own item's clause** (§4.2):
+  *"I agree that my work schedule is made by an automated system. In my own words: '…'"*. Whys
+  used to be grouped at the end of a block's section, which read well while there were three; with
+  one per item it would put eleven unattributed "In my own words: …" clauses in a row at the end
+  of the PAC section with nothing saying which rating each explained. **Every persona hash
+  changes.** Confirmed acceptable — no fieldwork twins exist yet.
+- **`GENERATOR_VERSION` v3 → v4.** The synthetic generator now answers all 37 probes rather than
+  three, so a synthetic persona has the same shape as a real one. That is 34 further draws from
+  the same RNG, so **a `v3` seed does not reproduce under `v4`**.
+- **`form_map.yaml` v1 → v2**, and `supabase/functions/survey_intake/form_map.json` regenerated
+  with `tools/gen_edge_assets.py`. Adding map keys cannot break the Apps Script contract test:
+  `map_answers` fails on a payload key absent from the map, never the reverse.
+
+## A tab left open across a restart, 2026-10-08
+
+Reported during the first hands-on run: the Part 16 block drawn twice, and a bare red **Error**
+chip on *Send my answers*. Neither reproduces on a freshly loaded page — the served HTML carries
+`FAIRNESS` exactly once, stop 9 mounts exactly 238 radios, and a full walk-through submits and
+returns a reference number.
+
+The cause is a Gradio client holding the component tree it loaded with. The instrument grew from
+112 questions to 146 when the why-probe layer landed, and the development server was restarted
+several times with the page open; an open tab then draws the tree it cached and posts a value list
+that no longer lines up with the questions. **Reloading the page fixes it.**
+
+Two things changed so it cannot be cryptic again:
+
+- **A value-count mismatch raises `StaleSession` and refuses.** The values arrive positionally and
+  nothing identifies which question each belongs to, so a short list cannot be realigned — pairing
+  the first *n* would file real answers under the wrong questions, which is a fabricated record
+  and much worse than an error. Nothing is stored and the page says to reload.
+- **Every handler failure is rendered on the page, never left to Gradio.** An uncaught exception
+  reaches a driver as a red chip with no text; a researcher can read a terminal, a driver on a
+  phone cannot. The wrapper names the failure and gives the remedy.
+
+**Running the application locally writes to the live Supabase project**, because `.env` is
+populated and `settings.db_configured` is true. Two test submissions were written to
+`survey_submissions` as `data_type=REAL` during this work and both were removed, with their
+answer rows and raw objects. Testing the hosted questionnaire now means pressing Send, so run it
+against the in-memory backend instead:
+
+```
+SUPABASE_URL= SUPABASE_SERVICE_KEY= ./venv/Scripts/python.exe app.py
+```
+
+## "Already a twin" is not "nothing was eligible", 2026-10-08
+
+Reported: a respondent who filled in the hosted questionnaire correctly, then *Import twins from
+the survey* reporting **"Imported 0, skipped 1"** under the sentence *"Nothing was eligible."* The
+twin existed the whole time, with a complete persona.
+
+`docs/06` §3.8 asks for "imported / skipped / invalid", and `skipped` was defined as "already a
+twin, **or** gated out". Those are opposite outcomes — one means there is nothing left to do, the
+other means the respondent did not qualify — and the screen's explanatory sentence led with the
+second. That was tolerable while every twin arrived through the bulk import. The hosted
+questionnaire builds the twin when the driver presses send, so **every hosted respondent now
+reaches §3.8 already imported**, and the wrong reading became the common one.
+
+- `TwinImportResult` gains `already_twins` and `gated`. `skipped` stays as their sum, so §3.8's
+  three counts are unchanged, but it is never reported on its own.
+- The Generator says which happened, and reads as success when the only reason nothing was
+  imported is that the twins already exist.
+- **The snapshot of existing twins is taken before the import loop.** Taken after, every row just
+  imported also reads as "already a twin" and is counted twice — caught by a test asserting
+  `imported == 1 and already_twins == 0` on a fresh respondent.
+
+### Tests could reach live Supabase Storage
+
+Found while fixing the above: `conftest._no_live_database` refused to construct a `SupabaseBackend`
+but said nothing about `SupabaseStorage`, and `get_storage()` builds one whenever
+`settings.db_configured` is true — which it is whenever a developer's `.env` is on the path. A
+twin-import test was reading raw objects from the researcher's real `raw-surveys` bucket. It
+surfaced only because the object was missing and the 404 failed the test; a read that *succeeded*
+would have been invisible.
+
+`SupabaseStorage` is now refused the same way, and the per-test fixture installs an
+`InMemoryStorage` beside the `InMemoryBackend` — paired, as `get_storage()` pairs them in the
+application, because a live mirror behind an in-memory database writes objects nothing can read
+back.
+
+## The four human arms reach a real respondent, 2026-10-08
+
+Reported: the quality run logged *"no recorded arm, so no H2 stimulus"* and skipped the first real
+twin. The skip is correct — H2 must show a twin **its own driver's arm** (`docs/08` §3.1) — but the
+cause was older and larger than the hosted questionnaire.
+
+**No real-respondent intake path had ever assigned an arm.** `docs/01` §5 specifies a four-arm
+between-subjects design; only `generator/synthetic.py` implemented it. The Apps Script and the Edge
+Function both default `arm = null`, and the hosted questionnaire inherited that. The reason is
+upstream of all three: **the instrument contains one arm's story.** Parts 15 and 16 carry `REP1`'s
+text and `docs/GOOGLE_FORM.md` §4 says to paste that one, so there was never a second story to
+show. H2 could not have run on a real twin at any point in the project's history.
+
+Decided with the researcher:
+
+- **Four arms, and the three missing stories are composed from the instrument's own frozen text.**
+  Part 17 already states each lever's dial-1 commitments in driver-facing prose, and §5.1 maps each
+  arm to exactly those commitments — `CON1` to `2.1.a–c`, `MGT1` to `4.1.a/b/d`, `REP1` to
+  `5.1.a–c`. `ARM_STORIES` is therefore a derivation, not an authoring. `BASE` names the five
+  levers so that "nothing changed" is as concrete as the three that did. **Treat as frozen
+  instrument text.**
+- Spelled out rather than spliced from `_COND_1` / `_MGMT_1`. Lowering the paragraph's first
+  letter to follow the stem produced "…this is true: uber now provides safety equipment" — a
+  lowercased proper noun in text a driver reads. A test pins each story to its lever paragraph.
+- **The arm is drawn once, on leaving the demographics stop**, balanced within the driver's
+  `city|service` stratum (§5.2) and counting **real** submissions only — generated data must not
+  decide which story a real driver reads. Never redrawn: the arm decides the story, so a second
+  draw could leave the story read and the arm stored disagreeing, which is undetectable afterwards.
+- Approximate under concurrency, deliberately. Counts come from committed rows, so two simultaneous
+  drivers can draw the same arm. Reserving at first page view would be exact and would also leak an
+  arm to everyone who opened the link and left, which biases balance far more than a rare collision.
+- **Hosted path only.** The Form path keeps its current behaviour; its `arm` stays null until the
+  researcher decides to field it.
+
+### `mc_correct` was false for every real respondent
+
+Found while wiring the above. `survey_submissions.mc_correct` is
+`generated always as (mc_answer = arm)`. Part 15 offers the four arms by **label**; `arm` holds an
+**id**. Storing the label therefore made `mc_correct` false for every real respondent, silently and
+permanently. The synthetic generator hid it by writing the id straight into `mc_answer`, so the two
+paths disagreed about the column's contents and no test compared them.
+
+`build_rows` now resolves the label to its arm id, and `rows.mjs` does the same so the two
+implementations still agree over the fixture. An answer matching no arm is kept verbatim — it is
+still what the driver picked, and `mc_correct` is simply false.
+
+### A note on verifying against a running server
+
+Four orphaned `app.py` processes were found holding port 7860; `pkill -f app.py` under Git Bash does
+not kill native Windows processes, so several restarts during this work never took effect and some
+checks ran against stale code. Kill by PID instead:
+
+```
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { $_.CommandLine -like '*app.py*' } | Stop-Process -Force"
+```
+
+## Deleting a twin, and the tables that reference it, 2026-10-08
+
+Removing one hosted test respondent at the researcher's request was refused by Postgres with a raw
+`23503`: `twin_control_answers` references `twins(twin_id)` with **no** cascade, and the twin had
+answered the `00000` and `SHAM` control cells.
+
+The same refusal applies to the Generator's *Delete synthetic surveys* button.
+`CASCADING_TWIN_REFERENCES` listed only `studio_runs`, so with 40 control answers standing against
+10 synthetic twins **the button could not have worked**. This is the second time that list has been
+wrong in exactly this way — its own docstring records the first, when `studio_runs` was missed and
+"six sandbox rows against one synthetic twin made the whole batch undeletable". `twin_control_answers`
+arrived in migration 005 after that fix and was never added.
+
+- `twin_control_answers` and `twin_quality_runs` join the list, plus `survey_responses`, the
+  superseded v1 table, which the new coverage test found.
+- **The list is now checked against the migrations.**
+  `tests/test_m22_hosted_survey.test_every_table_referencing_twins_is_classified` parses every
+  `create table` for `references twins(twin_id)` and fails unless each is classified as blocking
+  or cascading. Reading the schema rather than restating it is what stops a third occurrence; it
+  caught `survey_responses` on its first run.
+
+`twin_control_answers` cascades rather than blocks: it is a cache keyed by config fingerprint and
+is regenerable, so a control answer about a twin that no longer exists is not evidence — the same
+reasoning the list already applies to `studio_runs`. `twin_quality_runs` already cascades in the
+DDL; listing it makes the in-memory backend behave identically, which is why `survey_answers` is
+deleted explicitly too.
+
+---
+
+## 2026-10-11 — `pearson_r` reports nothing below three paired points
+
+**Prototype-parity audit** (`docs/AUDIT_PROTOTYPE_PARITY.md` §C7). `validity/quality.pearson_r`
+accepted `n >= 2`. With two pairs that both vary, `r` is **exactly** ±1 whatever the numbers are —
+the arithmetic forces it — so a twin with only two scorable H3 items for an outcome had
+`r = 1.00` written into `twin_quality_runs.correlations` as evidence that its ordering of the six
+policy worlds matched its driver's. The Apps Script prototype's `corr_` guarded `n < 3`; the Python
+port dropped the guard.
+
+**What changed.** A named `R_MIN_POINTS = 3` in `validity/quality.py`, and `pearson_r` returns
+`None` below it — the same `None` it already returns for a flat series, and for the same reason
+(`docs/08` §3.3): an uninformative correlation is *undefined*, not zero, and not ±1.
+
+`h3_correlations` carried its own copy of the floor at `< 2`. The copy is deleted rather than
+corrected — two statements of one rule is how they came to disagree — so the floor now lives in
+`pearson_r` alone and both call sites inherit it. The second call site is validity test 7
+(`second_model`), where the same reasoning applies to a two-twin panel: it now reports `CHECK` with
+"the correlation is undefined" rather than `PASS` on an `r` of 1.00.
+
+**Why three and not more.** Three is the first `n` at which the answer is not fixed by the
+arithmetic. H3 gives six points per outcome by design (`docs/01` §3.6), so fewer than three means
+items were lost — a reason to report nothing, not to report a perfect correlation over the two that
+survived. Anything above three would be a tuned cut-off nobody validated.
+
+No stored row is rewritten (rule 6). Rows written before today under the old floor keep whatever
+they recorded; `test_pearson_r_refuses_two_points_because_r_is_plus_or_minus_one_by_construction`
+pins the new behaviour.
+
+---
+
+## 2026-10-11 — straight-lining is a dispersion rule, fixed at SD < 0.30 before any data existed
+
+**Prototype-parity audit** (`docs/AUDIT_PROTOTYPE_PARITY.md` §A5). Two defects, in opposite
+directions.
+
+The prototype's rule was **SD < 0.3 across the battery, computed after reverse-coding**. An all-7s
+respondent therefore had their three reversed items sitting at 1, an SD near 2.8, and passed: the
+rule only ever caught straight-lining at the scale midpoint. The Python port fixed the ordering —
+`_straight_lining` reads raw `value_num` — but narrowed the rule to exact equality
+(`len(set(values)) == 1`), so "36 sevens and one six" passes.
+
+**Decided: SD of the raw battery answers below `0.30`.** The prototype's own threshold, kept so it
+can be cited as pre-specified, with the prototype's arithmetic discarded. RESEARCHER chose it on
+2026-10-11, **before any real data existed**, which is the whole point: `docs/07` §7.1 is explicit
+that a screening rule chosen after seeing results is a researcher degree of freedom, so the number
+carries a date and the constant carries the date in its docstring.
+
+**Where it is enforced, and why not at intake.** `straight_liner` is a stored boolean written by
+*two* implementations — `ingest/survey_intake._straight_lining` and the Deno edge function
+`supabase/functions/survey_intake/rows.mjs` — held in lockstep by
+`test_m9_intake.test_the_edge_function_and_the_python_produce_identical_rows`. Changing the rule
+there would need a coordinated Edge Function deploy and would still not reclassify one already
+stored row.
+
+So the split is: the **stored flag is a fact** ("every battery answer was identical") and stays a
+lossless record; the **threshold is a judgement** and lives in `stats/dataset.py`, beside the
+`screen()` that already owns every other screening rule. Neither intake copy was touched, and that
+contract test passing untouched is the evidence. A threshold in the analysis layer can change
+without rewriting evidence (rule 6) — the same answers screen differently under a different rule,
+and `analysis_runs.config.straight_line_sd_min` records which rule produced which analysis, so the
+two can never be confused.
+
+Both tests still run in `screen()`. The stored flag catches a respondent whose answers are no longer
+loadable, which the SD cannot see.
+
+**`battery_sd` returns `None`, not `0.0`, below two answers.** One answer has no spread, and such a
+respondent is already dropped for missing indicators; `0.0` would route them to the straight-lining
+reason instead and give a wrong account of why they left the sample.
+
+**Empirical check.** The golden fixture's *least*-varied respondent sits at SD `0.74`, 2.5x the
+threshold, and the median is `1.16` — so `test_golden_fixture_screens_nobody` holds with real
+headroom rather than by luck.
+
+---
+
+## 2026-10-11 — the generator gets the prototype's lever matrix, and `GENERATOR_VERSION` is `v5`
+
+**Prototype-parity audit** (`docs/AUDIT_PROTOTYPE_PARITY.md` §A6). `reaction_shift` returned a
+single scalar magnitude per version code, applied to every construct with only the construct's
+`index_sign` for direction. Two consequences, neither visible in any output:
+
+* **No lever was distinguishable from another by its effects.** A pay rise moved *clarity* exactly
+  as much as it moved *happiness*, so no path estimated on synthetic data corresponded to anything
+  and `docs/06` §4's five reaction sliders had nothing lever-specific to bind to.
+* **Every interaction was exactly additive by construction.** `analysis/interactions.py` computes
+  `extra = shift(joint) - (shift(a) + shift(b))`, and against a scalar linear in the dials that is
+  identically zero. `docs/07` §5 calls sub-additivity the study's contribution, and no fixture in
+  the suite could exhibit it against a known truth.
+
+**Ported from the prototype's `GEN_LEVER`, verbatim**, as three new `GeneratorSpec` fields with
+`config/generator.default.yaml` as their source:
+
+* `lever_effects` — the 5x9 matrix, **signed**, in 1-7 scale points per dial step. A construct
+  absent from a lever's row does not move: conditions (L2) has no path to clarity, and that zero is
+  a claim, not an omission.
+* `second_step_factor = 1.6` — nothing-to-minimum-wage is a bigger change than
+  minimum-to-living-wage. `2.0` would make the dials linear.
+* `lever_synergy = 0.3` — the prototype's `together`. `-synergy` on pushback when L4 and L5 are
+  both raised (an appeals route and a forum compound); `-synergy/2` on staying when L1 and L2 are
+  both raised (pay and safety substitute).
+
+**The sign moved into the matrix, and had to come out of two places.** `_H3_SUFFIX` carried a sign
+as a second tuple element and `_item_target` multiplied it in. Both are gone: with a signed matrix,
+a sign at the call site would **double-apply** it and silently invert pushback, leaving and control
+while leaving the other four untouched — a fault no single construct's direction reveals, which is
+why `test_protection_raises_fairness_and_lowers_the_wish_to_leave` asserts all six together.
+
+**`GENERATOR_VERSION = "v5"`.** The draw order is unchanged — the matrix consumes no randomness —
+but every holdout answer moves, so a `v4` seed does not reproduce under `v5`. Recorded on every
+batch, with the spec that produced it, so the matrix a batch was drawn under is reproducible from
+the row rather than from today's defaults. Synthetic rows exist to exercise the machinery and prove
+nothing about drivers (`docs/08` §6.2), so regenerating a `v4` batch costs only the seconds.
+
+**Measured, not assumed.** `test_the_reaction_sliders_move_the_holdout_blocks` separates V1 (12220)
+from V3 (11010) on H3 fairness by **0.833** against its `> 0.5` bar, with the no-reaction null at
+**0.017** against `< 0.25` — so it passes on substance under the matrix, not on margin. The
+assertion was re-verified rather than loosened, as the plan required.
+
+**One test changed shape, not meaning.**
+`test_d_ui_parity.test_the_captive_voice_checkbox_changes_only_the_representation_lever` compared
+whole return values with `>`; it now compares `abs()` of the forum's own outcome, because
+representation *lowers* pushback and "reacts more" means it falls further.
+
+---
+
+## 2026-10-11 — the arm composite becomes three single-indicator constructs
+
+**Prototype-parity audit** (`docs/AUDIT_PROTOTYPE_PARITY.md` §A2). RESEARCHER chose this over the
+alternatives on 2026-10-11.
+
+`arm` entered as one formative (Mode B) block of three dummies. The 2026-09-29 entry above calls
+that "the conventional treatment of a categorical antecedent" — true for a **control** variable,
+and wrong for the manipulation under test. A composite yields **one** `ARM -> EXPO` coefficient and
+**one** `ARM -> CTRL`, so the model produced no per-arm contrast: there was no estimate of the form
+"MGT1 raised perceived exposure by beta", which is the reportable output of a four-arm
+between-subjects experiment. Recovering it from outer weights x path coefficient is not how any IS
+paper reports an arm effect, and **nothing in the output looked wrong** — the table was complete,
+every number plausible, and the missing quantity simply absent.
+
+**Now:** `ARM_MGT1`, `ARM_CON1`, `ARM_REP1`, one dummy each, `BASE` omitted as the reference, each
+with its own path to `EXPO` and `CTRL`. Six coefficients where there were two, each separately
+bootstrapped.
+
+Alternatives weighed and declined: keeping the composite and adding multi-group analysis (the
+engine ships `MGA` with permutation p-values) answers "does the `FAIR -> SATI` path differ between
+arms?" — a different and also interesting claim, but **not** the arm main effect, so it is a
+complement rather than a substitute and was deferred.
+
+**Mode B and `reflective=False`.** With one indicator the two modes coincide — the weight is 1
+either way — and Mode B is kept because an observed dummy is not a reflective measurement of a
+latent arm. `reflective=False` is what routes them through the stages that already handle the
+formative case: `stage_reliability` reports `na` with a reason, `stage_discriminant` and
+`stage_outer_model` skip them. **No stage needed a special case**, which is why the change is small.
+A single indicator has a loading fixed at 1 and an AVE of 1 by construction, so reporting those as
+measurement quality would be meaningless.
+
+**The golden diff, read rather than accepted.** `GOLDEN_FINGERPRINT` moved
+`7c7fd73a12a4ec48 -> 081db1a0f8a2a2e0`; `GOLDEN_DIGEST` did **not** move, so the matrix data is
+byte-identical and only the specification changed. Of 424 pinned statistics, 185 moved. The pattern
+is exactly what the theory predicts, and that is the evidence nothing broke:
+
+* **Every Cronbach's alpha is byte-identical.** Alpha depends only on the indicator covariances,
+  never on the structural model.
+* **AVE, rho_A and the loadings moved slightly** — max 0.0051, concentrated on `CTRL` — because
+  under the path weighting scheme a construct's outer weights depend on its inner model, and `CTRL`
+  is one of the two constructs the arm block points at. No loading came near the 0.708 floor; every
+  AVE stayed above 0.50.
+* **The structural numbers moved, and in the direction that vindicates the change.**
+  `R^2(CTRL)` went **0.0101 -> 0.0412, a 4.1x increase**: the composite had been crushing three arm
+  contrasts into one dimension and losing most of the signal. `R^2(EXPO)` barely moved
+  (0.1024 -> 0.1058), which fits — `EXPO` was already dominated by a single arm's effect.
+
+On the golden fixture the six coefficients separate exactly as the composite could not:
+`ARM_MGT1 -> CTRL` is `+0.188` while `ARM_REP1 -> CTRL` is `+0.019`, a tenfold difference that was
+previously averaged away into one number.
+
+`docs/07` §7.2 rewritten. `EDEP`'s alpha on the golden fixture is `0.6677`, below 0.70 — unchanged
+by this work, a known property of a two-item construct, and exactly why §8.1 reports rho_A and
+rho_c beside alpha rather than alpha alone.
+
+---
+
+## 2026-10-11 — a partial-mediation variant, as a declared robustness check
+
+**Prototype-parity audit** (`docs/AUDIT_PROTOTYPE_PARITY.md` §A1). The reported model is
+**unchanged**: full mediation stays the headline, as decided on 2026-09-29.
+
+The prototype had three direct justice->intention paths that full mediation drops: `FAIR -> VOIC`,
+`FAIR -> LOYA`, `CTRL -> VOIC`. `FAIR -> VOIC` is the central claim of the algoactivism literature,
+so its absence is the first thing a reviewer asks about — and the check costs **no extra data**:
+same matrix, same engine call, no model call anywhere.
+
+`build_model_spec(variant="partial")` adds `PARTIAL_MEDIATION_EDGES` and nothing else. The variant
+is therefore **nested** — the full model plus three edges, with nothing removed — so each added
+path's own bootstrap interval is directly interpretable as the test of that mediation restriction,
+with no second fit to compare against.
+
+**`EDEP x FAIR` and `EDEP x TRAN` are deliberately absent.** The 2026-09-29 entry records that this
+exact pairing was put to the researcher and declined in favour of `EDEP x SATI` alone. Adding them
+to the variant would quietly convert the robustness check into the partial-mediation model that was
+declined, which is the substitution that decision exists to prevent —
+`test_partial_does_not_add_the_declined_interactions` pins it.
+
+**A latent bug this closed first.** `services/statistics.run_analysis` rebuilt the spec with a bare
+`build_model_spec()` while `create_analysis` had built the matrix under its own call. With one model
+they agreed by luck. With two, a resumed or re-entered run would have estimated the **default**
+model against a matrix built for the other one and stored the result under the other one's
+fingerprint, and **nothing would have raised**. `_spec_for_run` now reads `model_variant` off the
+row and **asserts** the rebuilt fingerprint equals the one recorded at creation, raising
+`StageError` on a mismatch rather than interleaving two models in one `analysis_results` table. A
+row with no `model_variant` is read as `full`, which is the only model that existed when it was
+written (rule 6 — old rows are not rewritten, so they must stay readable).
+
+The Statistics tab carries a third dropdown, labelled so the run that produced a number is
+self-describing on screen: a reader coming back to a result should not have to recall how a control
+was set.
+
+---
+
+## 2026-10-11 — Generator `v6`: a synthetic respondent is an individual
+
+**Why this came up.** Synthetic twins were failing the Twins Lab validity tests, and the first
+reading was that the free text was repetitive. Repetition was real but secondary. Three layers
+were wrong, and the one that mattered most was in the **numbers**, not the prose.
+
+**Layer 0 — the panel had no between-driver variance.** `_respondent_targets` carried a hard-coded
+`swing = 1.5`, which at the shipped `disposition_spread` and `shared_mood` gave a construct target
+a between-driver SD of about 0.62 scale points. Measured over a forty-respondent batch, the mean
+absolute difference between two random respondents' battery answers was **0.717**. `docs/08` §4
+test 1 wants a wrong-person gap of **0.5**. A gap cannot exceed that between-driver difference, so
+the test was asking for seventy per cent of a ceiling a *perfect oracle* twin could not clear, and
+no twin was ever going to pass it. After the 5-point conversion the same compression meant four
+respondents in five answered a 5-point item with the same integer, so the panel also rendered
+near-identical persona clauses.
+
+`swing` is now `GeneratorSpec.between_driver_swing`, default **2.4**, which puts the between-driver
+difference at **1.070** and the mean per-item SD at **0.963** — in the range these instruments show
+in published samples — with 2.1% of answers at a scale bound, so the width is not bought by
+clipping.
+
+**The trade that was refused.** Raising `likert_sd` would widen the panel far more cheaply, but as
+noise uncorrelated with the construct: apparent individuality bought by destroying the construct
+reliability the PLS-SEM needs. Between-driver *signal* was raised instead and within-driver noise
+left alone, so every construct's alpha **rose** (e.g. `FAIR` 0.898 → 0.967, `SATI` 0.855 → 0.945)
+rather than falling. `test_raising_between_driver_signal_did_not_cost_construct_reliability` pins
+this.
+
+**A sub-change considered and dropped.** The first plan also stopped `centre_for_points` from
+compressing the respondent's *deviation* on 5-point scales. Dropped: item SD in scale points really
+is smaller on a shorter scale, so the compression is psychometrically right, and a ±2.4 deviation
+on a 5-point scale saturates both ends. Raising `swing` fixes both scale lengths at once.
+
+**Layers 1 and 2 — the free text.** The 37 why-probes were drawn from a flat four-string tuple with
+no reference to the item or to the value just drawn, so a respondent who had just strongly agreed
+the app controls their work had a one-in-four chance of explaining it with "sometimes it feels fair
+and sometimes it does not" — text contradicting the clause the persona builder attaches it to.
+Part 14 was worse: `_OWN_WORDS` was a fixed five-tuple consumed with **no RNG call at all**, so the
+passage's longest unstructured block and its closing section was byte-identical for every twin in
+every batch at every seed. Measured panel-wide free-text word overlap was **Jaccard 1.000**.
+
+Both are now composed in `generator/voice.py` as `[stance: block × band] + [circumstance: the
+respondent's own facts] + [consequence: band]`, with Part 14 banded on the construct each prompt
+actually asks about. Overlap is now **0.416** and no two respondents in a batch share a Part 14
+block. A `Voice` drawn once per respondent fixes verbosity, register, one or two recurring motifs
+and a fact-rotation offset, so the passage reads as one person rather than thirty-nine samples.
+
+**Still no LLM, still deterministic.** Every clause is a Python draw from the respondent's own
+`random.Random`. `VOICE_VERSION` is recorded beside `GENERATOR_VERSION` on every batch, because a
+reworded bank changes every persona hash without changing which values were drawn and the two have
+to be tellable apart. `GENERATOR_VERSION` is `v6` and **a `v5` seed does not reproduce under it.**
+
+### Three smaller choices made inside this, for the record
+
+* **The why bank is keyed on the item's `block`, not on `item_id`.** A bespoke line for each of the
+  37 items would be unmaintainable and no more individual: the individuality comes from the band and
+  the circumstance. Nine blocks × five bands × three variants, except `PAC`, which has eleven items
+  and so carries five.
+* **Composition draws without replacement within a respondent.** A respondent's eleven `PAC`
+  answers mostly land in one band — that is what having a disposition means — and independent draws
+  put one sentence in the block five times. Cells are cycled and refilled with a fresh shuffle.
+* **`OWN3` has a `no_incident` cell that is not a band.** `incident_share` (default 0.35) decides
+  whether a respondent has a support or deactivation story at all, which is a *structural*
+  difference between passages rather than one of wording. The first `v6` draft reused the top
+  fairness band for respondents without one, which produced a driver who rated fairness at the floor
+  and still said their one request for help was handled at once — the same incoherence in a new
+  place. The cell now says only that there is nothing to report.
+
+### What this does **not** establish
+
+`docs/08` §6.2 already says synthetic data proves nothing about drivers, and this change makes that
+caveat sharper rather than weaker. Any deterministic non-LLM free text must be **derived from the
+drawn numbers** — there is no other source of signal — so a synthetic persona now contains, in
+effect, a paraphrase of the answers test 1 scores the twin against. A real driver's "why" is far
+less tidily aligned with their own ratings.
+
+So a validity test passing on a synthetic panel is a **machinery check and an upper bound**, never a
+calibration of how the twins will do on real drivers. It says the pipeline can discriminate when the
+signal is there; it does not say how much signal real personas carry. No synthetic validity result
+may be reported as evidence about twin fidelity.
+
+---
+
+## 2026-10-12 — Deleting twins: two paths, with different guarantees
+
+**The problem.** *Delete all synthetic surveys* refused: 9 of 10 synthetic twins had answered a
+run or sat on a frozen panel, so deleting them would have changed a stored result (rule 6). The
+first instinct — drop the guard — would have been worse than the refusal. Deleting a twin while
+its `runs` row survives leaves a stored `twins_n` and `index_value` computed over twins that no
+longer exist: a number nobody can audit or reproduce, sitting in an evidence table looking valid.
+
+**The resolution: evidence is withdrawn whole, never edited.** Both blockers hang off `sessions`,
+so the delete takes the *session* — panel, runs, twin answers and validity verdicts together —
+rather than cutting rows out from under a result that stays. Rule 6 is intact: no append-only
+table is UPDATEd and no stored number is rewritten. What makes the withdrawal legitimate is
+structural rather than a judgement call: a session only blocks a synthetic delete because a
+synthetic twin is on its panel or answered one of its runs, so its index was computed over
+synthetic twins, and `docs/08` §6.2 already says that number proves nothing about drivers. There
+is no reportable result in the set.
+
+### The two paths, and why they are not one
+
+| | Generator → *Delete all synthetic* | Twin Lab → Twins → *Delete twins* |
+|---|---|---|
+| Scope | every `data_type='SYNTHETIC'` row | the ticked selection |
+| Can reach a real row | **never** | yes, if ticked |
+| Guard | the `data_type` key | the explicit selection, and the confirm screen |
+
+**The Generator path never puts a real row at risk, whatever is ticked.** `allow_real_loss` exists
+in `services.surveys.delete_synthetic` but is deliberately **not plumbed through**
+`services.generator.delete_all_synthetic`. A session mixing synthetic twins with a real driver is
+left intact, and the synthetic twins sitting on it stay blocked — the screen says so and points at
+the other path. *Delete all synthetic* means synthetic.
+
+That was a correction mid-build. The first version offered a second tick on the Generator screen to
+accept a real driver's loss. Wrong place: a bulk button labelled "synthetic" must not be able to
+reach real data however many confirmations it collects.
+
+**The per-twin path can delete a real twin, because a researcher must be able to remove a withdrawn
+respondent.** Its protection is not "real rows are untouchable" — it is that nothing goes without
+the selection being named and its cost shown. `twin_delete_preflight` returns
+`collateral_twin_ids`: twins **not** selected that sit on a session this delete would withdraw.
+Deleting two twins and silently voiding a run forty others answered is the surprise that field
+exists to prevent, and the confirm screen leads with it. Those twins are not deleted; they lose the
+run they answered, and the screen says exactly that.
+
+`delete_surveys` defaults on, because "delete this survey" is what the screen offers; unticking it
+drops the twin and keeps the respondent's answers for a re-import.
+
+### Gradio degradation
+
+The selection is a `gr.CheckboxGroup` below the twins table, **not** checkboxes inside it. That
+table is `gr.HTML` and Gradio gives no way to read a tick out of rendered markup. The degradation
+is in the styling, not the content: the boxes list exactly the twins the filters select, so the
+selection is still made by ticking. The ticks are cleared whenever the filters change — a
+selection left over from a filter the researcher can no longer see is dangerous on a delete button.
+
+### Tables that do not cascade
+
+`SESSION_CASCADE_ORDER` exists because three tables reference `sessions(session_id)` with **no**
+`on delete` clause: `twin_quality_runs`, `validity_results` and `twin_control_answers`. A session
+delete that skipped them fails with a raw `23503`. This is the third time this class of bug has
+appeared — `studio_runs` and `twin_control_answers` were the first two, both found when a
+researcher pressed a button — so the list is explicit and ordered children-first rather than
+trusting the DDL, which also keeps the in-memory backend behaving identically.
+
+---
+
+## 2026-10-12 — the twin was never shown what the ends of a scale mean; `KEEP` read the wrong block
+
+**Found while diagnosing the first quality gate ever run on synthetic twins.** Nine of nine
+synthetic twins were dropped at MAE 2.08-3.17 against `mae_max = 1.0`. The verdicts are correct and
+the threshold did not move. Three defects sat behind them, and the first two are fixed here.
+
+**What the evidence said.** The signed error against each twin's own driver, over 54 H3 items per
+outcome, was one-directional and barely dispersed: fairness **+2.80** (sd 1.25), staying **+3.46**
+(sd 1.03), pushback **-1.56** (sd 1.34). Three facts rule out a twin-fidelity explanation:
+
+* On the `00000` and `SHAM` control cells the same twins reproduced their drivers to within ~0.2
+  points on **all nine constructs** (`FAIR` 1.52 to 2.17, `TRAN` 1.43 to 1.12, `LOYA` 1.50 to 1.35,
+  `SATI` 3.33 to 3.23, and so on). The persona and the twin agent were not the problem.
+* The Pearson `r` the gate records but does not gate on was *good* — fairness 0.77, staying 0.80.
+  The twins ordered the six worlds correctly and sat at the wrong level.
+* The gate was not too strict. A twin answering the literal constant **3** eighteen times scores
+  MAE 0.76 and within-1 89% on that batch, and would have been **kept on 10 of 10 twins**. Raising
+  `mae_max` to admit 2.8 would admit a random number generator, and the one real twin on record
+  passed at 0.75 with `r = 0.00` on all three outcomes — right level, ordering absent. The gate
+  measures level only; that is `docs/08` section 2.2 as specified and is not changed here.
+
+**Defect 1 — the `<<<BATTERY>>>` block never carried the anchors.** Both renderers in
+`agents/twin.py` wrote the item as stem plus "answer 1 to N". The register loads an `anchors` array
+per scale, validates its length against `points` at import (`reference_store._check_anchors`) and
+then showed it to nobody. The human read a radio row labelled at every point; the twin got a bare
+range. For `agree5` and `agree7` the convention carries it. For the two scales that reach a twin
+**only** through H3 it does not: `likely7` runs `Not at all likely` to `Extremely likely` with **no
+negative end**, so its point 4 is "Moderately likely" and a twin reading it as a symmetric
+agreement scale is miscalibrated before it answers — which is the shape of the largest bias term.
+
+*What changed.* New `models.twin.BatteryItem` (stem, points, anchors) replaces the bare
+`(stem, points)` tuple on `RoundPrompt` and `H3RoundPrompt`, with a validator requiring one anchor
+per point. `ReferenceData.scale_anchors` and `ReferenceData.battery_item` are the **only** place one
+is built, so no caller can assemble a round that quietly omits them. Each line now reads
+`(answer 1 to 7; 1 = Very unfair, 4 = Neither fair nor unfair, 7 = Very fair)` — the two ends and
+the midpoint, not all seven labels, because 18 items by 7 labels is a wall of repeated scale text;
+the midpoint is omitted on an even-pointed scale rather than faked from a neighbour.
+
+New prompts `twin_v3.md` (supersedes `twin_v2.md`) and `twin_h3_v2.md` (supersedes `twin_h3_v1.md`),
+not edits: a frozen stimulus prompt gets a new version file. Rule 5 and rule 7 now say to read the
+words before choosing the number, and `twin_h3_v2.md` gains a **rule 8** — *the number describes
+this person, not the version* — because the twin's failure was to answer how good the announcement
+sounded rather than how far this driver would actually move.
+
+`config_match.current_config` now hashes stem, points **and** anchors. Every `config_fingerprint`
+moves once, which is the intended effect: decision `005` already says a verdict is only valid for
+the config it was made under, and a verdict taken when the scale ran unlabelled was taken under a
+different instrument. **The nine stored H3 verdicts are superseded, not deleted** (rule 6).
+
+**Defect 2 — `_H3_SUFFIX["KEEP"]` named the wrong construct.** `H3_V{n}_KEEP` asks "how likely
+would you be to keep driving with Uber?" — a **behavioural intention** — and was answered from
+`LOYA`, whose items are "I hope this job carries on in the future": **affective commitment**. The
+two diverge, and for this study's own population they diverge in *opposite directions*. A driver
+with four dependants, a vehicle rented from a fleet owner and no other household income does not
+hope the job continues and is nevertheless extremely likely to keep driving. The generator was
+therefore describing its most economically captive respondents as the ones about to leave —
+inverting the moderation `EDEP` carries in `stats/spec.py`, inside the data built to exercise it.
+
+*What changed.* `KEEP` reads `EXIT` ("I will probably look for a new job in the next year",
+"Actively looking for a new job in the next year is quite likely for me"), mirrored on the 1-7
+scale **after** the lever shift, never before — mirroring first would turn a version that reduces
+the wish to leave into one that reduces the likelihood of staying. The direction lives in a new
+`_H3_MIRRORED` table beside `_H3_SUFFIX`, with an import-time guard that both name the same three
+questions, because a suffix in one and not the other would be scored forward by default.
+`PUSH -> VOIC` has the same weakness — `VOIC` is three attitude items and one behaviour item — but
+its bias is the smallest of the three and remapping it is a construct decision the researcher has
+not taken; it is **not** changed here.
+
+Measured against the stored H3 vectors: the `KEEP` gap falls 3.53 to 1.90 and the overall gap
+2.69 to 2.14. Partial, and honestly so — see "what this does not fix".
+
+`GENERATOR_VERSION` becomes **`v7`**. The draw order is unchanged (the mapping consumes no
+randomness) but every `KEEP` holdout answer moves, so a `v6` seed does not reproduce under `v7`,
+exactly as `v5` broke `v4` without touching the draw order.
+
+**Defect 3 — `between_driver_swing` buys pile-up, not spread, against a slider near an end.** Not a
+code fault; a silent interaction between two correct behaviours, surfaced rather than changed. The
+clamp in `_respondent_targets` is right — a target off the scale is not a target — and it is
+silent. With the `frustrated` preset, `FAIR` and `TRAN` sliders at 2.0 and `v6`'s swing of 2.4,
+**38.5% of respondents land on the exact floor** of fairness and clarity (17.6% at swing 1.5), 20%
+on satisfaction and loyalty. The between-driver SD on `FAIR` rose only 0.51 to 0.65 while more than
+twice as many respondents became *identical at the wall*. `v6` was built to widen the panel and on
+that batch narrowed it, and the first place it shows is a wrong-person test with no ceiling to
+reach (`docs/08` section 4 test 1) — discoverable only after the twin calls were spent.
+
+*What changed.* `generator.synthetic.clipping_share(spec)` is pure arithmetic over a spec, with its
+own RNG so it cannot disturb a batch's draw order, and `services.generator.clipping` formats the
+constructs above `CLIPPING_NOTICE_SHARE = 0.20` as `GeneratorClipping` rows. *Preview 3 drivers*
+now carries the note above the three rows: three respondents cannot show that a fifth of the batch
+shares one construct's floor. **A note, never a block** — a batch two-fifths on the fairness floor
+may be exactly what the researcher wants — and it says so explicitly when nothing is pinned, so an
+absent note and an unrun check cannot look alike (rule 7). `0.20` is a reporting threshold read
+nowhere else; changing it cannot change a drawn batch.
+
+**What this does not fix, and is the researcher's call.** After both fixes the twins would still be
+roughly 2 points high, because the remaining disagreement is not about *who the driver is* but about
+*how far a better world moves them*. The twin reads a world with a living wage, full pay
+transparency, an appeals route and a drivers' forum and answers 6-7; `lever_effects` moves fairness
+by at most +1.64 from a baseline already clamped near the floor, and answers 3. **Neither figure is
+measured.** `lever_effects` is a hand-set matrix ported from the Apps Script prototype
+(`docs/AUDIT_PROTOTYPE_PARITY.md` section A6); the model's reaction size is its own prior.
+
+So the H3 gate **run on a synthetic twin is not a measurement of twin fidelity** — it compares the
+model's implicit reaction function against the researcher's typed one. That is consistent with
+`docs/08` section 6.2 (synthetic rows exercise the machinery and prove nothing about drivers), and
+this gate run did exercise it correctly end to end: 0 failed calls, 36 items scored per twin,
+correlations computed, controls answered, verdicts appended. **Tuning `lever_effects` until
+synthetic twins pass is forbidden** — it is the circularity `docs/08` section 2.4 rules out, and
+nothing here does it.
+
+---
+
+## 2026-10-13 — the generator could not reproduce a real driver: `reaction_gain` and reactivity
+
+**Researcher decision on the gain; the rest is defect repair.** Nine of ten synthetic twins kept
+failing the H3 gate after the scale-anchor fix (mean MAE 2.49 against `mae_max` 1.0). The anchors
+were worth ~9%. This is the other 91%, and it was not the twins.
+
+### What the evidence said
+
+The twin and its driver agreed on **who the driver was** and disagreed on **how far a better world
+would move them**, by a factor of 2.8:
+
+* On the `00000`/`SHAM` controls the twins reproduced their drivers to a mean absolute gap of
+  **0.16 points across all nine constructs**. The persona and the twin agent were sound.
+* Fairness: the driver's baseline 1.52 went to 2.78 (a move of **+1.26**); the twin's 2.09 went to
+  5.57 (**+3.48**).
+
+Then the decisive check, which is **independent of any twin**. Fitting a single gain on
+`lever_effects` against the one real respondent's own 18 Part 17 answers:
+
+```
+best k = 2.11
+k=1.00  MAE 1.504   <- the inherited matrix
+k=2.11  MAE 0.864
+```
+
+**At the inherited gain the generator could not reproduce the only real driver in the database** —
+it predicted that driver's Part 17 answers at MAE 1.504, which is to say the generator would have
+failed its own quality gate against a real person. Corroborated three further ways, with the H2
+check carrying no method confound because H2 mirrors the battery item for item:
+
+| | real driver | matrix said | ratio |
+|---|---|---|---|
+| H3 fairness move | +2.50 | +1.18 | 2.1x |
+| H3 pushback move | -2.75 | -1.01 | 2.7x |
+| H3 staying move | +2.17 | +0.74 | 2.9x |
+| H2, 16 mirrored items | +0.375 / item | +0.112 | 3.3x |
+
+So the twins' reaction magnitude was approximately right and the **generator's was wrong**. They
+were being failed for agreeing with reality. The thresholds were never the problem: a twin
+answering the constant `3` eighteen times would have scored MAE 0.76 and been kept on 10 of 10,
+so loosening `mae_max` would have admitted a random number generator. **`mae_max` 1.0 and
+`pct_within_1_min` 0.80 are unchanged, and so is every line of the gate.**
+
+### Defect 1 — the gain had never been checked against a driver
+
+`lever_effects` carries two separate claims: *which* construct each lever moves and in what
+proportion, and *how far* the whole matrix moves a respondent. Only the second has an external
+check, and it had never been made — the matrix was typed, ported from the Apps Script prototype
+(`docs/AUDIT_PROTOTYPE_PARITY.md` §A6).
+
+`GeneratorSpec.reaction_gain` is now that second claim, as one multiplier on the finished shift.
+The structure is untouched: a zero in the matrix stays a zero, every proportion and every sign is
+preserved, and `tests/test_m9_generator_levers.py` asserts exact proportionality rather than mere
+direction, because a gain that quietly altered one construct's share would still pass every
+directional test in that file.
+
+Applied **after** the two interactions, so sub-additivity is preserved as a proportion. Scaling
+the per-lever contributions but not `lever_synergy` would have left the comparisons passing while
+changing how sub-additive the population is — `docs/07` §5's headline claim.
+
+`calibrate_reaction_gain(humans)` is the derivation, kept as a function so the number is
+**re-derived from real responses as n grows** rather than inherited. Default `2.11`, pinned by a
+test so it cannot drift without a conscious edit. The fit forces unit gain internally: a fit that
+used the caller's spec as given would return the gain *on top of* the one already there, reporting
+`1.00` ("no correction needed") when it meant "2.11 was right" — indistinguishable from a
+successful calibration, and it would have halved the gain on every re-derivation. Found by running
+the fit against the real respondent and getting 1.00 back; now guarded by an idempotence test.
+
+**Provisional at n=1.** One respondent fixes the direction and the rough gain and is not a
+calibration sample. The derivation runs against the live database, never in CI, so the round-trip
+test instead generates a batch at a known gain and fits it back.
+
+**Fitted to survey answers, never to twin output.** Fitting the gain until twins pass is the
+circularity `docs/08` §2.4 forbids; `calibrate_reaction_gain` cannot see a twin, and the gain was
+settled before any twin was re-run.
+
+### Defect 2 — the reaction was a batch constant no persona mentioned
+
+Even at the right magnitude, **no twin could have passed except by guessing.** Part 17 asks for the
+baseline moved by this respondent's reactivity. The baseline is all over the persona. The
+reactivity was a hidden batch-level constant: across the whole range of `EDEP`, its only
+respondent-level input, the fairness shift varied by at most **0.16 scale points** and by exactly
+**0.00 on four of the six versions**. Every respondent reacted identically and nothing in any
+persona said how reactive they were, so the gate was scoring twins on a quantity it had never
+disclosed — an information defect in the test, not a failure of the twins.
+
+`GeneratorSpec.reactivity_spread` draws a per-respondent reactivity from that respondent's own RNG,
+centred on `1.0` so it widens the panel without moving the batch's mean reaction (the gain remains
+the only thing that sets level). `generator/voice.py` gains a `react:low|mid|high` circumstance
+family, so the respondent **says** how far an announcement would move them, in their own voice,
+throughout the passage.
+
+These are **dispositions, not answers.** None names a version, a lever, a dial or a number, and
+the twin must still work out which of six specific packages would matter to this person and by how
+much. I8 permits exactly this: its own guard puts the whys and open answers *in* the persona block,
+where "the twin is meant to read them as who this person is" — the same standing the baseline
+attitudes already have. A test asserts no holdout id and no version code reaches any free-text
+field.
+
+### What this produced
+
+Synthetic Part 17 answers moved to where a driver's plausibly are, and acquired real
+between-respondent variance where there had been almost none:
+
+| | v7 | v8 | what the twins answered |
+|---|---|---|---|
+| fairness | 2.78 | **4.08** (sd 1.44) | 5.57 |
+| pushback | 3.73 | **3.01** (sd 1.56) | 2.18 |
+| staying | 2.53 | **4.61** (sd 1.36) | 5.65 |
+
+Mean gap ~2.8 to ~1.1. Between-driver SD inside the holdout block ~0.6 to ~1.4.
+
+`GENERATOR_VERSION` -> **`v8`**, `VOICE_VERSION` -> **`v2`**. The reactivity draw sits between the
+background block and the construct targets, so a `v7` seed does not reproduce under `v8`.
+
+### Also here
+
+* **Four dials reached the screen.** `between_driver_swing` and `incident_share` were added to
+  `GeneratorSpec` in `v6` and never put on the Generator page, so a batch could only be drawn at
+  their defaults; they join the two new ones in `BATCH_SLIDERS`. A dial nobody can see is a dial
+  nobody checks, and `between_driver_swing` is the one that decides whether a panel has any
+  ceiling for a wrong-person test.
+* **`clipping_share` stays baseline-only.** Extending it to the holdout answers was tried and
+  reverted: at a calibrated gain nearly every respondent reaches an end of the scale on at least
+  one of the six versions, so the measure fired on the *default* spec (pushback 84%) and carried
+  no information. It is also not the same defect — a driver already low on pushback who is shown a
+  near-total package and lands at "not at all likely" is answering correctly, whereas a respondent
+  pinned at *baseline* is one whose persona cannot distinguish them from the next respondent.
+
+### What was deliberately not done
+
+* **No eligibility route for un-gated synthetic twins.** An earlier proposal would have let
+  machinery-verified synthetic twins onto a panel with `kept` left `False`. Rejected by the
+  researcher: twins reach a panel by passing, or not at all. `qualified_twin_ids` is unchanged.
+* **No threshold moved**, and `kept` is never written on a row that failed.
+* **`PUSH -> VOIC` left alone.** `VOIC` is three attitude items and one behaviour item, the same
+  weakness `KEEP -> LOYA` had, but its bias is the smallest of the three and remapping it is a
+  construct decision the researcher has not taken.
+* **The remaining ~1.1-point gap is not closed by fitting.** Whether it is the twin or the matrix
+  is not decidable at n=1, and the honest route is to re-run `calibrate_reaction_gain` as real
+  Part 17 responses arrive. Test 3 (`docs/08` §4) is where reaction magnitude surfaces as a
+  verdict, and it is left to report what it reports.
+
+---
+
+## 2026-10-13 (later) — two staged fixes: the level bias is gone, the failure moved to the versions
+
+Continues the entry above. Three measured runs of the H3 gate on synthetic batches, one change per
+stage, each with its metric predicted before the run. `tools/gate_diagnostic.py` is the instrument
+and reports the same four numbers every time, filtered to one batch prefix so two generator
+versions can never be pooled.
+
+### Stage 1 — `twin_h3_v3.md`: tell the twin to locate how far this driver moves
+
+Prompt only. Same batch, same personas, same twins, so the change is isolated from sampling.
+
+The first TASK step and a new rule 1 now direct the twin to find, in the persona, what this person
+says about announced changes **before** answering, and to let that set the size of its moves; the
+`rationale` has to name it, so the step is visible in the output rather than assumed.
+
+| | before | after |
+|---|---|---|
+| r(reactivity band, twin H3) | -0.08 | **+0.20** |
+| twin H3 spread / driver spread | 46% | 190% |
+| within-1 | 51.9% | **65.0%** |
+| mean MAE | 1.517 | **1.219** |
+| FAIR / PUSH / KEEP signed bias | +1.77 / -0.45 / +1.15 | **+0.18 / -0.22 / -0.48** |
+
+**The level bias that opened this whole investigation is gone** — fairness +0.18, down from +2.88
+at the start. The twin took the instruction and began varying per driver. It then varied *too
+much and badly aimed*: 190% of its drivers' spread at only r +0.20 against a +0.59 ceiling. It was
+hunting a signal it could not reliably locate, which is what Stage 2 then tested.
+
+### A real defect found while re-gating: the fingerprint did not cover the H3 prompt
+
+The first Stage 1 run **skipped every twin** — "already scored under this config". `H3_PROMPT_REF`
+swaps a sibling file in for the Part 17 round only, so `current_config`'s `prompt_sha256` described
+the battery and sweep rounds and said nothing about the prompt that produced every stored H3
+verdict. Rewriting the H3 prompt therefore invalidated nothing, and a verdict made under a
+superseded Part 17 prompt read as current — the same class of defect as a verdict taken on an
+unlabelled scale, which decision `005` exists to prevent.
+
+`current_config` now carries `h3_prompt_sha256`, hashed from the agent config with the H3 override
+applied exactly as `ask_h3_round` builds it. `tests/test_m21_config_match.py` asserts the key is
+present, non-empty and **different from** `prompt_sha256` — equality would mean the override is not
+being applied and the gate is not sending the prompt the fingerprint claims.
+
+### Stage 2 — `v9`: make the reactivity clause legible, not merely present
+
+At one circumstance slot in eight the clause surfaced one to three times in a 1,700-2,450 word
+passage, once at 93% of the way through. Reactivity now holds **three of ten slots** and each band
+carries five phrasings rather than three. Mentions went from 1-3 to 4-15, first mention from as
+late as 93% to 8-57%.
+
+Repeated rather than given its own persona heading **on purpose**. A dedicated section would be the
+obvious fix and a real driver has no such field, so a synthetic persona would carry a shape no real
+one does — the parity `CLAUDE.md` insists on when it refuses a respondent who answered three of 37
+probes. Legibility had to come from placement inside the existing shape.
+
+`facts_of` returns a longer tuple, so `fact_offset` draws from a different range: **a `v8` seed does
+not reproduce under `v9`**, and a new batch was required.
+
+**The targeted metric moved emphatically:**
+
+| | stage 1 | stage 2 |
+|---|---|---|
+| r(reactivity band, twin H3) | +0.20 | **+0.87** (ceiling +0.64) |
+| twin H3 spread / driver spread | 190% | 148% |
+
+The twin now tracks *which driver it is* better than the generator encoded it. Legibility was the
+bottleneck for person-discrimination, and that part is solved.
+
+**The gate thresholds did not follow:** mean MAE 1.352, within-1 58.6%, 0 of 9 kept. Read with the
+confound stated: Stage 2 necessarily changed the **batch as well as** the persona (new seed, a
+different draw of respondents, bands skewed 6 low / 2 mid / 1 high), so its MAE is not directly
+comparable with Stage 1's. Stage 1 was clean; Stage 2 is not.
+
+### Where the failure now sits, and it is a different axis
+
+| | driver | twin |
+|---|---|---|
+| spread across the six **versions** | 0.495 | **0.126** |
+| r(driver version means, twin version means) | | **+0.09** |
+| within-person ordering, fairness | | +0.37 |
+| within-person ordering, staying | | +0.38 |
+| within-person ordering, **pushback** | | **-0.21** |
+
+**Between-person discrimination is solved (r +0.87). Between-version discrimination is broken
+(r +0.09).** The twin now gives nearly the same answer to all six worlds, modulated by person — a
+quarter of its drivers' spread across versions, and it orders the versions *backwards* on pushback.
+That is precisely what `docs/08` §2.3 says H3 exists to test: whether the mapping from stimulus to
+response transfers, not just the level.
+
+**A candidate cause is this entry's own Stage 1 change.** `twin_h3_v3.md` rule 1 says to answer at
+this person's size of move "not at the size the version seems to deserve", and rule 9 that the
+number "describes this person, not the version". Under the previous prompt the within-person
+orderings were fairness +0.33, pushback +0.31, staying +0.32 — all positive; pushback has since
+gone negative. The batches differ, so this is a candidate and not a finding, but the prompt
+plausibly bought person-sensitivity by suppressing version-sensitivity and should be rebalanced
+before anything else is tried.
+
+### Stopped here: provider quota
+
+The Stage 2 run lost its tenth twin to a `429 monthly usage limit` from Ollama Cloud, and no
+further gate run is possible until the quota resets. The nine twins that did score have two clean
+repeats and zero failed calls each, so their numbers stand; `SYN-14102026-0009` has **no verdict
+and is recorded as not run**, never as a result (I15).
+
+### Unchanged throughout
+
+`mae_max` 1.0, `pct_within_1_min` 0.80, `h3_verdict`, `qualified_twin_ids` and every line of the
+gate. `kept` has never been written on a row that failed, no eligibility route was added, and
+`reaction_gain` has not been touched since it was fitted to survey answers. Panel-eligible twins
+remain 1 — the real one.
+
+### Next, in order, when quota returns
+
+1. **Rebalance `twin_h3_v3.md`** into a `v4` that keeps the person-sizing step and restores an
+   explicit instruction to tell the six versions apart. Prompt-only, so it can be run against the
+   existing `SYN-14102026` batch with no new generation — the clean, isolated experiment Stage 1
+   was. Predicted: r(version means) leaves +0.09 and pushback ordering returns positive.
+2. If that does not move it, the next candidate is the **single-call H3 protocol**
+   (`H3_PROTOCOL = "h3_single_call_v1"`, M19 WP-3): eighteen numbers for six worlds in one context
+   may be producing one impression emitted six times. Reverting to six calls is a **documented
+   research decision and 6x the cost**, and is the researcher's to take, not a tuning step.
+3. The residual level question — the H3 fit said gain 2.11, the H2 corroboration 3.3x — waits on
+   real Part 17 responses and `calibrate_reaction_gain`, not on another twin run.
+
+---
+
+## 2026-10-13 (stage 3) — `twin_h3_v4.md` rebalances v3; the next hidden constant is `lever_reactions`
+
+Prompt only, run against the same `SYN-14102026` batch as stage 2, so this comparison is clean.
+
+v3 had overcorrected: it bought person-discrimination by suppressing version-discrimination. v4
+keeps the person-sizing step and restores the version as the other half of the answer — what a
+version changes decides whether it touches what this person cares about; how far this person moves
+decides the size. **Nothing in v4 says which direction any construct moves under any version.**
+That stays the twin's to work out and the gate's to score; writing it in would be coaching the twin
+to the generator's answer.
+
+| | stage 2 (v3) | stage 3 (v4) |
+|---|---|---|
+| within-person ordering, **pushback** | **-0.21** | **+0.35** |
+| ordering, fairness / staying | +0.37 / +0.38 | +0.40 / +0.39 |
+| twin spread across the six versions | 0.126 | **0.283** (driver 0.475) |
+| twin H3 spread / driver spread | 148% | **110%** |
+| r(reactivity band, twin H3) | +0.87 | +0.37 |
+| FAIR signed bias | +0.24 | **+1.38** |
+| mean MAE | 1.352 | 1.325 |
+| within-1 | 58.6% | 61.4% |
+| **kept** | 0 of 9 | **1 of 10** |
+
+The backwards pushback ordering is fixed and all three orderings are consistently positive.
+`SYN-14102026-0000` is the **first synthetic twin to pass the gate on its merits** — MAE 0.94,
+within-1 83.3%, under unchanged thresholds.
+
+**It is a trade, not a pure win.** Fairness bias returned (+0.24 to +1.38) and person-tracking gave
+some ground (+0.87 to +0.37) in exchange for version-tracking. Recorded as a trade rather than
+tuned away: the two prompts are both honest readings of the task and the balance between them is
+not something to fit against a pass rate.
+
+### Mean MAE has plateaued, and the reason is the next hidden constant
+
+Across stages 1-3 mean MAE sat at 1.219, 1.352, 1.325 and within-1 at 65.0%, 58.6%, 61.4%. Three
+prompt and persona fixes each moved their own target metric and none moved the gate much. The
+reason is visible in the one metric that never moved:
+
+    r(driver version means, twin version means) = +0.09 (stage 2) -> +0.07 (stage 3)
+
+The twin now *differentiates* the six versions — its spread across them more than doubled — but it
+differentiates them in the **wrong order**:
+
+| | driver | twin |
+|---|---|---|
+| ranks highest | V1 `12220`, V3 `11010` | V4 `11211`, V5 `02211` |
+
+`V5` raises no pay at all (`L1=0`) and the twin ranks it second; the driver ranks it fifth. The
+cause is `GeneratorSpec.lever_reactions`, which carries `{L1: 2.0, L2..L5: 1.0}` — **pay is
+double-weighted for the whole batch, and no persona discloses it.**
+
+That is the **same defect class** as `reaction_gain` before it was calibrated, and the same one as
+reactivity before it was drawn per respondent and spoken aloud:
+
+* it is a **hidden batch constant** — identical for every respondent, mentioned in no persona, so
+  no twin can infer it except by guessing which lever this population happens to weight most;
+* it has **never been checked against a driver**, exactly as the gain had not.
+
+It is now the binding obstacle. It is also **not calibratable at n=1**: five lever weights plus a
+gain is six parameters against eighteen observations from one respondent, which is underdetermined,
+so the route that fixed the gain is not available here.
+
+### Not decided here
+
+Two routes, and both are research choices rather than defect repair, so they go to the researcher
+(`CLAUDE.md`, "when the spec is silent"):
+
+1. **Make lever salience per-respondent and legible**, the move that took reactivity tracking from
+   r -0.08 to +0.87. A driver would carry which lever matters most to them and say so in their own
+   words ("the money is the only thing that would change my mind" against "it is the disrespect,
+   not the money"). It needs no calibration and is arguably more realistic than one batch-wide
+   weight — but committing the generator to the claim that salience varies between drivers, and in
+   what proportion, is a modelling decision.
+2. **Calibrate `lever_reactions` against real Part 17 responses** once n supports six parameters,
+   through the same kind of fit as `calibrate_reaction_gain`.
+
+Until one of them is taken, a synthetic twin can pass the H3 gate only by happening to share the
+researcher's lever weighting. One of ten now does.
+
+`mae_max`, `pct_within_1_min`, `h3_verdict` and `qualified_twin_ids` remain untouched across all
+three stages, and `reaction_gain` has not been altered since it was fitted to survey answers.
+
+---
+
+## 2026-10-13 (Route A) — `v10`: lever salience is per-respondent and spoken, and the mix is measured
+
+The researcher chose **Route A** over calibrating `lever_reactions` against real data, which is
+not available at n=1: five lever weights plus a gain is six parameters against one respondent's
+eighteen Part 17 answers. Route A removes the **last of the three hidden batch constants** in the
+reaction chain.
+
+| | what it says | before | now |
+|---|---|---|---|
+| `reaction_gain` | how far *any* change moves a driver | typed `1.0` | fitted `2.11` (`v8`) |
+| `reactivity_spread` | how far it moves *this* driver | batch constant | drawn + spoken (`v8`/`v9`) |
+| `lever_reactions` | **which** change moves them | `{L1: 2.0, rest 1.0}`, in no persona | drawn + spoken (`v10`) |
+
+### What changed
+
+`GeneratorSpec.salience_spread` (default `0.5`) and `generator.synthetic.respondent_lever_weights`
+draw a weight per lever per respondent, from that respondent's own RNG, in the odometer's frozen
+order. `reaction_shift` takes them in place of `spec.reaction(lever)`; `captive_voice`'s EDEP
+multiplier still lands on `L5`, now on whichever weight is in force. `voice.py` gains a
+`salience:*` circumstance family — five levers, five phrasings each, named for the thing and never
+the lever (*"the money is the only thing that would change my mind"*, *"it is the disrespect, not
+the money"*) — and `salience_tag` keys it on the lever this respondent weights highest, with ties
+resolved in I2's order. Three slots in `facts_of`, the share `v9` established as the threshold of
+legibility. `GENERATOR_VERSION` → `v10`, `VOICE_VERSION` → `v4`; the new draws change the draw
+order, so **a `v9` seed does not reproduce**.
+
+**The draw is multiplicative and centred on `lever_reactions`**, which is three constraints at
+once and all three are load-bearing:
+
+* the batch's mean salience on every lever is unchanged (asserted over 4,000 draws), so this
+  admits that drivers differ rather than re-weighting the population — re-tuning those means
+  against a twin pass rate is the circularity `docs/08` §2.4 forbids;
+* a lever whose slider is `0.0` stays `0.0` for every respondent, so `docs/06` §4's no-reaction
+  null stays null;
+* no weight can go negative, which would invert that lever's sign for one driver and make a pay
+  rise lower their satisfaction.
+
+A respondent with **no** lever above zero carries no salience clause at all. Omitted rather than
+invented: they have no change that matters most to them, and rule 7 cuts both ways.
+
+### Legibility: measured, and it passed
+
+The `v9` measurement, repeated — clause occurrences and first-mention position per
+`persona_passage`, on a fresh ten-respondent batch at the default spread:
+
+| | reactivity (`v9`) | salience (`v10`) |
+|---|---|---|
+| mentions per passage | 4–15 | **5–12** |
+| first mention, % through | 8–57% | **2–25%** |
+
+### The number Route A owes the researcher, and it is not the one the handoff predicted
+
+Centring the spread on the researcher's means has a consequence that must be stated rather than
+discovered after a sweep. `L1`'s draw spans `[1.0, 3.0]`; every other lever's spans `[0.5, 1.5]`.
+So **most of the batch still weights pay highest**:
+
+| `salience_spread` | pay | conditions | contracts | appeals | forum |
+|---|---|---|---|---|---|
+| 0.0–0.3 | **100%** | 0 | 0 | 0 | 0 |
+| 0.5 (default) | **85%** | 4% | 4% | 4% | 4% |
+| 0.9 | **62%** | 10% | 9% | 10% | 9% |
+
+With the five means flat at `1.0`, the same spread spreads the top salience roughly evenly, so
+this is the researcher's own weighting and not a defect in the draw.
+
+**What this means for the gate.** `v10` does repair the defect as stated: the pay weighting is no
+longer hidden — every persona now says, in the driver's own words, that money is what would change
+their mind, so a twin no longer has to guess which lever this population weights and should rank
+`12220` and `11010` above `02211`. That is the prediction to score. But *"every persona discloses
+the batch's weighting"* and *"the batch contains drivers who want different things"* are different
+claims, and at the default spread only the first holds. If `r(driver version means, twin version
+means)` moves and person-discrimination does not, that asymmetry is why.
+
+`generator.synthetic.salience_mix` and `services.generator.salience` compute the mix, and the
+Generator preview carries it as a pre-flight note beside the `v7` clipping note — the lesson of
+`clipping_share`: the researcher sees the number **before** spending the calls. The note warns
+above `SALIENCE_NOTICE_SHARE` (two-thirds) and reads as information below it. **A diagnostic,
+never a correction.** Nothing in the generator reads it, and a pay-dominated population may be
+exactly what the researcher means to model. Flattening `lever_reactions` is a claim about Indian
+gig drivers and is **not taken here**.
+
+### Found while testing, and deliberately not fixed: `lever_synergy` ignores the weights
+
+`reaction_shift` applies its two interaction terms from the **dials alone**, so a batch with every
+reaction slider at `0.0` still carries them — which contradicts `GeneratorSpec.lever_reactions`'
+own docstring ("A batch with every reaction at zero produces holdouts identical to the baseline,
+which is the correct null"). Pre-`v10`, and confirmed on the pre-`v10` code path.
+
+Under `v10` it has a second edge: the synergy is now the **only part of the shift that is still a
+batch constant**. A driver with near-zero salience on appeals and on a forum nevertheless receives
+the full `-lever_synergy` on pushback when a version raises both.
+
+Left alone and recorded, because whether an interaction between two levers a respondent does not
+react to should fire is a claim about sub-additivity — `docs/07` §5's headline contribution — and
+is the researcher's to take, not something to change while fixing salience. `CLAUDE.md`, "when the
+spec is silent": it affects research validity, so it stops and asks. The test asserts that `v10`
+changes nothing here, against the batch-weighted shift rather than against zero, and says why.
+
+### Tests
+
+Fifteen new, each naming what it holds: the weights vary between respondents and reach the shift;
+the batch mean per lever is unchanged over 4,000 draws; a zero slider stays zero and no weight goes
+negative; zero spread reproduces the batch weighting exactly; an incomplete weighting raises rather
+than defaulting a lever to "normal"; `captive_voice` multiplies the respondent's own forum weight
+and not the batch's; the gain fit still calls `reaction_shift` at the batch weighting, because a
+real respondent's salience is unknown and drawing one for them would be fitting to a fiction
+(rule 5); the persona states the salience and a wide batch speaks for more than one lever; no
+clause names a lever code or a digit; three slots, one band, and the other facts not crowded out;
+the mix diagnostic's four readings, its null, and that it cannot disturb a drawn batch; the
+service's ordering and the note's three branches.
+
+### Unchanged
+
+`mae_max` 1.0, `pct_within_1_min` 0.80, `h3_verdict`, `qualified_twin_ids`, every line of the gate,
+and `reaction_gain` at the value fitted to survey answers. `kept` has never been written on a row
+that failed. No eligibility route was added. `lever_reactions`' means are exactly as the researcher
+set them. `data/reference/*.json` untouched (`build_reference --check` exits 0).
+
+### Next, and it needs the live path
+
+Nothing below costs a decision; all of it costs quota.
+
+1. Draw a fresh batch at `v10` (generation is free) and read the salience pre-flight note.
+2. Import twins (free), run the gate (~5 model calls per twin, serial, 12–15 minutes for ten), then
+   `python tools/gate_diagnostic.py --prefix <new> --label "stage 4"`. **Do not pool with
+   `SYN-14102026`** — different generator version.
+3. **Prediction, stated before the run:** `r(driver version means, twin version means)` leaves
+   +0.07 and `within-1` rises above 61.4%. Report it honestly if it does not; the correct response
+   to a miss is to measure why, never to move a threshold or re-tune a mean.
+4. Re-gate the real twin `web_e6b4a70cb63c41a1b124f22bd285116e`, whose verdict predates the prompt
+   change, so the one real driver is back in play.
+5. Then validity tests 1 and 3 on the fresh batch (free, no model calls) against `docs/08` §4.
+
+---
+
+## 2026-10-13 (stage 4) — Route A ran, and **the prediction failed**: `v10` made the gate worse
+
+Batch `SYN-20261013`, generator `v10`, voice `v4`, ten twins, all ten scored with no provider
+failure. **0 of 10 kept**, down from 1 of 10 at stage 3.
+
+The prediction stated before the run was that `r(driver version means, twin version means)` would
+leave +0.07 and `within-1` would rise above 61.4%. **Neither happened.** Recorded as a miss
+rather than re-tuned, which is the whole point of stating it first.
+
+### The population was held fixed, deliberately
+
+`tools/generate_synthetic.py` passes no spec and so draws `GeneratorSpec`'s defaults —
+`sentiment='mixed'` with no `construct_targets`. Stages 1–3 ran on `frustrated` with the preset's
+eight targets, `likert_sd` 0.3 and `shared_mood` 0.6. Drawing at the defaults would have changed
+the researcher's choice of population while claiming to test a generator change, so the spec was
+read back off the stored `SYN-14102026` batch row and reused field for field, with three changes
+only: the seed, the name, and `salience_spread` written out explicitly. The clipping pre-flight
+reproduces the handoff's figure (37% fairness, 37% clarity), which confirms the population is the
+same one.
+
+The seed is `20261013`, in ISO rather than the DDMMYYYY the three stage batches used. That
+convention had already collided — today's own DDMMYYYY is the `v8` batch, which is why
+`SYN-14102026` carries tomorrow's date — and the prefix is the batch's identity in every
+`--prefix` filter, so it should say when the batch was drawn.
+
+### What the batch itself says
+
+The salience clause is in **every** stored persona: 5–12 mentions, first at 7–31% of the way
+through, against reactivity's 4–15 at 8–57%. Legibility is not the problem.
+
+All ten respondents weight **pay** highest, as `salience_mix` predicted (84% at the default
+spread). So this batch tests **disclosure** — every persona states, in the driver's own words,
+that money is what would change their mind — and does **not** test between-driver salience
+variation. That asymmetry was recorded before the run and is the right reading of the result.
+
+### Stage 4 against stage 3
+
+| | stage 3 (`v9` + `h3_v4`) | **stage 4 (`v10`)** | |
+|---|---|---|---|
+| **kept** | 1 of 10 | **0 of 10** | worse |
+| mean MAE | 1.325 | **1.575** | worse |
+| within-1 | 61.4% | **53.0%** | worse |
+| `r(driver version means, twin version means)` | +0.07 | **−0.08** | **worse** |
+| twin spread across the six versions | 0.283 (driver 0.475) | **0.199** (driver 0.604) | worse |
+| twin H3 between-person spread ÷ driver | 110% | **30%** | worse |
+| `r(reactivity band, twin H3)` | +0.37 | **+0.60** (ceiling +0.81) | better |
+| within-person ordering FAIR / PUSH / KEEP | +0.40 / +0.35 / +0.39 | **+0.46 / +0.47 / +0.13** | mixed |
+| FAIR signed bias | +1.38 | +1.58 | worse |
+
+The version-means figure was recomputed on `SYN-14102026` with the same script and returned
+**+0.07 exactly**, so the comparison is between two readings of one measurement, not two
+measurements.
+
+**The ranking is the finding.** Every persona in this batch says money is what matters, and the
+twin still does not rank the pay versions first:
+
+```
+driver:  12220, 11010, 11211, 02200, 02211, 00222
+twin:    11211, 12220, 02211, 00222, 02200, 11010
+```
+
+`11010` raises pay and the twin ranks it **last**. `02211` raises no pay at all and the twin ranks
+it third. Disclosure was necessary — the twin was previously being scored on a constant nobody had
+told it — and it was **not sufficient**. The twin is not failing to read which lever this driver
+cares about; `r(reactivity band, twin H3)` rose to +0.60, so it reads the persona better than
+before. It is failing to connect *what a version changes* to *what this driver said they care
+about*.
+
+### The confound, stated
+
+`v10` changes the draw order, so stage 4 **needed a new batch** and therefore changed the
+respondents as well as the persona — exactly the confound stage 2 carried and stage 1 and 3 did
+not. The driver's own spread across the six versions is larger in this batch (0.604 against
+0.475), so the MAE and spread-ratio comparisons above are **not clean**. What is clean, because it
+is a within-batch property: every persona discloses the pay weighting, and the twin still ranks
+`11010` last.
+
+### Validity tests, scoped to this batch
+
+| test | stage 3 | stage 4 | goal |
+|---|---|---|---|
+| 1 wrong person | CHECK, gap +0.263, CI [−0.044, 0.569] | **CHECK**, gap **+0.538**, CI [−0.090, 1.165] | PASS |
+| 3 naive predictors | FAIL, twin 0.619 vs no-change 0.475 | **FAIL**, twin 1.014 vs no-change 0.896 | PASS |
+
+Test 1's gap now clears the 0.50 threshold and its interval still includes zero, so it stays
+CHECK — the between-person distance is 1.44, and the twin recovers 0.54 of it. Test 3 still fails,
+with the twin behind both naive predictors; the margin against no-change narrowed in relative
+terms (1.30× to 1.13×) and the verdict did not change. One twin had no usable H2 answer for test 3
+and is **excluded and reported**, never imputed.
+
+### A real gap found while doing this: the free tests pooled every batch
+
+`run_validity_test(1)` and `(3)` read `h2_vectors(db)`, which returned **every** twin in the
+database — four generator versions and the one real driver. `docs/08` §4 test 1 asks whether a
+twin is closer to its own driver than to **a stranger's**, and a stranger drawn under a different
+construct mapping, lever matrix or reaction gain is not the stranger the test means. This is the
+pooling that made one reading of test 3 meaningless, and `tools/gate_diagnostic.py` has required
+`--prefix` ever since — the validity path had no equivalent guard.
+
+`h2_vectors`, `_test1`, `_test3` and `run_validity_test` now take `twin_prefix`. The scope is
+recorded in the outcome's `detail`, because `validity_results` is append-only and read months
+later, and a row that cannot say which population it describes is a row that can mislead. The
+argument is **refused** on tests 2 and 4–8 rather than ignored: those read a session's frozen
+panel (I10), so the twin set is the session's and not a prefix's. Three tests cover it, including
+that a scope matching no twin is `INCONCLUSIVE` and never a `PASS` (I15).
+
+### Where this leaves the diagnosis
+
+Three hidden batch constants have now been removed — the gain was calibrated, reactivity is drawn
+and spoken, salience is drawn and spoken — and the twin reads all three signals better at each
+step while the **gate** has not moved: 1.219, 1.352, 1.325, 1.575 mean MAE across four stages. The
+information defect in the test is repaired. Something else is binding, and the evidence now points
+away from the persona and towards the H3 round itself:
+
+1. **The twin's version spread is collapsing, not growing.** 0.126 → 0.283 → 0.199 against drivers
+   at 0.475 → 0.604. The twin gives nearly one answer to six worlds, and the `v4` prompt's
+   rebalance bought only a temporary widening.
+2. **`H3_PROTOCOL = "h3_single_call_v1"`** is the untested structural candidate the handoff
+   already names: eighteen numbers for six worlds in one context may be producing one impression
+   emitted six times, which is precisely what a collapsing version spread with a *rising*
+   person-correlation looks like. Reverting to six calls is **6× the cost and a research
+   decision** — the researcher's, not a tuning step. On this evidence it is now the first thing
+   to test rather than the second.
+3. **`lever_synergy` ignores the reaction weights** (recorded in the Route A entry above) is now
+   the only part of the shift still constant across respondents.
+4. **The flat-`lever_reactions` question** is live in a way it was not before. This batch shows
+   that disclosing a pay-dominated weighting does not fix version ranking; a batch with flatter
+   means would put drivers who want *different* things in the panel and would test whether the
+   twin can discriminate on salience at all. That is a claim about the population and remains the
+   researcher's.
+
+### The real driver re-gated, and it passes where every synthetic twin fails
+
+`web_e6b4a70cb63c41a1b124f22bd285116e`'s verdict predated the prompt change, which is the
+fingerprint fix behaving correctly. Re-gated under the live config: **KEPT**, H3 MAE **0.694**,
+within-1 **91.7%** over 36 items and two repeats.
+
+**This is the most informative number of the stage.** The same prompt, the same model, the same
+thresholds and the same gate that dropped all ten synthetic twins at MAE 1.11–2.14 scored the one
+real driver at 0.694. The gate is not broken and the twin agent is not broken. Whatever is left is
+a property of the **synthetic driver** — of how the generator says a described change moves
+someone — and not of the instrument that scores it. Panel-eligible twins: 1, the real one, as
+before.
+
+### Unchanged
+
+`mae_max` 1.0, `pct_within_1_min` 0.80, `h3_verdict`, `qualified_twin_ids`, every line of the
+gate, `reaction_gain` at its fitted value, and `lever_reactions`' means as the researcher set
+them. `kept` was not written on any row that failed. No eligibility route was added. Nothing was
+deleted: `SYN-12102026`, `SYN-13102026` and `SYN-14102026` and all their `twin_quality_runs` rows
+are intact, and stage 4 is a fourth batch beside them, never pooled with them.
+
+---
+
+## 2026-10-13 (diagnosis) — why the real driver passes: **it is not the persona, and the real PASS is weak evidence**
+
+Asked to find why `web_e6b4a70…` passes the H3 gate at MAE 0.694 while all ten `v10` synthetic
+twins fail at 0.89–2.83. Measured on `SYN-20261013` and the real driver, read-only, no model
+calls. Four findings, in the order they settle the question.
+
+### 1. The persona is not the problem — it is close to perfect
+
+On the two control cells, which ask about the world **as it is**, the twins reproduce their
+driver's 37 battery answers to:
+
+| | `00000` | `SHAM` |
+|---|---|---|
+| real twin | 0.06 | 0.39 |
+| ten synthetic twins | **0.18** | **0.25** |
+
+Against a cap of 1.0. A persona that lets a model reproduce a stranger's 37 survey answers to a
+fifth of a scale point is carrying the person. The two passages are also structurally identical —
+12 paragraphs, no headings, same shape — the synthetic one merely longer (1828 words against 960,
+because a synthetic respondent answers all 37 why-probes and this real one wrote less).
+
+**The persona hypothesis is refused on evidence.** Whatever fails, fails only at the step where
+the twin is asked to imagine a described change.
+
+### 2. The twin is version-blind, and it is version-blind in both cases
+
+Spread of a twin's answers across the six Part 17 versions, against its driver's own:
+
+| | driver | twin |
+|---|---|---|
+| real | **0.17** | 0.52 |
+| synthetic (range over ten) | 0.46–1.03 (mean 0.66) | 0.12–0.42 (mean 0.30) |
+
+`r(driver version means, twin version means)` is +0.74 for the real twin and −0.08 across the
+synthetic batch. The twin gives nearly one answer to six worlds. **That behaviour is the same for
+both.** What differs is the driver.
+
+### 3. The real driver is as flat as the twin is. That is the whole of the PASS
+
+The one real respondent's Part 17, as they answered it:
+
+```
+version    FAIR  PUSH  KEEP
+00222         6     2     6
+02200         5     3     5
+02211         5     3     5
+11010         5     3     5
+11211         6     2     6
+12220         6     2     6
+```
+
+**Two distinct response patterns across six described worlds, and a range of exactly 1 point on
+every question.** Not straight-lining — they discriminate sharply between the three outcomes — but
+they do not discriminate between the versions. A version-blind twin matches them almost exactly.
+
+The decisive measurement. A **version-blind oracle** — a twin that reads the person perfectly and
+completely ignores which version it was asked about, answering each outcome's own mean — scores:
+
+| | oracle MAE | passes the 1.0 cap? |
+|---|---|---|
+| real driver | **0.50** | yes, with room to spare |
+| ten synthetic drivers | **1.01** | 5 of 10 fail |
+
+**So the gate, as applied to this real driver, does not require version discrimination; as applied
+to a synthetic driver it requires it absolutely.** That is the pass and the ten failures, in one
+number.
+
+**The consequence for the study is the serious part.** `docs/08` §2.3 says H3 exists to test
+*whether the mapping from stimulus to response transfers*, not just the level. The real twin's
+PASS does not establish that: it is a score a version-blind twin also earns against this
+particular driver. "1 of 1 real twins kept" must not be read as evidence that the twin transfers
+the counterfactual mapping. It is evidence that the twin reads the person — which the control
+cells already showed at 0.06.
+
+This is the same failure mode `CLAUDE.md`'s own warning names — a twin answering a near-constant
+vector scoring a respectable MAE — one level up: not constant across items, but constant across
+*versions*.
+
+### 4. Secondary, and separable: the floor pile-up drives the level bias
+
+Six of ten synthetic drivers start at or next to the scale's floor on fairness (`FAIR` baseline
+1.00–1.25; batch mean 1.55). The real driver starts at 3.00. **16% of all synthetic battery
+answers are a literal `1`; the real driver has none.**
+
+`r(driver's H3 starting baseline, twin's signed error) = −0.77` over the ten. The lower a driver
+starts, the more the twin over-shoots — +1.67 for the driver at `FAIR` 1.00, −0.11 for the one at
+3.25, −0.11 for the real driver at 3.00. That is the whole of the `FAIR` +1.58 signed bias.
+
+The mechanism is structural, and it is in the generator: `reaction_shift` is **additive and
+level-independent** — it never reads the driver's baseline — so `_item_target` computes
+`baseline + shift` and clamps. The generator therefore asserts that a driver at 1.0 and a driver
+at 5.0 both move by the same ~2.2 points under the same package. A model reading "nothing about
+this work is fair" and then a described living wage, an appeals route and a union moves that
+person much further. Neither is verifiable at n=1.
+
+Note what this is **not**: the *magnitude* of movement is calibrated and agrees. The synthetic
+drivers move 2.17 from their own baseline on average; the real driver moved 2.47. `reaction_gain`
+fitted the level correctly. What is wrong is **where that movement starts from** (finding 4) and
+**how much it varies between versions** (finding 3).
+
+### Why Route A failed, in hindsight
+
+`v10` pushed the batch's driver spread across the six versions **up**, 0.475 → 0.604. The one
+real respondent's is 0.17. Route A therefore moved the synthetic driver *further from* the only
+real behaviour on record, which is why the version correlation went +0.07 → −0.08 and the MAE
+rose. Adding per-respondent lever salience amplified exactly the thing the real data does not
+exhibit. The information defect it fixed was real; the axis it amplified was the wrong one.
+
+### What this does and does not license
+
+**Not licensed.** Softening `lever_effects` or the gain until twins pass. The twin is version-blind
+and the synthetic driver is version-sensitive; closing that gap by flattening the generator would
+be fitting the generator to the twin's weakness — `docs/08` §2.4's circularity, and it would make
+every path estimated on synthetic data an artefact of what the model cannot do.
+
+**Open, and it needs data rather than a decision.** Whether real drivers differentiate the six
+packages at all. One respondent gave a 1-point range. If that is typical, H3-as-fidelity-gate is
+asking twins to reproduce a discrimination the population does not make, and the generator's
+`lever_effects` shape is the thing out of line. If it is atypical — a tired respondent, or six
+scenarios that read alike to them — the generator may be right and the twin simply cannot do H3.
+**These point to opposite fixes and n=1 cannot separate them.** Re-derive with
+`calibrate_reaction_gain` and a version-spread statistic as real Part 17 responses arrive.
+
+### Recommended next, in order
+
+1. **Report the version-blind oracle MAE beside every gate verdict** (`tools/gate_diagnostic.py`).
+   Free, read-only, no new concept: it says whether a given PASS required version discrimination
+   or not, and it is what would have stopped the real twin's PASS being over-read. Do this first
+   because it is cheap and it changes how every later number is read.
+2. **Move the population off the floor** — `construct_targets` for `FAIR`/`TRAN` off 2.0, or a
+   lower `between_driver_swing`. Addresses finding 4 and the +1.58 bias; the preview already warns
+   about it. **Researcher's choice of population**, and it will not touch finding 3.
+3. **Test `H3_PROTOCOL`** — six calls instead of one. This is the only candidate that addresses
+   finding 3 from the twin's side, and finding 3 is the binding one. 6× cost and a research
+   decision.
+4. **Collect real Part 17 responses.** Nothing above settles whether the generator's version
+   differentiation is credible, and no amount of twin running will.
+
+---
+
+## 2026-10-13 (`v11`) — the holdout answers report a hypothetical coarsely, calibrated to the one real respondent
+
+Directed by the researcher, following the diagnosis above: take the real respondent's **one-point
+range across the six Part 17 versions** as the target and fix the generator.
+
+`GeneratorSpec.holdout_version_differentiation`, fitted with the gain by
+:func:`calibrate_reaction_model` against that respondent's own survey answers — **never against a
+twin's output or a pass rate** (`docs/08` §2.4). Joint fit over their 18 Part 17 items:
+
+| | gain | differentiation | mean error on those 18 answers |
+|---|---|---|---|
+| `v8` one-parameter fit | 2.11 | — (implicitly 1.0) | 0.863 |
+| **`v11` joint fit** | **2.40** | **0.18** | **0.392** |
+
+The generator can now reproduce a real driver's counterfactual answers **well inside the gate's
+own 1.0 cap**, which it could not before. `2.11` remains the correct one-parameter fit and
+`calibrate_reaction_gain` still returns it; both constants are pinned in tests so neither can
+drift unnoticed.
+
+### The first implementation was wrong, and it was rejected on measurement
+
+The obvious place to put the shrinkage is inside `reaction_shift`, and that was built and
+measured first. It fitted the respondent beautifully — the 0.863 → 0.392 above is that fit — and
+it was **thrown away**, because shrinking toward a mean over all codes mixes every lever's row
+into every code:
+
+| at `0.18` | inherited | compressed inside `reaction_shift` |
+|---|---|---|
+| conditions-only code's effect on **clarity** | **0.000** ("that zero is a claim") | **+1.028** |
+| sub-additivity on pushback (`extra`) | **−0.72** (sub-additive) | **+2.10** (super-additive) |
+
+That is the pre-`v5` defect restored — no lever distinguishable from another by its effects, so no
+path estimated on synthetic data corresponds to anything — and it **inverts** the sub-additivity
+`docs/07` §5 calls the study's contribution. Buying a pass rate with that would have been
+worthless in a paper. The mistake was conflating two separate facts about the same person: the
+protections moved them **2.47 points** from their own baseline, *and* they reported six
+hypotheticals in a **one-point range**. The first is about construct dynamics; the second is about
+answering a hypothetical battery.
+
+So the compression lives in `_item_target`, on the **holdout answer**. `reaction_shift` is
+byte-identical at every value of the parameter — asserted directly — so the lever matrix, its
+zeros, its signs, its two interactions, the sweep, `analysis/interactions.py` and the PLS-SEM are
+untouched.
+
+### Scope: Part 17 only, and that was also found by measurement
+
+Applied to both holdout blocks at first. That was wrong for the same reason, one level down: Part
+16 asks **one** hypothetical — the respondent's own assigned arm — so there is no across-version
+spread to compress, and shrinking a single code toward the mean over all codes is not a
+compression but a **level shift** away from what that arm implies. The level of an H2 answer is
+`reaction_gain`'s to set, and it is calibrated.
+
+Measured on the stage-5 batch before the scope was narrowed:
+
+| H2 / validity | compression on H2 too | H3 only |
+|---|---|---|
+| `mae_own` (test 1) | 2.00 | 0.95-class |
+| between-person distance | 1.20 | 1.44-class |
+| validity test 1 | **FAIL** (gap −0.01) | CHECK-class |
+
+Every respondent's H2 answers had converged on the same mean, which is the between-person signal
+test 1 reads. `holdout_version_differentiation` now applies only where `item.role ==
+"holdout_h3"`.
+
+### Mechanics
+
+`mean_shift` is the mean of `reaction_shift` over **every code that raises something** — a
+property of the spec and the respondent, not of the code being asked about, which is what lets the
+parameter mean the same thing for Part 17's six and the sweep's 243, and what makes the mean a
+fixed point so the parameter is close to orthogonal to the gain. Computed in closed form (each
+lever's dial is uniform on `{0,1,2}`, so a lever contributes `(1 + second_step_factor)/3` steps and
+is raised with probability `2/3`; the synergy pairs need `4/9`; dropping the all-zero code is one
+rescale by `243/242`) and asserted against brute-force enumeration of all 242 codes, because a
+wrong constant there would bias every holdout answer and nothing else in the suite would catch it.
+
+**`00000` is zero at every value of the parameter**, and that is the invariant rather than an edge
+case: a non-zero control cell would offset every comparison in the study.
+
+A respondent's own `reactivity` draw sits inside the mean, so **person-discrimination is
+untouched** and only version-discrimination compresses. That is the exact opposite of `v10`'s
+mistake, where the axis that grew was the wrong one.
+
+### Stage 5 — measured
+
+Batch `SYN-2026101311`, ten twins, all scored. Population held identical to `SYN-14102026`
+(`frustrated`, swing 2.4, the same eight construct targets, `likert_sd` 0.3), so the generator
+change is the only change.
+
+| | stage 4 (`v10`) | **stage 5 (`v11`)** | |
+|---|---|---|---|
+| **kept** | 0 of 10 | **2 of 10** | better |
+| mean MAE | 1.575 | **1.092** | better |
+| within-1 | 53.0% | **70.8%** | better |
+| H3 between-person spread recovered | 30% | **99%** | better |
+| H2 spread recovered | 82% | 116% | — |
+| `r(band, twin H3)` | +0.60 | +0.58 (ceiling +0.65) | — |
+| FAIR / PUSH / KEEP signed bias | +1.58 / −0.90 / +1.12 | **+0.95 / +0.47 / +0.25** | better |
+| **version-blind oracle MAE** | 1.00, 4 of 10 under cap | **0.32, 10 of 10** | — |
+
+Driver spread across the six versions, per person: **0.575 → 0.222**, against the real
+respondent's 0.167.
+
+**The prediction, stated before the run, was 3–7 kept and mean MAE 1.0–1.2.** The MAE landed in
+range at 1.092. The kept count came in **below** it at 2. Recorded as a partial miss.
+
+### What now binds, and it is not the generator's reaction model
+
+The oracle bound says it plainly: a version-blind twin would now score **0.32** against these
+drivers and the twins scored **1.092**. The version axis is no longer the obstacle — the twins are
+now far worse than version-blindness would be, so the residual is **level and person error**, not
+version error.
+
+And its mechanism is the one the diagnosis already named:
+`r(driver's H3 starting baseline, twin's signed error) = **−0.66**` over the ten (was −0.77).
+Fairness baseline **1.51** across the batch; **15% of all synthetic battery answers are a literal
+`1`**; the real driver has none and sits at 3.00.
+
+**The floor pile-up is now the binding constraint**, and it is `docs/06` §4's
+`construct_targets`/`between_driver_swing` — the **researcher's choice of population**, flagged in
+the handoff and warned about in the Generator preview, and **not changed here**. The prediction, to
+be stated before any run that tests it: moving `FAIR`/`TRAN` off `2.0` removes most of the
+remaining +0.95 bias.
+
+### Instrument
+
+`tools/gate_diagnostic.py` gains two things.
+
+**The version-blind oracle bound**, reported beside every verdict. A twin that reads the person
+perfectly and ignores which version it was asked about scores it, so where it sits under the cap a
+PASS does **not** demonstrate the thing H3 exists to test (`docs/08` §2.3). On the real driver it
+is 0.50; that is why "1 of 1 real twins kept" must not be read as evidence that the twin transfers
+the counterfactual mapping.
+
+**A refusal when a prefix spans more than one batch.** Found the hard way and by the measurement
+itself: seeds `20261013` and `2026101311` produce `SYN-20261013-…` and `SYN-2026101311-…`, so the
+shorter prefix silently matched both and the diagnostic reported **eleven** twins for a batch of
+ten — the exact pooling the flag exists to prevent, arriving through the flag. The guard is on the
+`batch_id`, not the generator version, because two batches drawn under one version are still two
+different draws of respondents (rule 10).
+
+### Unchanged
+
+`mae_max` 1.0, `pct_within_1_min` 0.80, `h3_verdict`, `qualified_twin_ids`, every line of the gate,
+`lever_reactions`' means, the whole of `reaction_shift` and `data/reference/*.json`. `kept` has
+never been written on a row that failed and no eligibility route was added. `VOICE_VERSION` stays
+at `v4` — no bank changed. Nothing was deleted; stage 5 and the corrected batch sit beside the
+four earlier ones and are never pooled with them.
+
+### Stage 6 — the scope fix, re-run, and what it settles
+
+Batch `SYN-20261014`, `v11` with the compression on Part 17 only, ten twins, all scored.
+**A new seed, so a different draw of respondents** — the same confound stages 2, 4 and 5 carried,
+and it bit here: this batch drew almost no reactivity variation at all
+(`r(band, DRIVER h3) = +0.09`, against +0.65 in stage 5), so its reactivity column says nothing
+and its MAE is not cleanly comparable with stage 5's.
+
+| | stage 4 (`v10`) | stage 5 (`v11`, H2 too) | **stage 6 (`v11`, H3 only)** |
+|---|---|---|---|
+| kept | 0 of 10 | 2 of 10 | **1 of 10** |
+| mean MAE | 1.575 | 1.092 | **1.214** |
+| within-1 | 53.0% | 70.8% | **66.4%** |
+| FAIR signed bias | +1.58 | +0.95 | **+0.97** |
+| PUSH / KEEP signed | −0.90 / +1.12 | +0.47 / +0.25 | **+0.02 / −0.20** |
+| oracle MAE (under cap) | 1.00 (4/10) | 0.32 (10/10) | **0.35 (10/10)** |
+| validity 1 | CHECK, gap +0.538 | **FAIL**, gap −0.01 | **CHECK**, gap +0.39 |
+| validity 3 | FAIL, 1.014 vs 0.896 | CHECK, 2.000 vs 2.094 | **FAIL**, 0.618 vs 0.375 |
+
+**The scope fix did what it was for.** Validity test 1 is back from FAIL to CHECK and the H2
+errors fall by two thirds (test 3's twin error 2.000 → 0.618), because H2 answers are once again
+what the respondent's own arm implies rather than a batch mean. Stage 5's test-1 FAIL and its
+flattering test-3 CHECK were both artefacts of compressing H2, and both are withdrawn.
+
+**What `v11` settles, and it is batch-independent.** Across two different draws of respondents:
+
+* the **version axis is no longer the obstacle** — the version-blind oracle is 0.32 and 0.35, under
+  the cap for 10 of 10 in both, against 1.00 and 4 of 10 at `v10`. The generator's drivers now
+  discriminate the six packages about as much as the one real respondent does;
+* the twins are now **much worse than version-blindness would be** (1.09 and 1.21 against 0.32 and
+  0.35), so the residual is level and person error;
+* **fairness bias is +0.95 and +0.97** in both, with `r(driver's starting baseline, twin's signed
+  error)` at −0.66, fairness baseline 1.51 and **15% of battery answers a literal `1`**.
+
+**So the floor pile-up is the binding constraint and the generator's reaction model is no longer
+it.** That is `docs/06` §4's `construct_targets` and `between_driver_swing` — the researcher's
+choice of population, warned about in the Generator preview, and **not changed here**.
+
+**The gate improvement is real but small: 0–1 of 10 before, 1–2 of 10 after.** The honest reading
+is that `v11` removed one of two obstacles and the second is untouched. Nothing was tuned to
+improve a pass rate, and the error on the **real** respondent — the only external check that
+exists — more than halved, 0.863 to 0.392, which is the result that matters most and does not
+depend on any synthetic batch.
+
+---
+
+## 2026-10-13 (stage 7) — the floor fix: **the prediction failed, and it corrected my own diagnosis**
+
+Directed by the researcher. `construct_targets` for `FAIR` and `TRAN` raised from `2.0` to `3.0`
+on batch `SYN-20261015`, `v11`, everything else identical.
+
+**Chosen against a stated criterion, not a pass rate:** the smallest raise that brings both
+constructs under 10% pinned at the scale's end — `3.0` gives 6% and 7%, against 38% and 38% at
+`2.0`. Corroborated by the one external anchor that exists: the real respondent's own `FAIR`
+baseline is 3.00 and their `TRAN` is 2.50. The population keeps its frustrated character — both
+stay below the 4.0 midpoint and `EXPO` 6.5, `CTRL` 6.0, `VOIC` 5.5, `EXIT` 5.5 are untouched.
+`SATI` and `LOYA` remain 20% pinned and `EXPO` 12%; they are not Part 17 outcomes and were not
+part of this change.
+
+**Prediction, stated before the run: most of the +0.97 fairness bias goes, mean MAE 0.9–1.1, kept
+3–6 of 10.**
+
+### Result: the first half was right, the second half was wrong
+
+| | stage 6 (floor at 2.0) | **stage 7 (floor at 3.0)** |
+|---|---|---|
+| FAIR signed bias | +0.97 | **+0.30** |
+| PUSH / KEEP signed | +0.02 / −0.20 | **−0.17 / +0.08** |
+| `FAIR`/`TRAN` pinned at an end | 38% / 38% | **6% / 7%** |
+| mean MAE | 1.214 | **1.239** |
+| within-1 | 66.4% | **61.9%** |
+| **kept** | 1 of 10 | **0 of 10** |
+
+The floor fix did precisely what it was aimed at. **All three signed biases are now
+approximately zero and the gate did not move at all.**
+
+### Why the prediction was wrong, and it is a real correction
+
+Decomposing each twin's 18 H3 errors into the part explained by a per-outcome offset and the part
+left over:
+
+| | n | actual MAE | scatter | per-outcome offset |
+|---|---|---|---|---|
+| `SYN-20261015` (floor moved) | 10 | 1.22 | **0.71** | **1.03** |
+| `SYN-20261014` (floor at 2.0) | 10 | 1.13 | **0.65** | **1.01** |
+| **the real driver** | 1 | **0.78** | **0.63** | **0.78** |
+
+Two things fall out, and the second is the correction.
+
+1. **Scatter is the same for everybody — 0.63 to 0.71 — and it is comfortably under the 1.0 cap.**
+   The twin's noise is not the problem and never was.
+2. **The whole of the difference between pass and fail is the per-outcome offset: 0.78 for the real
+   driver against 1.03 for the synthetic ones.** And the floor fix did not touch it: 1.01 → 1.03.
+
+**The error I made was reading a batch-level signed bias as if it were the per-person error.** A
+signed bias near zero and a per-outcome offset near 1.0 are perfectly compatible: the twin is off
+by about a point on each outcome for each person, in **different directions for different people**,
+so the batch mean cancels. The floor was driving the *mean* (fairness +0.97 → +0.30, exactly as
+predicted) and the mean was never what the gate scores. The handoff's own standing warning applies
+to the diagnosis as much as to the fix: a statistic that averages over people can hide the thing
+that decides every individual verdict.
+
+So **the floor pile-up was not the binding constraint.** It was a real defect, it is now fixed, and
+fixing it bought nothing at the gate. Recorded as a miss.
+
+### What is left, and the evidence now points at the twin rather than the generator
+
+Every generator property that has been checked against reality is now right:
+
+* it reproduces the one real respondent's 18 Part 17 answers at **0.392**, inside the gate's own cap;
+* its drivers' spread across the six versions matches that respondent's (0.22 against 0.17);
+* the version-blind oracle is **0.30, under the cap for 10 of 10** — version differentiation is not
+  what is failing;
+* nothing is pinned at the scale's ends on the Part 17 outcomes;
+* all three signed biases are approximately zero.
+
+What remains is the twin's **per-person, per-outcome level accuracy**: it places fairness, pushback
+and staying each about one scale point away from where that driver sits, and the direction varies
+by person. On a 7-point scale against a cap of 1.0 and an 80%-within-1 threshold, that is the
+whole margin.
+
+**A per-outcome offset with near-zero version signal is the exact signature of the single-call H3
+protocol** (`H3_PROTOCOL = "h3_single_call_v1"`, M19 WP-3): eighteen numbers for six worlds in one
+context produces one impression per outcome, emitted six times with noise — which is a constant per
+outcome plus scatter, which is what the table above measures. That candidate has been on the list
+since stage 2 and is now the only one the evidence supports. It is **6× the cost and a research
+decision**, the researcher's and not a tuning step.
+
+**And the real twin's PASS should be read with the same table.** Its offset is 0.78 against the
+synthetic 1.03 — a quarter of a scale point, not a different regime. One real driver passing at
+0.694 and ten synthetic drivers failing at 1.22 is, on this evidence, the same mechanism with a
+slightly better draw, and there is no basis at n=1 for deciding whether real drivers are genuinely
+easier to predict.
+
+### Unchanged
+
+`mae_max` 1.0, `pct_within_1_min` 0.80, `h3_verdict`, `qualified_twin_ids`, every line of the gate,
+`reaction_shift`, the lever matrix, `reaction_gain` and `holdout_version_differentiation` at their
+fitted values. `kept` has never been written on a row that failed. Nothing was deleted. The floor
+change is on this batch's own spec row; `config/generator.default.yaml` still carries `FAIR`/`TRAN`
+at `2.0`, because the population is the researcher's to set and stage 7 is one batch, not a new
+default.
+
+---
+
+## 2026-10-14 (stage 8) — six-call H3 **refuted**, and the thing that was actually wrong all along
+
+The last experiment. `H3_PROTOCOL` restored as a selectable six-call protocol
+(`h3_six_calls_v1`), run on **the same batch, the same twins and the same personas** as stage 7 —
+a clean protocol-only comparison, which only stages 1 and 3 have been.
+
+### The hypothesis was wrong
+
+| | stage 7 (one call) | **stage 8 (six calls)** |
+|---|---|---|
+| kept | 0 of 10 | **2 of 10** |
+| mean MAE | 1.239 | **1.378** |
+| within-1 | 61.9% | 62.5% |
+| per-outcome **offset** | 1.03 | **1.11** |
+| **scatter** | 0.71 | **0.79** |
+| H3 version spread recovered | 57% | **30%** |
+| `r(reactivity band, twin H3)` | +0.64 | **+0.26** |
+
+Two twins crossed the line and **both error components got worse**. Isolating the six versions
+removed the comparison the twin had been making and added noise; it did not touch the per-outcome
+offset, which was the entire reason to try it. The single context was **not** the cause.
+
+The protocol stays available and selectable (`TWINLAB_H3_PROTOCOL=six`), recorded on every row and
+in `current_config`, and **the shipped default is unchanged** — it is 6× the cost and now measured
+to be worse.
+
+### What was actually wrong: the twin and the generator answer at different granularities
+
+The distribution of the 180 H3 answers, synthetic batch, twin against driver:
+
+| answer | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| synthetic **driver** | 10% | 3% | 18% | 22% | 23% | 14% | 9% |
+| the **twin** | 2% | **27%** | 4% | 2% | **18%** | **43%** | 4% |
+| the one **real** driver | 0% | 17% | 17% | 0% | 33% | 33% | 0% |
+
+Means agree (4.25 against 4.53) and spreads agree (twin sd 109% of driver's). **The shapes do
+not.** The twin spends 88% of its answers on just `2`, `5` and `6`, and almost never says `3` or
+`4` (6% combined). The generator's driver uses all seven points on a smooth graded curve. And the
+one real respondent on record used **four** values — `2`, `3`, `5`, `6`, and never `1`, `4` or
+`7` — which is the twin's own coarse pattern, not the generator's smooth one.
+
+So the twin answers in a few coarse buckets — "low", "high", "fairly high" — and so does the real
+human. The **generator** answers on a continuum, because that is what its arithmetic produces:
+`_likert` rounds a normal draw around a continuous target, so every point on the scale gets used
+in proportion. A twin with three buckets cannot land within one point of a driver who answers
+`3`, `4` and `7`, however well it reads the person.
+
+Two hypotheses were tested against this and both refuted, so the finding is specifically about
+granularity and not about level:
+
+* **regression to the midpoint** — refuted: the twin's sd is 109% of the driver's, and
+  `r(how far the driver sits from the midpoint, twin's error) = −0.26`, so extreme answers are if
+  anything predicted slightly *better*;
+* **level bias** — refuted at stage 7: all three signed biases were driven to approximately zero
+  and the gate did not move.
+
+### The whole record, in one table
+
+Every stage, its own targeted metric, and the gate:
+
+| stage | change | mean MAE | kept | its own target metric |
+|---|---|---|---|---|
+| 0 | anchors + gain + reactivity | 1.517 | 0/10 | level bias +2.88 → +1.77 |
+| 1 | H3 prompt `v3` | 1.219 | 0/10 | **moved** (bias → +0.18) |
+| 2 | legible reactivity `v9` | 1.352 | 0/9 | **moved** (r −0.08 → +0.87) |
+| 3 | H3 prompt `v4` | 1.325 | 1/10 | **moved** (pushback order −0.21 → +0.35) |
+| 4 | `v10` lever salience | 1.575 | 0/10 | **missed** (+0.07 → −0.08) |
+| 5 | `v11` holdout compression | 1.092 | 2/10 | **moved** (oracle 1.00 → 0.32) |
+| 6 | `v11` scope corrected to H3 | 1.214 | 1/10 | **moved** (test 1 FAIL → CHECK) |
+| 7 | floor moved off the wall | 1.239 | 0/10 | **moved** (biases → ~0) |
+| 8 | six-call H3 | 1.378 | 2/10 | **missed** (offset 1.03 → 1.11) |
+
+**Nine stages. Seven of the nine moved their own target metric. The gate never moved.** Mean MAE
+has sat between 1.09 and 1.58 throughout, and `kept` between 0 and 2 of 10.
+
+That pattern is the finding, and the decomposition says why: across every stage and every
+protocol, the twin's error is **scatter of 0.62–0.79 plus a per-outcome offset of 1.01–1.11**,
+and nothing any stage changed touched the offset. The real driver's offset is 0.59–0.78, which is
+the only reason it passes, and at n=1 there is no way to know whether that is typical of real
+drivers or one lucky respondent.
+
+### What this licenses, and what it does not
+
+**Established, and worth keeping:**
+* the persona is sound — the twins reproduce their driver's 37 battery answers to **0.18** of a
+  point on the control cells;
+* `reaction_gain` and `holdout_version_differentiation` are calibrated to the one real respondent
+  and reproduce their 18 Part 17 answers at **0.392**, inside the gate's own cap;
+* version differentiation is solved — the version-blind oracle is **0.30**, under the cap for 10
+  of 10;
+* nothing is pinned at the scale's ends on the Part 17 outcomes and all three signed biases are
+  approximately zero;
+* six-in-one-context is **measured to be better than six-in-isolation**, which was previously a
+  documented assumption (M19 WP-3) and is now a result.
+
+**The open question, and it is now sharp.** A twin and a real respondent both answer a
+hypothetical battery in a few coarse buckets. The generator answers on a continuum. Either:
+
+1. **real respondents answer coarsely**, in which case the generator's `_likert` draw is the
+   remaining defect — it should produce a respondent who uses a few anchor values, not a smooth
+   rounded normal — and the gate is currently asking twins to reproduce a granularity no human
+   produces; or
+2. **this one respondent happened to answer coarsely**, in which case the generator is right and
+   the twin cannot resolve a 7-point hypothetical to within one point, which is a limit of the
+   method and belongs in the paper as one.
+
+**These point to opposite actions and n=1 cannot separate them.** Deciding by trying both against
+the gate would be choosing a generator to suit the model, which is `docs/08` §2.4's circularity.
+**It needs real Part 17 responses** — specifically the *distribution* of their answers, not only
+the mean, which is a statistic no stage so far has had enough data to read.
+
+Nothing was tuned to a pass rate at any point. `mae_max` 1.0 and `pct_within_1_min` 0.80 are
+untouched, as are `h3_verdict`, `qualified_twin_ids`, every line of the gate, `reaction_shift` and
+the lever matrix. No `kept` was written on a row that failed. Nothing was deleted; eight batches
+exist and are never pooled.
+
+---
+
+## 2026-10-14 (`v12`) — respondents do not sit on the ends of a scale. **Generated, not yet gated.**
+
+`_likert` **clamped** a rounded normal draw to the scale, so every respondent whose latent
+position sat past an end landed exactly on it. The endpoint pile-up was created by the clamp:
+14–19% of seven-point answers. Under-using the outermost options is a documented property of
+Likert response, and the one real respondent on record used an endpoint **0 times in 39
+seven-point answers** (21 battery, 18 Part 17). The generator was asserting a response style no
+human in the data exhibits — and the endpoints are where a twin's error concentrates.
+
+`GeneratorSpec.endpoint_avoidance = 0.70`: an endpoint answer is moved one step inward with that
+probability. Chosen as **the smallest value that brings endpoint use inside what 0 of 39
+supports** — 5% on the battery and 7% on Part 17, against a 95% upper bound of about 9% — the same
+"smallest raise meeting a stated criterion" basis the floor fix used. **Not chosen against a twin
+pass rate**, which is `docs/08` §2.4's circularity.
+
+Applied to **every** Likert answer the respondent gives, battery and both holdout blocks: a
+response style is a property of the person, and someone who avoids the ends describing today does
+not stop when imagining a change. `_likert` draws one extra uniform per item, unconditionally so
+the stream does not depend on earlier answers' content, so **a `v11` seed does not reproduce under
+`v12`**. `VOICE_VERSION` stays `v4`.
+
+### Batch `SYN-20261016`, drawn and stored. Part 17, seven-point items:
+
+| | 1 | 2 | 3 | 4 | 5 | 6 | 7 | ends | in 2–6 |
+|---|---|---|---|---|---|---|---|---|---|
+| real respondent | 0% | 17% | 17% | 0% | 33% | 33% | 0% | **0%** | **100%** |
+| `v11` batch | 10% | 3% | 18% | 22% | 23% | 14% | 9% | **19%** | 81% |
+| **`v12` batch** | 6% | 17% | 14% | 14% | 23% | 25% | 1% | **6%** | **94%** |
+| the twin (measured) | 2% | 27% | 4% | 2% | 18% | 43% | 4% | **6%** | **94%** |
+
+Battery endpoints: real 0%, `v11` 14%, **`v12` 4%**.
+
+**The generator's endpoint rate now matches the twin's exactly (6% / 6%) and sits inside what the
+human's 39 answers support.** Note what has *not* changed: the twin still spends 70% of its
+answers on `2`, `5` and `6` and almost nothing on `3` or `4`, while the `v12` driver spreads 14%
+on `3` and 14% on `4`. The granularity mismatch identified at stage 8 is narrowed at the ends and
+**untouched in the middle**, so the per-outcome offset has no particular reason to move. That is
+the honest expectation to hold before any gate run, and it is why this was not run.
+
+### Not gated
+
+**No model calls were spent on this batch.** 1,115 tests pass; ruff, import-linter and
+`build_reference --check` clean. The gate run is ~50 calls and 10 minutes whenever the researcher
+wants it, and `tools/gate_diagnostic.py --prefix SYN-20261016` will read it without pooling.
+
+**What the fix does and does not claim.** It removes a generator defect that was real and
+independently justified: the clamp was manufacturing a response style the data contradicts, and
+the floor pile-up diagnosed at stage 7 was one symptom of the same mechanism. It is **not** an
+attempt to make twins pass, and it should not be read as one if the gate improves — nor as a
+refutation if it does not.

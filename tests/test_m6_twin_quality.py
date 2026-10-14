@@ -29,6 +29,7 @@ from twinlab.ingest.reference_store import reference
 from twinlab.models.reference import LEVER_BY_POSITION
 from twinlab.models.twin import (
     Background,
+    BatteryItem,
     QualityScore,
     SurveyResponse,
     Twin,
@@ -82,10 +83,10 @@ def _response(**overrides) -> SurveyResponse:
     return SurveyResponse(**{**base, **overrides})
 
 
-def _battery() -> dict[str, tuple[str, int]]:
-    """item_id → (stem, points), in register order, battery only (I10: 37, not 39)."""
+def _battery() -> dict[str, BatteryItem]:
+    """item_id → the item as shown, in register order, battery only (I10: 37, not 39)."""
     ref = reference()
-    return {i: (ref.items[i].stem, ref.scale_points(i)) for i in ref.battery_item_ids}
+    return {i: ref.battery_item(i) for i in ref.battery_item_ids}
 
 
 def _paragraphs() -> dict[str, str]:
@@ -283,13 +284,53 @@ def test_the_blocks_appear_in_the_fixed_contract_order():
     assert seen == list(BLOCK_ORDER)
 
 
-def test_every_battery_item_carries_its_own_range():
-    """`docs/02` §4.2 rule 6 — stated in the prompt *and* enforced in Python (I13)."""
+def test_every_battery_item_carries_its_own_range_and_its_anchors():
+    """`docs/02` §4.2 rule 6 — stated in the prompt *and* enforced in Python (I13).
+
+    The anchors are part of rule 6, not an extra: a range without them does not say which
+    direction it runs in, and the human read a labelled row (`docs/DECISIONS.md`, 2026-10-12).
+    """
     ref = reference()
     prompt = build_user_prompt(_round(), "persona")
     for item_id in ref.battery_item_ids:
         assert f"{item_id}: " in prompt
-        assert f"(answer 1 to {ref.scale_points(item_id)})" in prompt.split(f"{item_id}: ")[1][:400]
+        shown = prompt.split(f"{item_id}: ")[1][:400]
+        points = ref.scale_points(item_id)
+        anchors = ref.scale_anchors(item_id)
+        assert f"(answer 1 to {points};" in shown
+        assert f"1 = {anchors[0]}" in shown
+        assert f"{points} = {anchors[-1]}" in shown
+
+
+def test_the_two_holdout_only_scales_name_their_ends_to_the_twin():
+    """`fair7` and `likely7` reach a twin **only** through H3, so only H3 can get them wrong.
+
+    `likely7` runs `Not at all likely … Extremely likely` with no negative end, so its point 4 is
+    "Moderately likely" and a twin reading it as a symmetric agreement scale is miscalibrated
+    before it answers. This is the defect that put every synthetic twin's `KEEP` answer +3.46 above
+    its driver's (`docs/DECISIONS.md`, 2026-10-12).
+    """
+    from twinlab.agents.twin import build_h3_prompt, build_h3_user_prompt
+    from twinlab.services.quality import h3_items
+
+    ref = reference()
+    by_version = h3_items(ref)
+    prompt = build_h3_prompt(
+        persona_hash="h",
+        paragraphs_by_version={p: _paragraphs() for p in sorted(by_version)},
+        items_by_version=by_version,
+        seed=7,
+    )
+    rendered = build_h3_user_prompt(prompt, "persona")
+    for item_id in ref.holdout_h3_item_ids:
+        anchors = ref.scale_anchors(item_id)
+        shown = rendered.split(f"{item_id}: ")[1][:400]
+        assert f"1 = {anchors[0]}" in shown, f"{item_id} does not name its low end"
+        assert f"7 = {anchors[-1]}" in shown, f"{item_id} does not name its high end"
+        assert f"4 = {anchors[3]}" in shown, f"{item_id} does not name its midpoint"
+    # The asymmetry is the whole point: likely7's point 4 is not neutral.
+    assert "4 = Moderately likely" in rendered
+    assert "4 = Neither fair nor unfair" in rendered
 
 
 # ------------------------------------------------------------------ I11: reconstructing a round
@@ -597,6 +638,20 @@ def test_pearson_r_is_none_rather_than_zero_when_undefined():
     assert pearson_r([1.0], [1.0]) is None                          # one point
 
 
+def test_pearson_r_refuses_two_points_because_r_is_plus_or_minus_one_by_construction():
+    """`docs/08` §3.3 — two points carry no information about ordering.
+
+    With two pairs that both vary, `r` is exactly +1 or -1 whatever the numbers are, so storing it
+    in `twin_quality_runs.correlations` would record a perfect ordering match as evidence. H3 gives
+    six points per outcome by design; fewer than three means items were lost, which is a reason to
+    report nothing. The prototype guarded this and the first Python port did not.
+    """
+    assert pearson_r([1.0, 2.0], [5.0, 9.0]) is None                 # would have been +1.0
+    assert pearson_r([1.0, 2.0], [9.0, 5.0]) is None                 # would have been -1.0
+    # Three points is the first n at which the answer is not forced by the arithmetic.
+    assert pearson_r([1.0, 2.0, 3.0], [1.0, 3.0, 2.0]) == pytest.approx(0.5)
+
+
 def test_h3_correlations_report_per_outcome_and_survive_a_missing_pair():
     """`docs/08` §3.3 — MAE says the twin is close, `r` says its ordering of the six worlds
     matches."""
@@ -619,7 +674,7 @@ def test_the_twin_config_is_loaded_and_validated_not_defaulted_in_code():
     config = load_twin_config()
     assert isinstance(config, TwinConfig)
     assert config.temperature == 0.7           # placeholder; set from validity test 8
-    assert config.show_baseline is True
+    assert config.show_baseline is False        # reversed 2026-10-07, docs/DECISIONS.md
     assert config.wording == "A"
 
     with pytest.raises(ValueError):

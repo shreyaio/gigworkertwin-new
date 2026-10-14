@@ -28,6 +28,28 @@ shared_mood: 0.6
 # docs/06 §4's "how much drivers differ": the spread of that respondent-level disposition.
 disposition_spread: 1.0
 
+# How far, in 1-7 scale points, a respondent at the extreme of the disposition sits from their
+# construct's batch mean. THE CEILING ON HOW DISTINGUISHABLE TWO RESPONDENTS ARE, and a
+# hard-coded 1.5 until v6.
+#
+# At 1.5 a construct target had a between-driver SD of about 0.62 points, so the expected gap
+# between two random respondents was ~0.70 -- and after the 5-point conversion four respondents
+# in five answered a 5-point item with the SAME integer. The whole panel then rendered
+# near-identical persona clauses, and docs/08 §4 test 1, which wants a half-point wrong-person
+# gap, was being asked for most of a ceiling an oracle twin could not clear.
+#
+# 2.4 puts the between-driver SD near 1.0 on 1-7, which is what these instruments show in
+# published samples, with only mild clipping at the ends. Note that raising likert_sd above
+# would widen the panel too, but as noise uncorrelated with the construct: apparent
+# individuality bought by destroying the construct reliability the PLS-SEM needs.
+between_driver_swing: 2.4
+
+# The share of respondents who have a support or deactivation story at all, which is what the
+# Part 14 OWN3 answer narrates. A STRUCTURAL difference between respondents rather than one of
+# wording -- some drivers have been blocked and some have not -- and that tells two passages
+# apart far better than paraphrase variety does.
+incident_share: 0.35
+
 # docs/06 §4's "how strongly they react to each change", by lever. 0 = no reaction, 1 = normal,
 # 2 = strong. These are what make Parts 16 and 17 answer the CHANGE rather than repeat the
 # baseline. Keyed by lever id in the odometer's frozen order (ARCHITECTURE.md §5).
@@ -37,6 +59,54 @@ lever_reactions:
   L3: 1.0   # Contracts
   L4: 1.0   # Management (appeals)
   L5: 1.0   # Representation (forum)
+
+# WHICH construct each lever moves, and by how much per dial step, in 1-7 scale points. Signed:
+# more protection raises fairness and lowers the wish to leave, and the sign lives here because one
+# scalar cannot carry both directions.
+#
+# Ported from the prototype's GEN_LEVER (docs/AUDIT_PROTOTYPE_PARITY.md §A6). Before this, every
+# lever moved every construct by the same amount, so a pay rise moved clarity as much as happiness
+# and no path estimated on synthetic data corresponded to anything.
+#
+# A construct absent from a lever's row genuinely does not move: conditions (L2) has no path to
+# clarity, and that zero is a claim, not an omission. Every lever needs a row, even an empty one.
+lever_effects:
+  L1:                 # Pay
+    SATI: 0.5
+    LOYA: 0.4
+    EXIT: -0.4
+    FAIR: 0.1
+  L2:                 # Conditions
+    SATI: 0.4
+    LOYA: 0.2
+    EXIT: -0.3
+  L3:                 # Contracts
+    TRAN: 0.6
+    FAIR: 0.2
+    CTRL: -0.2
+  L4:                 # Management (appeals)
+    FAIR: 0.7
+    VOIC: -0.4
+    CTRL: -0.2
+    SATI: 0.2
+  L5:                 # Representation (forum)
+    VOIC: -0.5
+    LOYA: 0.2
+    FAIR: 0.1
+
+# What a SECOND dial step adds, as a multiple of the first. Diminishing at 1.6: going from nothing
+# to a minimum wage is a bigger change than going from a minimum wage to a living wage. 2.0 would
+# make the dials linear.
+second_step_factor: 1.6
+
+# The two lever interactions, as one magnitude. Applied as -synergy to pushback when L4 and L5 are
+# both raised (an appeals route and a forum compound), and -synergy/2 to staying when L1 and L2 are
+# both raised (pay and safety substitute, so together they add less than the sum).
+#
+# This is what lets a synthetic batch exhibit SUB-ADDITIVITY, which docs/07 §5 calls the study's
+# contribution. At 0.0 every interaction is exactly additive by construction and
+# analysis/interactions.py has no fixture that could test it against a known truth.
+lever_synergy: 0.3
 
 # docs/06 §4's "drivers who need the money react more to a drivers' forum (captive voice)".
 captive_voice: true
@@ -49,3 +119,87 @@ mc_correct_rate: 0.8
 # not flagged as a speeder by construction. Raise the floor to generate speeders deliberately.
 completion_seconds_min: 520
 completion_seconds_max: 1800
+
+# --- v8 (2026-10-13). How far a described change actually moves a driver.
+#
+# reaction_gain is the OVERALL gain on the lever matrix, and it is the one generator number with an
+# external check: a real respondent's own Part 17 answers say how much a described change moved
+# THEM. generator.synthetic.calibrate_reaction_gain fits it by least squares against them.
+#
+# At the inherited 1.0 the matrix predicted the one real respondent on record at MAE 1.504 -- the
+# generator could not reproduce a real driver and would have failed its own quality gate against
+# them. 2.11 is the fit (MAE 0.864). PROVISIONAL AT n=1: re-derive as real responses arrive.
+# Fitted to survey answers, NEVER to twin output -- see docs/DECISIONS.md, 2026-10-13.
+reaction_gain: 2.40   # v11: re-derived jointly with holdout_version_differentiation
+
+# How much respondents differ in how far a change moves them. Before v8 the reaction was a BATCH
+# CONSTANT -- across the whole range of EDEP, its only respondent-level input, the fairness shift
+# varied by at most 0.16 scale points and by exactly 0.00 on four of the six Part 17 versions --
+# and no persona said how reactive its respondent was, so a twin was scored on a quantity nobody
+# had told it. Drawn per respondent now and spoken in their persona (generator/voice.py react:*).
+# Centred on 1.0, so this widens the panel without moving the batch's mean reaction.
+reactivity_spread: 0.5
+
+# --- v10 (2026-10-13). WHICH announced change moves a driver most.
+#
+# lever_reactions above is the batch MEAN salience per lever, and it carried L1 at 2.0 against 1.0
+# for the rest -- pay double-weighted for every respondent in the batch and disclosed in no
+# persona. Same defect class as an uncalibrated reaction_gain: a quantity the H3 gate scored twins
+# on and no twin had been given. It is why the twin ranked the six Part 17 versions WRONG while
+# telling them apart correctly in magnitude -- it put 02211, which raises no pay at all, second
+# where its driver put it fifth (docs/DECISIONS.md, 2026-10-13).
+#
+# Each respondent now draws their own weight per lever and says which one matters most, in their
+# own words (generator/voice.py salience:*). The draw is MULTIPLICATIVE and centred on
+# lever_reactions, so the batch mean on every lever is unchanged: this admits that drivers differ,
+# it does not re-weight the population. Re-tuning the means against a twin pass rate would be the
+# circularity docs/08 §2.4 forbids.
+#
+# NOT calibrated, and not calibratable at n=1: five lever weights plus a gain is six parameters
+# against one respondent's eighteen Part 17 answers.
+salience_spread: 0.5
+
+# --- v11 (2026-10-13). How coarsely a driver REPORTS a hypothetical.
+#
+# Calibrated, not typed, and fitted to the real respondent's own Part 17 answers -- never to a
+# twin's output or to a pass rate (docs/08 §2.4).
+#
+# The one real respondent moved 2.47 scale points from their own baseline (which is what
+# reaction_gain fits) and answered the six Part 17 versions within a range of EXACTLY ONE POINT --
+# two distinct response patterns across six described worlds. Those are two separate facts about
+# the same person: the protections moved them a long way, and they reported six hypotheticals
+# coarsely. The inherited generator spread its drivers across those six codes four times as
+# widely (0.66 against 0.17), so the gate was scoring twins on a discrimination the only real
+# driver on record does not make (docs/DECISIONS.md, 2026-10-13 diagnosis).
+#
+# This applies to the HOLDOUT ANSWERS ONLY (Parts 16 and 17), in _item_target. It does NOT touch
+# reaction_shift, so the lever matrix, its zeros, its signs and its two interactions are intact
+# and the sweep, analysis/interactions.py and the PLS-SEM are unaffected. Compressing the matrix
+# instead was implemented, measured and REJECTED: it fitted the respondent beautifully and moved a
+# conditions-only code's effect on clarity from 0.000 to +1.028 while INVERTING sub-additivity
+# from -0.72 to +2.10 -- the pre-v5 defect, where no lever is distinguishable from another.
+#
+# 1.0 is the inherited behaviour. 0.0 makes every raising code move a driver identically. 00000
+# moves nobody at any value, and that is an invariant.
+#
+# PROVISIONAL AT n=1: re-derive with generator.synthetic.calibrate_reaction_model as real
+# responses arrive. Joint fit: gain 2.40, compression 0.18, mean error 0.392 against 0.863.
+holdout_version_differentiation: 0.18
+
+# --- v12 (2026-10-14). Respondents do not sit on the ends of a scale.
+#
+# _likert CLAMPS a rounded normal draw, so every respondent whose latent position sat past an end
+# landed exactly on it: the ends carried a pile-up the clamp itself created, 14-19% of seven-point
+# answers. Under-using the outermost options is a documented property of Likert response, and the
+# one real respondent on record used an endpoint 0 TIMES IN 39 seven-point answers (21 battery and
+# 18 Part 17). The generator was asserting a response style no human in the data exhibits.
+#
+# 0.70 is the smallest value that brings endpoint use inside what 0 of 39 supports: 5% on the
+# battery and 7% on Part 17, against a 95% upper bound of about 9%. Chosen against that criterion
+# and NOT against a twin pass rate -- see docs/08 §2.4 and docs/DECISIONS.md, 2026-10-14. 93% of
+# Part 17 answers now fall in 2-6, against 78% before.
+#
+# Applies to every Likert answer the respondent gives, because a response style is a property of
+# the person: someone who avoids the ends describing today does not stop when imagining a change.
+# 0.0 is the inherited behaviour exactly.
+endpoint_avoidance: 0.70

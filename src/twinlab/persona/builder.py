@@ -144,7 +144,6 @@ class PersonaBuilder:
         self._work_context(twin, sections)
         self._household(twin, sections)
         self._battery(response, sections, items_used)
-        self._whys(response, sections)
         self._own_words(twin, response, sections)
 
         blocks: list[str] = []
@@ -256,21 +255,34 @@ class PersonaBuilder:
             clause = template_for(item_id).format(
                 anchor=anchor_for(item.scale_id, response.answers[item_id])
             )
-            sections[BLOCK_SECTION[item.block]].append(clause)
+            why = self._why_for(item_id, response)
+            sections[BLOCK_SECTION[item.block]].append(f"{clause} {why}" if why else clause)
             items_used.append(item_id)
 
-    def _whys(self, response: SurveyResponse, sections: dict[str, list[str]]) -> None:
-        """Each why-probe, word for word, in the section of the item it is paired with."""
-        for probe_id in WHY_PROBE_IDS:
+    def _why_for(self, item_id: str, response: SurveyResponse) -> str:
+        """This item's own why answer, verbatim, as the tail of its clause.
+
+        `SURVEY_SCALES_AND_WHY_PROBES.md` §4.2 fixes this shape — the why belongs to the sentence
+        its rating is in. The whys used to be appended at the end of the block's section instead,
+        which was readable while only three existed; with one probe per battery item it would put
+        eleven unattributed "In my own words: …" clauses in a row at the end of the PAC section,
+        and nothing in the passage would say which rating each explained.
+        """
+        for probe_id in self._probes_for(item_id):
             text = response.whys.get(probe_id)
-            if not text:
-                continue
-            anchor_item = WHY_PROBE_ANCHOR[probe_id]
-            section = BLOCK_SECTION[self.ref.items[anchor_item].block]
-            sections[section].append(
-                f"{WHY_PROBE_PROMPTS[probe_id]} "
-                f"{_verbatim(text, response.translations.get(probe_id))}"
-            )
+            if text:
+                return (
+                    f"{WHY_PROBE_PROMPTS[probe_id]} "
+                    f"{_verbatim(text, response.translations.get(probe_id))}"
+                )
+        return ""
+
+    def _probes_for(self, item_id: str) -> list[str]:
+        """The probe ids anchored to one item. At most one is ever answered — the schema has one
+        `why_text` column per item — but the lookup is a list so an anchor table with two entries
+        for one item fails visibly in a test rather than silently preferring whichever came first.
+        """
+        return [p for p in WHY_PROBE_IDS if WHY_PROBE_ANCHOR[p] == item_id]
 
     def _own_words(
         self, twin: Twin, response: SurveyResponse, sections: dict[str, list[str]]

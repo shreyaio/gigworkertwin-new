@@ -29,11 +29,12 @@ from config.settings import settings
 from twinlab.db.client import DbBackend, StorageBackend, get_backend, get_storage
 from twinlab.generator.synthetic import SYNTHETIC_DATA_TYPE
 from twinlab.ingest.reference_store import ReferenceData, reference
-from twinlab.ingest.survey_intake import build_rows
 from twinlab.models.reference import CONSTRUCTS
-from twinlab.models.twin import WHY_PROBE_ANCHOR, Background, SurveyResponse, Twin
+from twinlab.models.twin import SurveyResponse, Twin
 from twinlab.models.validity import assert_not_ablated
 from twinlab.models.view import (
+    BASELINE_MEASURED,
+    BASELINE_NOT_MEASURED,
     AnswerCompareBlock,
     AnswerCompareRow,
     StatusRow,
@@ -47,6 +48,7 @@ from twinlab.models.view import (
 )
 from twinlab.orchestrator.odometer import CONTROL_CODE
 from twinlab.persona.builder import build_persona
+from twinlab.persona.from_payload import twin_from_payload
 from twinlab.services.dials import what_twins_are_told  # noqa: F401  (re-exported below)
 from twinlab.services.generator import REAL_DATA_TYPE
 
@@ -115,7 +117,9 @@ VALIDITY_TESTS: tuple[ValidityTestCard, ...] = (
         number=6, name="Leave out the fairness items",
         question="Does the twin use its memory?",
         what_it_does="Rebuilds the persona without the fairness block and measures how far the "
-        "fairness answers move.", needs_live_model=True,
+        "fairness answers move — against the same twin asked twice on its real persona, so a twin "
+        "that simply answers differently each time is not mistaken for one using its history.",
+        needs_live_model=True,
     ),
     ValidityTestCard(
         number=7, name="A second AI model",
@@ -347,7 +351,13 @@ async def twin_panel(
 
     h3 = await _latest_quality(twin_id, "H3", db)
     if h3 is None:
-        quality_line = "Quality test: not run."
+        # Named as not run, not as failed. A twin with no quality row has not been tested; it has
+        # not been dropped, and the panel must not read as though it had (I15's spirit applied to
+        # a screen).
+        quality_line = (
+            "Quality test: not run. Run it on the Twins tab; the verdict lands here and on the "
+            "Validation tab."
+        )
     else:
         quality_line = (
             f"Quality test: average error {float(h3['mae']):.2f}, "
@@ -382,6 +392,11 @@ async def twin_panel(
             await _driver_answers(twin_id, db), baseline, variant, ref
         ),
         not_tested=bool(version_code) and variant is None,
+        # WP-10. `baseline` is the twin's own vector for the `00000` control cell — its noise
+        # floor, and the thing every shift on this screen is measured against. Empty means the
+        # control has not been run for this twin, which is the expected state until a session
+        # has run and is **not** the same as the twin having declined.
+        baseline_state=BASELINE_MEASURED if baseline else BASELINE_NOT_MEASURED,
     )
 
 
@@ -456,6 +471,10 @@ async def validation_view(
         detail = row.get("detail") or {}
         h3 = h3_by_twin.get(row["twin_id"]) or {}
         h3_detail = h3.get("detail") or {}
+        # The per-outcome `r` is written to the `correlations` column, keyed by metric name
+        # (`fairness`, `pushback`, `staying`), not into `detail`. Reading `detail["fairness_r"]`
+        # found nothing, so every r rendered as *Not tested* although the test had run.
+        h3_corr = h3.get("correlations") or {}
         out_rows.append(
             ValidationRow(
                 twin_id=row["twin_id"],
@@ -469,14 +488,26 @@ async def validation_view(
                 ),
                 versions=int(h3_detail.get("versions") or 0),
                 h3_error=float(h3["mae"]) if h3.get("mae") is not None else None,
-                fairness_r=h3_detail.get("fairness_r"),
-                pushback_r=h3_detail.get("pushback_r"),
-                staying_r=h3_detail.get("staying_r"),
+                fairness_r=h3_corr.get("fairness"),
+                pushback_r=h3_corr.get("pushback"),
+                staying_r=h3_corr.get("staying"),
             )
         )
 
+    # WP-7. Two facts the tab could not state: how many twins exist at all (so the empty state
+    # can say "0 of 50" rather than "nothing"), and which H3 protocol produced the rows — because
+    # six-in-one-context and six-in-isolation are different measurements and a table that mixes
+    # them silently is worse than one that is empty.
+    protocols = sorted(
+        {
+            str((row.get("detail") or {}).get("protocol") or "unrecorded")
+            for row in h3_rows
+        }
+    )
     summary = ValidationSummary(
         twins_checked=len(twins),
+        twins_total=await db.count("twins", None),
+        h3_protocols=protocols,
         h2_mae=mean([r.h2_error for r in out_rows if r.h2_error is not None]),
         h2_within_one=mean([r.within_one for r in out_rows if r.within_one is not None]),
         h3_mae=mean([float(r["mae"]) for r in h3_rows if r.get("mae") is not None]),
@@ -511,6 +542,7 @@ async def validity_results(backend: DbBackend | None = None) -> list[ValidityRes
                 f"validity result {row.get('validity_run_id')} claims {verdict} on zero twins. "
                 "A test that ran on nobody concluded nothing (I15)."
             )
+        version = row.get("version_code")
         out.append(
             ValidityResultRow(
                 when=str(row.get("created_at") or ""),
@@ -519,6 +551,7 @@ async def validity_results(backend: DbBackend | None = None) -> list[ValidityRes
                 model=str(row.get("model") or ""),
                 result=str(row.get("headline") or ""),
                 verdict=verdict,
+                version_code=str(version) if version else None,
             )
         )
     return out
@@ -634,9 +667,11 @@ async def importable_submissions(
 ) -> list[dict]:
     """Respondents in ``scope`` who could still become twins, in submission order.
 
-    The gate is `docs/06` §3.8's, and it is one rule used in two places — this function backs both
-    the live count and the import itself, so the number on the screen is the number that would be
-    imported and cannot drift from it.
+    The gate is `docs/06` §3.8's, and it is one rule used in three places — this function backs
+    both the live count and the import itself, and `services.hosted_survey.twin_gate` is the same
+    predicate applied to a single row the moment a driver presses send. The number on the screen
+    is therefore the number that would be imported, and a hosted twin and an imported twin pass
+    the same gate.
 
     * **eligible** and **consented** and `outcome = 'complete'` — a partial battery cannot build a
       persona (`PersonaIncomplete`);
@@ -645,22 +680,21 @@ async def importable_submissions(
     * **not already a twin** — `twins.submission_id` is unique, so a re-import is a duplicate, not
       an update. Evidence is append-only (I9) and a twin is rebuilt by deleting it, never by
       overwriting it in place.
+
+    The first four conditions are :func:`~twinlab.services.hosted_survey.twin_gate`, applied in
+    Python rather than as a database filter so that the single-row and the bulk path cannot drift.
+    The scope stays a filter: it selects which population is being imported, not who qualifies.
     """
+    from twinlab.services.hosted_survey import twin_gate
+
     db = backend or get_backend()
     rows = await db.select(
-        "survey_submissions",
-        [
-            *_scope_filter(scope),
-            ("eq", "consent_twin", True),
-            ("eq", "eligible", True),
-            ("eq", "consented", True),
-        ],
-        order=("submitted_at", False),
+        "survey_submissions", _scope_filter(scope), order=("submitted_at", False)
     )
     existing = {r["submission_id"] for r in await db.select("twins", None)}
     return [
         r for r in rows
-        if r["submission_id"] not in existing and r.get("outcome") == "complete"
+        if r["submission_id"] not in existing and twin_gate(r) is None
     ]
 
 
@@ -682,105 +716,21 @@ async def available_survey_twins(
 def _twin_from_payload(
     submission: dict, payload: dict, ref: ReferenceData
 ) -> tuple[Twin, SurveyResponse]:
-    """A `Twin` and its `SurveyResponse`, rebuilt from the raw object the answers landed in.
+    """`docs/06` §3.8's rebuild, delegated to the one shared implementation.
 
-    **Read from Storage rather than from the row, because the row does not have it.**
-    `survey_submissions` carries no column for age, gender, tenure or any Part 4 answer, and none
-    of Part 14's own-words questions is in the frozen 73-item register, so none of it reaches
-    `survey_answers` either. All of it is in the raw object, and `twins.background` exists to
-    carry it — `docs/01` §6.2 is explicit that without Part 14 "the persona loses the driver's own
-    words". A twin built from the row alone has no demographics and an empty background, which is
-    a lossless persona (I6) in name only.
-
-    The same `build_rows` live intake uses re-derives it, over the same bytes, so an imported twin
-    cannot carry a field shape a real submission could not.
+    The body moved to `persona.from_payload` when the hosted survey arrived and needed exactly
+    this. Two copies would let an imported twin and a hosted twin drift into different field
+    shapes, which no test downstream would catch — they would simply be different people.
     """
-    rows = build_rows(
+    return twin_from_payload(
+        submission,
         payload,
-        raw_object_path=str(submission.get("raw_object_path") or ""),
-        data_type=str(submission.get("data_type") or REAL_DATA_TYPE),
-        batch_id=submission.get("batch_id"),
-        arm=submission.get("arm"),
-        arm_source=submission.get("arm_source"),
-        ref=ref,
-    )
-    extras = rows["extras"]
-    fields = extras["fields"]
-    background = extras["background"]
-
-    twin = Twin(
-        twin_id=submission["submission_id"],
-        submission_id=submission["submission_id"],
-        # `POPULATION_SOURCES` and `delete_synthetic` both key on this, so a twin built from a
-        # synthetic row must say so: deleting the batch has to take its twins with it.
+        ref,
+        data_type=REAL_DATA_TYPE,
         source=(
-            "synthetic"
-            if submission.get("data_type") == SYNTHETIC_DATA_TYPE
-            else "real"
-        ),
-        service=_text(fields.get("service")) or submission.get("service"),
-        city=_text(fields.get("city")) or submission.get("city"),
-        age=_int(fields.get("age")),
-        gender=_text(fields.get("gender")),
-        # The Form asks years; the twin row and the persona speak months (`docs/DECISIONS.md`,
-        # 2026-09-22). One conversion, here, matching `generator.synthetic.years_from_months`.
-        tenure_months=_months(fields.get("tenure_years")),
-        hours_per_week=_int(fields.get("hours_per_week")),
-        background=Background(
-            platform_count=_text(background.get("platform_count")),
-            other_apps=_text(background.get("other_apps")),
-            vehicle_arrangement=_text(background.get("vehicle_arrangement")),
-            dependants=_int(background.get("dependants")),
-            other_household_income=_text(background.get("other_household_income")),
-            education=_text(background.get("education")),
-            years_driving_before_uber=_float(background.get("years_driving_before_uber")),
-            own_words={k: str(v) for k, v in sorted(extras["own_words"].items()) if v},
+            "synthetic" if submission.get("data_type") == SYNTHETIC_DATA_TYPE else "real"
         ),
     )
-
-    answers = {
-        row["item_id"]: int(row["value_num"])
-        for row in rows["answers"]
-        if row.get("value_num") is not None
-    }
-    whys = {
-        probe: str(row["why_text"])
-        for row in rows["answers"]
-        if row.get("why_text")
-        for probe, anchor in WHY_PROBE_ANCHOR.items()
-        if anchor == row["item_id"]
-    }
-    response = SurveyResponse(
-        twin_id=twin.twin_id,
-        answers=answers,
-        whys=whys,
-        own_words=dict(twin.background.own_words),
-    )
-    return twin, response
-
-
-def _text(value: Any) -> str | None:
-    text = str(value).strip() if value is not None else ""
-    return text or None
-
-
-def _int(value: Any) -> int | None:
-    try:
-        return int(float(str(value).strip()))
-    except (TypeError, ValueError):
-        return None
-
-
-def _float(value: Any) -> float | None:
-    try:
-        return float(str(value).strip())
-    except (TypeError, ValueError):
-        return None
-
-
-def _months(years: Any) -> int | None:
-    value = _float(years)
-    return None if value is None else round(value * 12)
 
 
 async def import_survey_twins(
@@ -804,9 +754,15 @@ async def import_survey_twins(
     nothing else, and the rows that did import are real: a single failing respondent in a batch of
     500 must not discard 499 good twins.
     """
+    from twinlab.services.hosted_survey import twin_gate
+
     db = backend or get_backend()
     store = storage or get_storage()
     ref = reference()
+
+    # Snapshot **before** the import loop. Taken afterwards, every row this run just imported
+    # would also read as "already a twin" and be counted twice — imported and skipped at once.
+    already_twin_ids = {r["submission_id"] for r in await db.select("twins", None)}
 
     candidates = await importable_submissions(scope, db)
     if limit is not None:
@@ -850,15 +806,27 @@ async def import_survey_twins(
             invalid.append(f"{submission_id}: {type(exc).__name__}: {str(exc)[:160]}")
             log.warning("twin import failed for %s: %s", submission_id, exc)
 
-    # Everything in scope that was NOT a candidate: already a twin, or gated out. Counted rather
-    # than listed, because on a 500-row batch the list is the batch.
+    # Everything in scope that was NOT a candidate, **split by why**. Counted rather than listed,
+    # because on a 500-row batch the list is the batch.
+    #
+    # The two reasons are opposite outcomes and were previously one `skipped` number, which made
+    # the screen report a respondent who already has a working twin with the sentence "Nothing was
+    # eligible". Since the hosted questionnaire builds the twin at submit time, *every* hosted
+    # respondent arrives here already imported, so that reading is now the common one rather than
+    # the rare one.
     in_scope = await db.select("survey_submissions", _scope_filter(scope))
-    skipped = len(in_scope) - len(candidates)
+    already = sum(1 for r in in_scope if r["submission_id"] in already_twin_ids)
+    gated = sum(
+        1 for r in in_scope
+        if r["submission_id"] not in already_twin_ids and twin_gate(r) is not None
+    )
 
     return TwinImportResult(
         scope=scope,
         imported=imported,
-        skipped=skipped,
+        skipped=already + gated,
+        already_twins=already,
+        gated=gated,
         invalid=len(invalid),
         reasons=invalid[:20],
         remaining=await available_survey_twins(scope, db),

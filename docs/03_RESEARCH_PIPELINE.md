@@ -210,9 +210,10 @@ Five identical `"No change from today."` lines. Measures how much a twin's answe
 nothing changed. Every twin's baseline for every shift is its **own survey answers**, so each
 driver is their own control; `00000` bounds the instrument's own instability on top of that.
 
-`00000` runs once per session, before the sweep, and does not consume an iteration. It is **blocked
-from the Dial board's "Ask the twins" button** — it is a control the orchestrator runs, not a cell a
-researcher pokes at.
+`00000` is answered once per twin per config, inside the twin quality test (RESEARCHER 2026-10-05).
+A session does not ask it: the session records its floor from the panel's stored answers and
+consumes no iteration. It is **blocked from the Dial board's "Ask the twins" button** — it is a
+control the orchestrator records, not a cell a researcher pokes at.
 
 ### 6.2 `SHAM` — the demand-characteristic floor
 
@@ -223,7 +224,8 @@ shown change-shaped text.
 **Zero free parameters.** Its content is the three `Met` criteria read straight out of
 `criterion_findings.json`. We did not pick a plausible-sounding placebo; the codebook named it.
 
-SHAM occupies `dial = 3` in `lever_paragraphs`: its unfilled levers announce that lever's *existing*
+SHAM is answered once per twin per config inside the quality test, like `00000` (§6.1). It occupies
+`dial = 3` in `lever_paragraphs`: its unfilled levers announce that lever's *existing*
 driver-facing policy, so they are neither dial-0 lines nor live-cell paragraphs. Its containment
 gate is scoped to that existing policy. Researcher-approved; see `docs/DECISIONS.md`.
 
@@ -290,10 +292,10 @@ text that produced it (I11).
 Two documents, kept apart (I8).
 
 ```
-[system]     twin_v1.md
+[system]     twin_v2.md
 [persona]    <<<PERSONA>>>    whys, open answers, stable, no numbers
 [scenario]   <<<SCENARIO>>>   5 lever paragraphs, RANDOMISED order, no code, no dial digits
-[baseline]   <<<BASELINE>>>   the twin's own previous answers: AMQ1=6, AMQ2=5, …  NUMBERS ONLY
+[baseline]   <<<BASELINE>>>   OMITTED by default since 2026-10-07 (show_baseline=false) — see below
 [battery]    <<<BATTERY>>>    the 37 items to re-answer, each with its own range
 ```
 
@@ -310,10 +312,15 @@ The order actually shown, the seed, the wording variant, the persona hash, the d
 version, the prompt version and the model name are all persisted on `twin_answers` (I11), so any
 round is reconstructible byte-for-byte.
 
-**Anchoring is deliberate and bounded.** Showing a twin its own baseline numbers pulls answers
-toward them — that is what keeps a twin recognisably its own driver. The bound on it is
-`SHAM − 00000`, reported with every cell. `show_baseline` is a recorded field, not a UI control:
-there is no no-baseline arm.
+**Baseline is not shown, by default, since 2026-10-07** (`docs/DECISIONS.md`). This section used to
+argue the opposite: that anchoring a twin to its own baseline numbers was what kept it recognisably
+its own driver, bounded by `SHAM − 00000`. That bound did not hold in practice — the twin prompt
+told the model, in words, that leaving a number unchanged was a normal answer, and a twin shown its
+own numbers overwhelmingly did exactly that. The `00000` control came back at an index of `0.000` in
+most sessions checked, which is not a measured noise floor, it is the twin complying with an
+instruction. `show_baseline` remains a recorded field, not a UI control — a researcher-set default,
+not a per-run toggle — but the default is now `false`. A twin's tie to its own driver now runs
+entirely through the persona passage (§7), which is already where `docs/08` §4 test 1 looks.
 
 ---
 

@@ -361,13 +361,29 @@ def render_studio(badge: str | None = None) -> None:
                     "Watch it in **Twin Lab → Agents → What the agents said**.",
                 )
             if state["exists"]:
-                # Rendered and failed. I3: it must not reach a twin, and `render_and_check` will
-                # return the stored failure rather than re-rolling, which is `docs/03` §5's halt.
+                # Rendered and failed. I3 is unchanged — it must not reach a twin — but from
+                # M19 WP-2 a stored failure caches the *verdict*, not the *attempt*: the cell is
+                # retryable while any of its lever paragraphs still has its one durable
+                # re-render. The button is offered only when there is budget to spend, because a
+                # retry with none would make no model call and change nothing.
+                note = f"It must not be shown to a twin (I3). {esc(state['notes'][:300])}"
+                if state["can_retry"]:
+                    levers = ", ".join(state["retryable_levers"])
+                    return (
+                        status_dot("failed", f"{code} did not pass the Checker"),
+                        budget_summary(state["budget"]),
+                        gr.update(visible=True, value="Render this version again"),
+                        f"{note}\n\nIt can be rendered again: "
+                        f"{len(state['retryable_levers'])} lever paragraph(s) "
+                        f"({levers}) still have their one re-render.",
+                    )
                 return (
                     status_dot("failed", f"{code} did not pass the Checker"),
                     "",
                     gr.update(visible=False),
-                    f"It must not be shown to a twin (I3). {esc(state['notes'][:300])}",
+                    f"{note}\n\nEvery lever paragraph has spent its one re-render, so pressing "
+                    "again would make no model call and change nothing. This cell is "
+                    "unrenderable under the current style version.",
                 )
             return (
                 status_dot("pending", f"{code} has never been rendered"),

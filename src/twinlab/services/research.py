@@ -46,13 +46,13 @@ from twinlab.models.research import (
 from twinlab.orchestrator.odometer import CONTROL_CODE, N_CODES, SHAM_CODE
 from twinlab.stats.spec import (
     ANTECEDENT_TARGETS,
-    ARM_CONSTRUCT,
     ARM_REFERENCE,
     INTENTIONS,
     INTERACTION_CONSTRUCT,
     MODERATED,
     MODERATOR,
     STRUCTURAL_EDGES,
+    arm_constructs,
     build_model_spec,
     construct_items,
 )
@@ -161,7 +161,8 @@ def diagram_layers() -> dict[str, int]:
     for code in INTENTIONS:
         layers[code] = satisfaction_layer + 1
     layers[MODERATOR] = satisfaction_layer
-    layers[ARM_CONSTRUCT] = 0
+    for construct in arm_constructs():
+        layers[construct.code] = 0
     return layers
 
 
@@ -179,13 +180,17 @@ def diagram() -> tuple[list[DiagramNode], list[DiagramEdge]]:
     """
     layers = diagram_layers()
     labels = {c.code: c.label for c in CONSTRUCTS}
+    # One node per arm since 2026-10-11: the model estimates a separate path for each, so a
+    # single "arm" node would show one arrow where there are three (`AUDIT_PROTOTYPE_PARITY` §A2).
+    arms = arm_constructs()
     nodes = [
         DiagramNode(
-            code=ARM_CONSTRUCT,
-            label=f"What the platform commits to ({ARM_REFERENCE} is the reference)",
+            code=arm.code,
+            label=f"{arm.label} (vs {ARM_REFERENCE})",
             role="antecedent",
             layer=0,
         )
+        for arm in arms
     ]
     nodes += [
         DiagramNode(
@@ -195,7 +200,11 @@ def diagram() -> tuple[list[DiagramNode], list[DiagramEdge]]:
         for c in CONSTRUCTS
     ]
 
-    edges = [DiagramEdge(source=ARM_CONSTRUCT, target=t) for t in ANTECEDENT_TARGETS]
+    edges = [
+        DiagramEdge(source=arm.code, target=t)
+        for arm in arms
+        for t in ANTECEDENT_TARGETS
+    ]
     edges += [DiagramEdge(source=s, target=t) for s, t in STRUCTURAL_EDGES]
     edges += [DiagramEdge(source=MODERATED, target=t) for t in INTENTIONS]
     edges += [

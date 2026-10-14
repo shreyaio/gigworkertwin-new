@@ -72,6 +72,7 @@ source_modules =
     twinlab.models
     twinlab.ingest
     twinlab.persona
+    twinlab.survey
     twinlab.variant
     twinlab.agents
     twinlab.orchestrator

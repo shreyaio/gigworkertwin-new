@@ -142,9 +142,15 @@ async def lab_status(backend: DbBackend | None = None) -> list[StatusRow]:
     "Best so far" reads ``Nothing yet`` when no cell has completed — never ``0.000``, which would
     be indistinguishable from a measured null result.
     """
+    from twinlab.services.config_match import current_fingerprint, describe, qualified_state
+
     backend = backend or get_backend()
     twins = await _count(backend, "twins")
-    passed = await _count(backend, "twin_quality_runs", _KEPT_H3)
+    # Counted under the **live** config only (`005`): a verdict from another model is not a pass.
+    fingerprint = await current_fingerprint(backend)
+    state = await qualified_state(fingerprint, backend)
+    passed = state["controlled"]
+    stale = state["stale"]
     answers = await _count(backend, "twin_answers")
     indexed = await tested_codes(backend)
     scored = {c: v for c, v in indexed.items() if v is not None}
@@ -154,9 +160,13 @@ async def lab_status(backend: DbBackend | None = None) -> list[StatusRow]:
     else:
         best = "Nothing yet"
 
+    stale_note = f"; {stale} qualified under another config" if stale else ""
     return [
         StatusRow(label="Twins", value=str(twins)),
-        StatusRow(label="Passed quality test", value=f"{passed} of {twins}"),
+        StatusRow(
+            label="Passed quality test",
+            value=f"{passed} of {twins} for {await describe(backend)}{stale_note}",
+        ),
         StatusRow(label="Versions tested", value=f"{len(indexed)} of {TESTABLE_CODES}"),
         StatusRow(label="Answers saved", value=str(answers)),
         StatusRow(label="Best so far", value=best),

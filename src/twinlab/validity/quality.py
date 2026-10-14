@@ -32,6 +32,10 @@ H3_ITEMS_EXPECTED = 18
 #: H2 collects the 16 mirrored outcome items. `docs/08` §3.1.
 H2_ITEMS_EXPECTED = 16
 
+#: The fewest paired points from which a correlation is reported. Three, because `r` over two
+#: points is ±1 by construction. See :func:`pearson_r`.
+R_MIN_POINTS = 3
+
 
 class QualityScoreEmpty(ValueError):
     """No item scored, so there is no score. I15, `docs/08` §2.2.
@@ -101,9 +105,16 @@ def pearson_r(xs: list[float], ys: list[float]) -> float | None:
     identically has an *undefined* ordering, not an uncorrelated one, and reporting 0.0 would let
     "predicted everyone's mean" look like a measured null — exactly what validity test 3 exists to
     rule out.
+
+    ``None`` on fewer than :data:`R_MIN_POINTS` pairs, for the same reason and not as a
+    convenience: with two points ``r`` is **exactly** ±1 whenever both sides vary at all, so it
+    carries no information about ordering and would be stored as if it did. The prototype guarded
+    this and the first Python port did not. H3 gives six points per outcome by design, so fewer
+    than three means items were lost — which is a reason to report nothing, not to report a
+    perfect correlation over the two that survived.
     """
     n = len(xs)
-    if n < 2 or n != len(ys):
+    if n < R_MIN_POINTS or n != len(ys):
         return None
     mx, my = sum(xs) / n, sum(ys) / n
     sxx = sum((x - mx) ** 2 for x in xs)
@@ -121,13 +132,13 @@ def h3_correlations(
 
     MAE says the twin is close; `r` says its **ordering of the six worlds** matches its human's. A
     twin can have low MAE and near-zero `r` by predicting everyone's mean, so both are reported.
+
+    The too-few-points rule lives in :func:`pearson_r` alone. This function used to carry its own
+    copy of the floor, which is how the two came to disagree.
     """
     out: dict[str, float | None] = {}
     for outcome, ids in items_by_outcome.items():
         paired = [(human[i], twin[i]) for i in ids if i in human and i in twin]
-        if len(paired) < 2:
-            out[outcome] = None
-            continue
         out[outcome] = pearson_r([float(h) for h, _ in paired], [float(t) for _, t in paired])
     return out
 
@@ -165,6 +176,7 @@ def quality_row(
     arm: str | None = None,
     correlations: dict[str, float | None] | None = None,
     config_version: int = 1,
+    config_fingerprint: str | None = None,
 ) -> dict:
     """The `quality_run_record` RPC parameters. `docs/08` §2.5, I9.
 
@@ -194,4 +206,6 @@ def quality_row(
         "p_detail": detail,
         "p_model": model,
         "p_config_version": config_version,
+        # `005`. The verdict is only valid for the config it was made under (docs/DECISIONS.md).
+        "p_config_fingerprint": config_fingerprint,
     }

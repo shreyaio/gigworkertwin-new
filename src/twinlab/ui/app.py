@@ -15,7 +15,7 @@ import gradio as gr
 
 from . import pages
 from .components import drain_pending_loads
-from .theme import APP_TITLE, FONT_HEAD, ROUTES, TWINLAB_CSS
+from .theme import APP_TITLE, FONT_HEAD, PARTICIPANT_ROUTES, ROUTES, TWINLAB_CSS
 
 # Gradio 5 takes `css` on the Blocks constructor; Gradio 6 moved it off. Detect rather than
 # pin behaviour to one, so the same file works on the pinned 5.x and on a local 6.x.
@@ -36,6 +36,8 @@ _RENDERERS = {
     "/agents": pages.render_agent_studio,
     "/statistics": pages.render_statistics,
     "/research": pages.render_research_model,
+    # Driver-facing. A real route, deliberately not in ROUTES — see PARTICIPANT_ROUTES.
+    "/take": pages.render_survey_take,
 }
 
 
@@ -92,7 +94,11 @@ def build_ui() -> gr.Blocks:
 
     # ROUTES[0] is the root Blocks above; the remaining seven become real URLs. `route()`
     # refuses to run inside a Blocks context, so the loop sits outside the `with`.
-    for label, path in ROUTES[1:]:
+    #
+    # PARTICIPANT_ROUTES are built the same way and are just as real, but they are kept out of
+    # ROUTES so that `global_nav` — which draws its strip from ROUTES — cannot put a link to the
+    # researcher's application in front of a driver filling in the questionnaire.
+    for label, path in (*ROUTES[1:], *PARTICIPANT_ROUTES):
         with demo.route(label, path):
             if not _ACCEPTS_CSS_KWARG:
                 gr.HTML(f"<style>{TWINLAB_CSS}</style>")

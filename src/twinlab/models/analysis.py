@@ -189,6 +189,53 @@ class CellShifts(BaseModel):
         return len(self.twin_ids)
 
 
+class NoiseFloor(BaseModel):
+    """How much a twin moves when nothing changed. `docs/07` §6, measured at two levels.
+
+    **One number was not enough, and the single number was systematically too small.** Until
+    2026-10-07 the floor was ``|index(00000)|`` — the absolute value of a *signed, sign-flipped,
+    cross-metric mean*. Every statistic judged against it is a **mean of absolute values**, and by
+    Jensen's inequality ``|E[X]| <= E[|X|]``: a floor built by letting metrics cancel can never
+    exceed the quantity it gates, so every floor-judged test was biased toward `FAIL`. The two
+    levels here are the two functionals the five tests actually compute, so each is compared with
+    something on its own scale.
+
+    * :attr:`cell` — mean over the six metrics of ``|mean over twins of the shift|``. The
+      cell-level movement, which is what tests 2 and 8 measure.
+    * :attr:`twin` — mean over the six metrics of ``mean over twins of |the twin's own shift|``.
+      The per-twin movement, which is what tests 4, 5 and 6 measure. It is always at least
+      :attr:`cell` and is usually much larger, because one twin moving up and another down leaves
+      :attr:`cell` at zero and :attr:`twin` untouched.
+
+    Both breakdowns are carried per metric, because tests 4 and 6 judge a **single** metric
+    (happiness, fairness) and a six-metric average is not that metric's floor.
+
+    ``twins_n`` is ``gt=0`` by construction: a floor measured on nobody is not a floor, and a cell
+    judged against an unmeasured floor is judged against nothing (I15's shape).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    #: Mean over metrics of |mean shift|. Gates the cell-level statistics.
+    cell: float = Field(ge=0)
+    #: Mean over metrics of mean |per-twin shift|. Gates the per-twin statistics.
+    twin: float = Field(ge=0)
+    cell_by_metric: dict[str, float] = Field(default_factory=dict)
+    twin_by_metric: dict[str, float] = Field(default_factory=dict)
+    twins_n: int = Field(gt=0)
+
+    def for_metric(self, metric: str, *, per_twin: bool) -> float:
+        """One metric's floor at the level asked for, falling back to the overall figure.
+
+        The fallback is the **overall** floor rather than zero: a metric absent from the control
+        measurement has no floor of its own, and zero is the one value guaranteed to be wrong in
+        the direction that manufactures a verdict.
+        """
+        table = self.twin_by_metric if per_twin else self.cell_by_metric
+        default = self.twin if per_twin else self.cell
+        return table.get(metric, default)
+
+
 class Interaction(BaseModel):
     """Whether two levers compound or substitute. `docs/07` §5.
 

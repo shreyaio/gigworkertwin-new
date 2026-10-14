@@ -9,6 +9,8 @@ would pass just as happily against a coercing implementation.
 from __future__ import annotations
 
 import re
+import sys
+import types
 
 import pytest
 
@@ -903,3 +905,63 @@ async def test_an_out_of_range_model_instance_is_named_not_clamped():
     assert outcome.ok is False, "a 6 on a 5-point item was accepted"
     assert [d.kind for d in outcome.defects] == ["out_of_range"]
     assert asked[1] is not None and "1 to 5" in asked[1]
+
+
+# ------------------------------------------------- the provider a run records is the one it reached
+
+
+def test_the_openai_provider_refuses_rather_than_falling_back_to_ollama(monkeypatch):
+    """M21, `docs/DECISIONS.md` 2026-10-08. A recorded provider must be one the call reached.
+
+    Ollama Cloud speaks the OpenAI wire format, so `openai` used to resolve through the **same**
+    `OpenAIProvider(base_url=ollama_base_url, api_key=ollama_api_key)` as `ollama`. Selecting it
+    in Agent Studio changed nothing, sent the Ollama key to Ollama, and wrote `openai` onto the
+    run — a provider the call never reached. Harmless while both landed somewhere real; a silent
+    misattribution in the evidence as soon as a second endpoint exists.
+    """
+    from twinlab.agents import registry as reg
+    from twinlab.models.agent import ModelRef
+
+    monkeypatch.setattr(reg.settings, "openai_base_url", "", raising=False)
+    with pytest.raises(reg.ConfigError) as caught:
+        reg.resolve_model(ModelRef(provider="openai", name="gpt-4o"))
+
+    message = str(caught.value)
+    assert "OPENAI_BASE_URL" in message
+    # It must point at the thing that actually works rather than only refusing: a second *model*
+    # needs no second provider (validity test 7).
+    assert "'ollama'" in message
+
+
+def test_a_second_model_needs_no_second_provider(monkeypatch):
+    """Validity test 7 compares two model **names** on one endpoint. `docs/08` §4 test 7.
+
+    Every model the configured endpoint serves — `mistral-large-4`, `deepseek-v4-pro:0813` — is
+    reachable by name with nothing configured, because the test overrides `cfg.model.name` and
+    touches neither the provider nor the base URL.
+    """
+    from twinlab.agents import registry as reg
+    from twinlab.models.agent import ModelRef
+
+    built: dict[str, object] = {}
+
+    class _Model:
+        def __init__(self, name, provider=None):
+            built["name"], built["provider"] = name, provider
+
+    class _Provider:
+        def __init__(self, base_url, api_key):
+            built["base_url"] = base_url
+
+    monkeypatch.setitem(
+        sys.modules, "pydantic_ai.models.openai", types.SimpleNamespace(OpenAIChatModel=_Model)
+    )
+    monkeypatch.setitem(
+        sys.modules, "pydantic_ai.providers.openai", types.SimpleNamespace(OpenAIProvider=_Provider)
+    )
+    monkeypatch.setattr(reg.settings, "ollama_base_url", "https://ollama.com/v1", raising=False)
+
+    reg.resolve_model(ModelRef(provider="ollama", name="mistral-large-4"))
+
+    assert built["name"] == "mistral-large-4"
+    assert built["base_url"] == "https://ollama.com/v1"

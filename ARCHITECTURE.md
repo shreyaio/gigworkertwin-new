@@ -104,7 +104,9 @@ has **no tools** and cannot fetch a gap, a chunk or a criterion. If it could, an
 could absorb threshold 2.2 material and `01000` would stop differing from `02000`.
 
 **I3 — Containment is enforced, not trusted.** Every render passes the Checker before any twin
-sees it. A commitment outside the DeltaSpec appearing in the text is a hard failure.
+sees it. A commitment outside the DeltaSpec appearing in the text is recorded on the report.
+*(Amended 2026-10-04, researcher decision: containment hits are reported, not enforced, because
+predefined commitments can legitimately share wording. Coverage remains enforced.)*
 
 **I4 — Lever paragraphs are cached on `(lever, dial, style_version)`.** There are exactly **10**
 non-zero paragraphs plus one fixed zero string. All 243 cells are assembled from those 11 strings.
@@ -426,6 +428,12 @@ The sham has zero free parameters: its commitment set is read from `criterion_fi
 chosen. `SHAM − 00000` is the demand-characteristic floor and is reported alongside every live
 cell. Any cell whose shift is smaller than that floor is **not interpretable**, and the analyst is
 instructed to say so.
+
+**Where the controls are answered (RESEARCHER 2026-10-05).** Each twin answers `00000` and `SHAM`
+once per config, inside the twin quality test (`docs/08` §2.1 step 6). A session never asks them: it
+records each control from its panel's stored answers under its own config fingerprint, so the
+floors are the same measurement the versions get, at no per-session cost. A twin with no control
+answer under the live config is not qualified, and a session cannot start or resume on it.
 
 ### 5.3 The four human arms
 

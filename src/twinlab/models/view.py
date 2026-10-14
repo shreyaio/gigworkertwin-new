@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _View(BaseModel):
@@ -235,6 +235,33 @@ class AnswerCompareBlock(_View):
     rows: list[AnswerCompareRow] = Field(default_factory=list)
 
 
+#: What the *Twin today* column means when it is empty. M19 WP-10.
+#:
+#: `00000` runs **once per session**, by the orchestrator, before the sweep
+#: (`loop.CONTROL_CELLS`) — it is refused from the Dial board by design. So with no session ever
+#: run the column is empty for every twin in every row, and nothing on screen distinguished "not
+#: yet measured" from "the twin declined to answer". Both rendered as a dash, and one of those is
+#: a bug while the other is the expected state of a fresh database.
+BASELINE_MEASURED = "measured"
+BASELINE_NOT_MEASURED = "not measured"
+
+#: The *Twin today* column header, naming the cell its numbers come from. Declared here rather
+#: than built in `ui/components/domain.py` because `ui/` may import only `services/` and
+#: `models/` (`ARCHITECTURE.md` §4) and `CONTROL_CODE` lives in `orchestrator/`. The literal is
+#: pinned against that constant by a test, so the two cannot drift.
+BASELINE_COLUMN_HEADER = "Twin today (00000)"
+
+#: The sentence the panel shows above the table when the baseline has not been measured. It
+#: appears **once**, rather than as a column of dashes: a dash can be read as a zero, and I17
+#: forbids rendering an unmeasured cell as anything that could be.
+BASELINE_NOT_MEASURED_NOTE = (
+    "Twin today has not been measured for this twin. It is the twin's answers to the 00000 "
+    "control cell — what it says when shown no change — which the orchestrator runs "
+    "once at the start of every session. No session has produced it yet, so the column is empty "
+    "rather than zero."
+)
+
+
 class TwinPanel(_View):
     """The Twins side panel, in the seven-step order of `docs/06` §3.3.
 
@@ -253,6 +280,9 @@ class TwinPanel(_View):
     scenario_text: list[str] = Field(default_factory=list)
     blocks: list[AnswerCompareBlock] = Field(default_factory=list)
     not_tested: bool = False
+    #: :data:`BASELINE_MEASURED` or :data:`BASELINE_NOT_MEASURED`. WP-10: *not yet measured* and
+    #: *the twin declined* must be distinguishable, and neither may be rendered as a number.
+    baseline_state: str = BASELINE_NOT_MEASURED
 
 
 class ValidationSummary(_View):
@@ -267,6 +297,16 @@ class ValidationSummary(_View):
     #: is not optional: validation on synthetic data always looks good, and it tests the
     #: machinery rather than whether the twins are valid.
     synthetic_present: bool = False
+    #: How many twins exist at all, so the empty state can say *"0 of 50 twins have a stored
+    #: quality run"* rather than only *"nothing here"*. M19 WP-7: the tab's empty state used to
+    #: instruct the researcher to press a disabled button, saying nothing about where the numbers
+    #: come from.
+    twins_total: int = 0
+    #: Which H3 presentation produced these rows, from `twin_quality_runs.detail["protocol"]`.
+    #: More than one value means the table is **mixing measurements** and they cannot be pooled
+    #: (M19 WP-3): six-in-one-context and six-in-isolation are different protocols. Empty when
+    #: nothing has been run; `"unrecorded"` for rows written before the field existed.
+    h3_protocols: list[str] = Field(default_factory=list)
 
 
 class ValidationRow(_View):
@@ -304,6 +344,11 @@ class ValidityResultRow(_View):
 
     ``verdict`` includes ``INCONCLUSIVE``, which is mandatory whenever ``twins_n = 0`` (I15). The
     prototype recorded live-mode `PASS` verdicts on zero twins; that must be unrenderable here.
+
+    ``version_code`` is the stimulus the test ran against — ``None`` for tests 1 and 3, which use
+    none (`docs/DECISIONS.md`, 2026-10-07, `006_validity_version_code.sql`). A row from before that
+    migration has no value to show here either, which is also ``None`` — "not recorded" and "no
+    version applies" are the same blank on screen, and neither is guessed.
     """
 
     when: str
@@ -312,6 +357,7 @@ class ValidityResultRow(_View):
     model: str
     result: str
     verdict: Literal["PASS", "FAIL", "CHECK", "INCONCLUSIVE"]
+    version_code: str | None = None
 
 
 class EventRow(_View):
@@ -368,6 +414,25 @@ class AgentCardView(_View):
     #: The latest operational line, e.g. ``Rendered 10 paragraphs, style v1``.
     latest: str = ""
     enabled: bool = True
+    #: **The deterministic half of this agent's work**, when it has one. M19 WP-8 item 6.
+    #:
+    #: The researcher's instinct that the Policy Designer "doesn't really need a live AI model" is
+    #: half right, and that half is already deterministic: selecting the commitment set is
+    #: `variant/lookup.py`, a pure frozen lookup over `dial_lookup.json` and `gaps.json` that
+    #: consults no model (I1). Only turning that set into Uber-voice prose uses one. The card
+    #: showed the two as a single step, so the model-free half was invisible and the agent looked
+    #: more discretionary than it is.
+    #:
+    #: Presentation only — it makes an existing structural fact visible and changes no behaviour.
+    deterministic_step: str = ""
+    #: The step that does cost a model call, and how many.
+    model_step: str = ""
+    #: True when this agent's `enabled` switch may not be turned off, with the reason below.
+    #: The Checker's probe is what enforces I3, so disabling it is refused outright (WP-8 item 4).
+    undisableable: bool = False
+    undisableable_reason: str = ""
+    #: `agent_configs.version` actually in force, or ``None`` when the YAML seed is running.
+    live_version: int | None = None
 
 
 class ResultsPanel(_View):
@@ -512,6 +577,28 @@ class GeneratorSpec(_View):
     shared_mood: float = Field(default=0.6, ge=0.0, le=1.0)
     #: §4's *answer noise*: standard deviation of each Likert draw, in scale points.
     likert_sd: float = Field(default=0.3, gt=0.0, le=3.0)
+    #: How far, in 1–7 scale points, a respondent at the extreme of the disposition sits from
+    #: their construct's batch mean. **The ceiling on how distinguishable two respondents are**,
+    #: and until `v6` a hard-coded `1.5` inside `_respondent_targets`.
+    #:
+    #: At `1.5`, with the default spread and shared mood, a construct target has a between-driver
+    #: SD of about 0.62 points — so the expected gap between two random respondents' answers is
+    #: ~0.70, and after `centre_for_points` compresses it, four respondents in five give the
+    #: *same* integer on a 5-point item. The whole panel then renders near-identical persona
+    #: clauses, and a wrong-person comparison asking for a half-point gap (`docs/08` §4 test 1) is
+    #: being asked for most of a ceiling that an oracle twin could not clear.
+    #:
+    #: `2.4` puts the between-driver SD near 1.0 on 1–7, which is what these instruments show in
+    #: published samples, with only mild clipping at the ends. Raising `likert_sd` would widen
+    #: the panel too, but as noise uncorrelated with the construct — apparent individuality
+    #: bought by destroying the construct reliability the PLS-SEM needs. Between-driver signal is
+    #: raised here; within-driver noise stays where it is.
+    between_driver_swing: float = Field(default=2.4, ge=0.0, le=4.0)
+    #: The share of respondents who have a support or deactivation story at all, which is what
+    #: `OWN3` narrates. A *structural* difference between respondents rather than a difference in
+    #: wording: some drivers have been blocked and some have not, and that distinguishes two
+    #: passages far more than paraphrase variety does.
+    incident_share: float = Field(default=0.35, ge=0.0, le=1.0)
 
     # ---- How strongly they react to each change (§4, right column, row 2)
     #: §4's five reaction sliders, keyed by lever id. **0 means no reaction, 1 normal, 2 strong**,
@@ -523,11 +610,180 @@ class GeneratorSpec(_View):
     lever_reactions: dict[str, float] = Field(
         default_factory=lambda: {"L1": 2.0, "L2": 1.0, "L3": 1.0, "L4": 1.0, "L5": 1.0}
     )
+    #: **Which construct each lever moves, and by how much per dial step**, in 1–7 scale points.
+    #: Signed: more protection raises fairness and lowers the wish to leave, and the sign lives
+    #: here rather than being applied from `index_sign` by the caller — one scalar cannot carry
+    #: both directions, which is exactly what the pre-`v5` generator tried to do.
+    #:
+    #: Ported from the Apps Script prototype's `GEN_LEVER` (`docs/AUDIT_PROTOTYPE_PARITY.md` §A6).
+    #: Without it every lever moved every construct by the same amount, so a pay rise moved
+    #: *clarity* as much as it moved *happiness* and no estimate on synthetic data corresponded to
+    #: anything. A lever absent from a construct's row genuinely does not move it: conditions (L2)
+    #: has no path to clarity, and that zero is a claim, not an omission.
+    lever_effects: dict[str, dict[str, float]] = Field(
+        default_factory=lambda: {
+            "L1": {"SATI": 0.5, "LOYA": 0.4, "EXIT": -0.4, "FAIR": 0.1},
+            "L2": {"SATI": 0.4, "LOYA": 0.2, "EXIT": -0.3},
+            "L3": {"TRAN": 0.6, "FAIR": 0.2, "CTRL": -0.2},
+            "L4": {"FAIR": 0.7, "VOIC": -0.4, "CTRL": -0.2, "SATI": 0.2},
+            "L5": {"VOIC": -0.5, "LOYA": 0.2, "FAIR": 0.1},
+        }
+    )
+    #: What a **second** dial step adds, as a multiple of the first. The prototype's `1.6`:
+    #: diminishing returns, because going from a minimum wage to a living wage is a smaller change
+    #: than going from nothing to a minimum wage. `2.0` would make the dials linear.
+    second_step_factor: float = Field(default=1.6, ge=1.0, le=2.0)
+    #: **The two lever interactions**, as one magnitude — the prototype's `together`.
+    #:
+    #: Applied as `-synergy` to pushback when L4 and L5 are both raised (an appeals route and a
+    #: forum compound: somewhere to take a complaint plus a body to take it to), and `-synergy/2`
+    #: to staying when L1 and L2 are both raised (pay and safety substitute, so together they add
+    #: less than the sum).
+    #:
+    #: This is what makes a synthetic batch able to exhibit **sub-additivity** — `docs/07` §5's
+    #: headline claim. At `0.0` every interaction is exactly additive by construction, which is
+    #: what the generator produced before `v5` and which left `analysis/interactions.py` with no
+    #: fixture that could test it against a known truth.
+    lever_synergy: float = Field(default=0.3, ge=0.0, le=1.0)
     #: §4's *drivers who need the money react more to a drivers' forum (captive voice)*. When on,
     #: a respondent high on `EDEP` reacts more strongly to the **representation** lever (`L5`)
     #: than one who does not need the money. This is the one interaction §4's dashboard carries,
     #: and it is the generator's, not a twin's: it shapes the synthetic *respondents*.
     captive_voice: bool = True
+
+    #: **The overall gain on `lever_effects`**, calibrated against real Part 17 responses rather
+    #: than typed. `v8`, 2026-10-13.
+    #:
+    #: `lever_effects` says which construct each lever moves and in what proportion; this says how
+    #: far the whole matrix moves a respondent. The two are separate claims and only this one has
+    #: an external check: a real respondent's own Part 17 answers say how much a described change
+    #: moved *them*, and `generator.synthetic.calibrate_reaction_gain` fits this single parameter
+    #: to them by least squares.
+    #:
+    #: At the inherited `1.0` the matrix **could not reproduce the one real respondent in the
+    #: database** — it predicted their 18 Part 17 answers at MAE 1.504, which is to say the
+    #: generator would have failed its own quality gate against a real driver. The fitted value is
+    #: `2.11` (MAE 0.864 on the same items), corroborated with no method confound by the H2 block,
+    #: where that driver moved 0.375 scale points per mirrored item against the matrix's predicted
+    #: 0.112. See `docs/DECISIONS.md`, 2026-10-13.
+    #:
+    #: **Re-derived at `v11` to `2.40`**, jointly with
+    #: :attr:`holdout_version_differentiation`, by `calibrate_reaction_model`. The two are
+    #: coupled through
+    #: the fit — shrinking the spread between packages changes which level best explains the same
+    #: eighteen answers — and the joint fit halves the error on them, 0.863 to **0.392**. Same
+    #: respondent, same answers, one more parameter; `2.11` remains the correct one-parameter fit
+    #: and `calibrate_reaction_gain` still returns it.
+    #:
+    #: **Provisional at n=1.** One respondent fixes the direction and the rough gain and is not a
+    #: calibration sample. Re-derive with `calibrate_reaction_gain` as real responses arrive; the
+    #: value is carried on every batch's config row so a stored batch always says which gain drew
+    #: it. Fitted to **survey answers, never to twin output** — fitting it until twins pass is the
+    #: circularity `docs/08` §2.4 forbids.
+    reaction_gain: float = Field(default=2.40, ge=0.0, le=8.0)
+    #: **How much respondents differ in how far a change moves them.** `v8`.
+    #:
+    #: Before this, the reaction was a *batch constant*: across the whole range of `EDEP` — the
+    #: only respondent-level input the shift had — the fairness shift varied by at most 0.16 scale
+    #: points and by exactly 0.00 on four of the six Part 17 versions. Every respondent reacted
+    #: identically, and **nothing in any persona said how reactive that respondent was**, so a
+    #: twin was being asked for a quantity it had never been given. No twin could pass the H3 gate
+    #: except by guessing a hidden batch constant.
+    #:
+    #: A respondent's own reactivity is now drawn here and **spoken in their persona**, through
+    #: `generator.voice`'s `react:*` clauses, so a careful twin can read it the way it already
+    #: reads their baseline attitudes. The draw is centred on `1.0`, so this widens the panel
+    #: without moving the batch's mean reaction — the gain above is the only thing that sets level.
+    reactivity_spread: float = Field(default=0.5, ge=0.0, le=0.9)
+    #: **How much respondents differ in WHICH lever matters to them.** `v10`, 2026-10-13.
+    #:
+    #: :attr:`lever_reactions` is the batch's mean salience per lever and it carried
+    #: ``{L1: 2.0, L2..L5: 1.0}`` — **pay double-weighted for every respondent, disclosed in no
+    #: persona.** That is the same defect class as :attr:`reaction_gain` before it was calibrated
+    #: and as :attr:`reactivity_spread` before the reaction was drawn per respondent: a hidden
+    #: batch constant a twin cannot infer except by guessing which lever this population happens
+    #: to weight most. It is what left `r(driver version means, twin version means)` at +0.07
+    #: across three stages while every other targeted metric moved: the twin differentiated the
+    #: six versions and ranked them wrong, putting `02211` — which raises no pay at all — second
+    #: where the driver put it fifth (`docs/DECISIONS.md`, 2026-10-13).
+    #:
+    #: Each respondent now draws their own weight per lever and **says which one matters most**,
+    #: through `generator.voice`'s `salience:*` clauses. The draw is **multiplicative and centred
+    #: on `lever_reactions`**, so this adds between-driver variance without moving the batch's
+    #: mean salience on any lever: the population is not re-weighted, the claim is only that
+    #: drivers differ. Multiplicative rather than additive for two further reasons — a lever whose
+    #: slider is at `0.0` stays at `0.0` for every respondent (a no-reaction batch is `docs/06`
+    #: §4's null and must stay null), and no weight can go negative, which would invert a lever's
+    #: sign for one respondent.
+    #:
+    #: **Not calibrated, and not calibratable yet.** Five lever weights plus a gain is six
+    #: parameters against one respondent's eighteen Part 17 answers, which is underdetermined, so
+    #: the route that fixed the gain is unavailable here. This spreads the inherited means rather
+    #: than re-tuning them; re-tuning them against a twin pass rate is the circularity
+    #: `docs/08` §2.4 forbids.
+    salience_spread: float = Field(default=0.5, ge=0.0, le=0.9)
+    #: **How much a driver's reaction depends on WHICH package is announced, as against how
+    #: much on being shown a package at all.** `v11`, 2026-10-13. Calibrated, not typed.
+    #:
+    #: `1.0` is the inherited generator: the shift is the lever matrix, so two version codes that
+    #: raise different levers move a driver by very different amounts. `0.0` is the other
+    #: extreme: any code that raises at least one lever moves them by the same amount, and which
+    #: levers it raised makes no difference. `00000` moves nobody at either end — being shown
+    #: nothing is nothing, and that zero is an invariant, not a limit of the shrinkage.
+    #:
+    #: **Why this parameter exists.** The one real respondent on record answered Part 17's six
+    #: version codes with a range of **exactly one scale point** on every question — two distinct
+    #: response patterns across six described worlds. They moved a long way from their own
+    #: baseline (2.47 points, which is what `reaction_gain` fitted) and moved **almost the same
+    #: distance whatever the package was**. The inherited generator spread its synthetic drivers
+    #: across the six codes four times as widely (0.66 against 0.17), so a twin was being scored
+    #: on a discrimination the only real driver on record does not make
+    #: (`docs/DECISIONS.md`, 2026-10-13 diagnosis).
+    #:
+    #: Shrinkage is toward the **mean shift over the 242 codes that raise something**, which is a
+    #: property of the spec and not of whichever code is being asked about, so the parameter means
+    #: the same thing for Part 16's arms, Part 17's six and the sweep's 243. The mean is preserved
+    #: exactly at every value of this parameter, so it is close to orthogonal to
+    #: :attr:`reaction_gain`: the level a driver moves to stays calibrated, and only the spread
+    #: between packages changes. A respondent's own :attr:`reactivity_spread` draw is inside the
+    #: mean, so **person-discrimination is untouched** — it is only version-discrimination that
+    #: shrinks.
+    #:
+    #: **Fitted to survey answers, never to twin output.** `calibrate_reaction_model` fits it with
+    #: the gain by least squares against real Part 17 responses, the same standing
+    #: `reaction_gain` has. **Provisional at n=1** — one respondent fixes the direction and the
+    #: rough size, not the second decimal. Re-derive as real responses arrive.
+    #:
+    #: **Read the consequence before changing it.** This parameter also flattens the sweep: at a
+    #: low value the 243 cells differ mainly in how much they announce rather than in what they
+    #: announce, and the between-cell variation is the study's dependent variable. If real drivers
+    #: genuinely do not discriminate between packages, that is a finding about the population and
+    #: not a knob; if they do, this number is wrong and more respondents will say so.
+    holdout_version_differentiation: float = Field(default=0.18, ge=0.0, le=1.0)
+    #: **How strongly a respondent avoids the two ends of a scale.** `v12`, 2026-10-14.
+    #:
+    #: `0.0` is the inherited generator: `_likert` **clamps** a rounded normal draw to the scale,
+    #: so every respondent whose latent position sits past an end answers `1` or `7` and the ends
+    #: carry a pile-up the clamp created. `1.0` is a respondent who never uses either end.
+    #:
+    #: **Extreme-response avoidance is a documented property of Likert data**, not an inference
+    #: from any twin's answers: respondents systematically under-use the outermost options, which
+    #: is why published samples on seven-point scales show far less endpoint use than a normal
+    #: draw would predict. The one real respondent on record used an endpoint **0 times in 39
+    #: seven-point answers** — 21 battery and 18 Part 17 — while the synthetic batch drawn
+    #: alongside them used one 14–19% of the time. That is the generator asserting a response
+    #: style no human in the data exhibits.
+    #:
+    #: A property of the **person**, so it applies to every Likert answer they give — battery and
+    #: both holdout blocks alike. Narrowing it to one block would be claiming that someone avoids
+    #: the ends when describing today and stops avoiding them when imagining a change.
+    #:
+    #: **Fitted to human answers, never to twin output.** Chosen as the smallest value that brings
+    #: endpoint use inside what the real respondent's 39 answers support, which is the same
+    #: standing `reaction_gain` and `holdout_version_differentiation` have. A value picked by
+    #: watching the twin pass rate would be `docs/08` §2.4's circularity and would make every path
+    #: estimated on synthetic data an artefact of what the model can do.
+    endpoint_avoidance: float = Field(default=0.70, ge=0.0, le=1.0)
 
     # ---- Provenance knobs that were in the config file and never read (see the service note)
     mc_correct_rate: float = Field(default=0.8, ge=0.0, le=1.0)
@@ -557,6 +813,54 @@ class GeneratorSpec(_View):
                 f"(docs/06 §4). Have: {sorted(self.lever_reactions)}"
             ) from None
 
+    def effects(self, lever: str) -> dict[str, float]:
+        """One lever's construct effects. An unknown lever raises, as :meth:`reaction` does.
+
+        Rule 7, for the same reason: a lever with no row would silently move nothing, and a lever
+        that moves nothing is indistinguishable in the output from a lever whose reaction slider
+        was set to zero on purpose.
+        """
+        try:
+            return self.lever_effects[lever]
+        except KeyError:
+            raise KeyError(
+                f"no construct effects for lever {lever!r}; all five are required "
+                f"(docs/06 §4). Have: {sorted(self.lever_effects)}"
+            ) from None
+
+    @model_validator(mode="after")
+    def _check_lever_effects(self) -> GeneratorSpec:
+        """Every lever has a row, and every row names real constructs. Rule 7.
+
+        Validated here rather than at the call site so a spec that could not produce a coherent
+        batch cannot be constructed at all — a misspelt construct key would otherwise sit in the
+        matrix contributing nothing, and the batch would look fine.
+        """
+        from twinlab.models.reference import CONSTRUCTS, LEVERS
+
+        known = {c.code for c in CONSTRUCTS}
+        missing = [lever for lever in LEVERS if lever not in self.lever_effects]
+        if missing:
+            raise ValueError(
+                f"lever_effects is missing {missing}; all five levers need a row, even an empty "
+                f"one (docs/06 §4). A lever with no row moves nothing, which is indistinguishable "
+                f"from a reaction slider set to zero."
+            )
+        for lever, row in self.lever_effects.items():
+            if lever not in LEVERS:
+                raise ValueError(
+                    f"lever_effects names {lever!r}, which is not one of the five levers "
+                    f"{list(LEVERS)} (I2's frozen order)"
+                )
+            unknown = sorted(set(row) - known)
+            if unknown:
+                raise ValueError(
+                    f"lever_effects[{lever!r}] names {unknown}, which are not constructs. "
+                    f"Have: {sorted(known)}. A misspelt key would contribute nothing and the "
+                    f"batch would look correct."
+                )
+        return self
+
 
 class GeneratorPreview(_View):
     """One previewed respondent. `docs/06` §4's *Preview 3 drivers* — derives, inserts nothing."""
@@ -575,6 +879,117 @@ class GeneratorPreview(_View):
     items_answered: int
 
 
+class ReactionGainFit(_View):
+    """What `GeneratorSpec.reaction_gain` was fitted to. `v8`, 2026-10-13.
+
+    The provenance of the one number in the generator that has an external check. Returned by
+    `generator.synthetic.calibrate_reaction_gain` so a researcher can see the fit rather than
+    inherit a constant, and so the value can be **re-derived** as real Part 17 responses arrive
+    instead of being carried forward on faith.
+
+    Read it with ``respondents_n`` in view. At n=1 the fit establishes that today's gain is wrong
+    and roughly by how much; it does not establish the gain to two decimal places. Nothing here
+    is fitted to a twin's answers — the inputs are real survey responses only.
+    """
+
+    #: The least-squares gain over the respondents supplied.
+    gain: float
+    #: How many real respondents the fit rests on. **The number to read first.**
+    respondents_n: int
+    #: Part 17 items actually scored, across those respondents.
+    items_n: int
+    #: Mean absolute error of the generator's predicted Part 17 answers **at** :attr:`gain`.
+    mae_at_gain: float
+    #: The same, at a gain of 1.0 — the inherited matrix, for comparison.
+    mae_at_unit_gain: float
+    #: Already formatted, so no handler recomputes it (`docs/05` §8.4 rule 5).
+    headline: str
+
+
+class ReactionModelFit(_View):
+    """What `reaction_gain` **and** `holdout_version_differentiation` were jointly fitted to. `v11`.
+
+    `ReactionGainFit` fits one parameter: how far a described change moves a driver. It cannot
+    see the defect the 2026-10-13 diagnosis found, because a gain that matches the *average*
+    movement can still spread the six Part 17 versions four times too widely — the level is right
+    and the shape is not. This fits both at once.
+
+    The two are nearly orthogonal by construction: the shrinkage preserves the mean shift over
+    the code space exactly, so the gain still sets the level and this only sets the spread. Read
+    with ``respondents_n`` in view, and nothing here is fitted to a twin's answers.
+    """
+
+    #: The least-squares gain, at the fitted differentiation.
+    gain: float
+    #: The least-squares version differentiation, in ``[0, 1]``.
+    holdout_version_differentiation: float
+    #: How many real respondents the fit rests on. **The number to read first.**
+    respondents_n: int
+    #: Part 17 items actually scored, across those respondents.
+    items_n: int
+    #: Mean absolute error at the fitted pair.
+    mae_at_fit: float
+    #: The same at the inherited model — the fitted gain with differentiation held at 1.0 — so
+    #: the two readings differ in one parameter and the comparison is attributable.
+    mae_at_full_differentiation: float
+    #: The respondents' own spread across the six Part 17 version codes, and the generator's at
+    #: the fit. The pair this parameter exists to reconcile.
+    observed_version_spread: float
+    fitted_version_spread: float
+    #: Already formatted, so no handler recomputes it (`docs/05` §8.4 rule 5).
+    headline: str
+
+
+class GeneratorClipping(_View):
+    """One construct's pile-up against the end of the scale, for the pre-flight note. `v7`.
+
+    `docs/06` §4's *how much drivers differ* and the `between_driver_swing` dial both widen the
+    spread of construct targets, and the spread is then **clamped** to the 1–7 scale. The clamp is
+    right and it is silent, so a slider near an end converts the extra width into respondents who
+    are *identical at the wall* — the panel's dial says individual and the batch is not. A
+    wrong-person test on such a batch has no ceiling to reach (`docs/08` §4 test 1), and until `v7`
+    the only way to find that out was to spend the twin calls.
+
+    A diagnostic, never a correction: nothing in the generator reads this, and a high share may be
+    exactly the batch the researcher wants.
+    """
+
+    construct_code: str
+    #: The construct's own words from `docs/06` §4's slider, so the note names what the researcher
+    #: set rather than a four-letter code they have to look up.
+    label: str
+    #: Share of the batch landing on 1.0 or 7.0, already formatted (`docs/05` §8.4 rule 5).
+    share: str
+    #: Sorting key, kept separate from the formatted share so the UI does not re-parse it.
+    share_value: float
+
+
+class GeneratorSalience(_View):
+    """One lever's share of a batch as **the change that matters most**, for the pre-flight. `v10`.
+
+    `lever_reactions` is the batch's *mean* salience per lever and `salience_spread` spreads it
+    per respondent, centred, so the mean on every lever is unchanged — the condition that keeps
+    Route A from being a re-weighting of the population fitted to a twin pass rate
+    (`docs/08` §2.4). The consequence a researcher has to see is that spreading a `2.0` mean
+    against four `1.0` means still leaves most of the batch weighting pay highest: 84% of it at
+    the default spread. Every persona now *states* that weighting, which is the defect `v10`
+    repairs, but the batch does not thereby contain drivers who want different things.
+
+    A diagnostic, never a correction: nothing in the generator reads this, and a pay-dominated
+    batch may be exactly the population the researcher means to model. Flattening
+    `lever_reactions` is theirs to decide.
+    """
+
+    lever: str
+    #: `docs/06` §4's own label for the lever, so the note names the change rather than `L3`.
+    label: str
+    #: What this lever's share of the batch weights it highest, already formatted
+    #: (`docs/05` §8.4 rule 5).
+    share: str
+    #: Sorting key, kept separate from the formatted share so the UI does not re-parse it.
+    share_value: float
+
+
 class TwinImportResult(_View):
     """What `docs/06` §3.8's *Import twins from the survey* did. Its three counts, and the reasons.
 
@@ -587,8 +1002,17 @@ class TwinImportResult(_View):
     scope: str
     #: Respondents that became twins in this run.
     imported: int
-    #: In scope, but not a candidate: already a twin, or gated out by consent/eligibility/outcome.
+    #: In scope, but not a candidate — ``already_twins + gated``. Kept as the §3.8 count, but it
+    #: is never reported on its own: the two halves are opposite outcomes and conflating them is
+    #: what made the screen tell a researcher with a perfectly good twin that "nothing was
+    #: eligible".
     skipped: int
+    #: Already imported, so there is nothing to do. The **expected** outcome for anyone who filled
+    #: in the hosted questionnaire, which builds the twin at submit time.
+    already_twins: int = 0
+    #: Refused by :func:`~twinlab.services.hosted_survey.twin_gate` — not eligible, consent
+    #: withheld, or a battery too short to build a lossless persona (I6).
+    gated: int = 0
     #: Candidates whose persona could not be built. **Never counted as imported.**
     invalid: int
     reasons: list[str] = Field(default_factory=list)

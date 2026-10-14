@@ -38,7 +38,15 @@ from twinlab.ingest.survey_intake import (
     sign,
     verify_signature,
 )
-from twinlab.services.surveys import counts_by_type, delete_synthetic, store_batch
+from twinlab.services.surveys import (
+    DeleteBlocked,
+    counts_by_type,
+    delete_synthetic,
+    delete_twins,
+    store_batch,
+    synthetic_delete_preflight,
+    twin_delete_preflight,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PAYLOAD_PATH = REPO_ROOT / "apps_script" / "sample_payload.json"
@@ -783,4 +791,305 @@ def test_the_reaction_sliders_move_the_holdout_blocks():
 
     # V1 is 12220, Fairwork 7. V3 is 11010, Fairwork 3.
     assert abs(dead["H3_V1_FAIR"] - dead["H3_V3_FAIR"]) < 0.25, "no reaction, yet it moved"
-    assert live["H3_V1_FAIR"] - live["H3_V3_FAIR"] > 0.5, "the reaction sliders did nothing"
+
+    # The sliders are bound to the ANSWERS: with every reaction at zero the holdout sits at the
+    # baseline, and at the default weights it has moved a long way from it. This is the binding
+    # check and it is unconditional.
+    assert live["H3_V1_FAIR"] - dead["H3_V1_FAIR"] > 1.0, "the reaction sliders did nothing"
+
+    # **How far V1 separates from V3 is now a calibrated quantity, not a free one** (`v11`).
+    # `holdout_version_differentiation` is fitted to the one real respondent, who answered the
+    # six versions within a range of exactly one scale point, so at the shipped 0.18 this
+    # separation is deliberately small. The assertion is therefore split in two, and the strong
+    # half is kept: the SEPARATION IS STILL THERE, and the MATRIX still produces the full
+    # separation when the compression is off. If that second assertion ever fails, the lever
+    # matrix really has stopped differentiating the versions, which is the defect `v5` removed.
+    assert live["H3_V1_FAIR"] > live["H3_V3_FAIR"], (
+        "the version that raises four dials must still rank above the one that raises two"
+    )
+    # Both response-style layers off, so what is measured is the MATRIX. `endpoint_avoidance`
+    # pulls answers off the ceiling, which narrows the gap between two versions that both sit
+    # near the top of the scale — a real effect of a real parameter, and not the thing this
+    # assertion is about.
+    uncompressed = fair_by_version(
+        GeneratorSpec(
+            seed=12, holdout_version_differentiation=1.0, endpoint_avoidance=0.0
+        )
+    )
+    assert uncompressed["H3_V1_FAIR"] - uncompressed["H3_V3_FAIR"] > 0.5, (
+        "with the holdout compression off, the matrix must separate the two versions as it "
+        "always did — the compression describes how a person REPORTS a hypothetical, and must "
+        "not have reached the lever matrix"
+    )
+
+
+# ------------------------------------------------------- purging synthetic test sessions
+
+
+async def _blocked_batch(backend, storage, *, n=3, real_on_panel=False):
+    """A synthetic batch whose twins sit on a frozen panel and have answered a run.
+
+    This is the state a researcher is actually in after testing: the synthetic twins cannot be
+    deleted, because deleting them would change the stored result of the run they answered.
+    """
+    batch = generate_batch(seed=909, count=n)
+    await store_batch(batch, storage=storage, backend=backend)
+    ids = [s["submission_id"] for s in batch["submissions"]]
+    await backend.insert(
+        "twins", [{"twin_id": i, "source": "synthetic", "consent_twin": True} for i in ids]
+    )
+    await backend.insert("sessions", [{"session_id": "sess", "name": "My test sweep",
+                                       "config": {}}])
+    await backend.insert("runs", [
+        {"run_id": "run1", "session_id": "sess", "version_code": "10000",
+         "status": "completed", "twins_n": n}
+    ])
+    panel = [
+        {"session_id": "sess", "twin_id": i, "stratum": "Mumbai|cab", "position": p}
+        for p, i in enumerate(ids)
+    ]
+    answers = [
+        {"answer_id": f"a{p}", "run_id": "run1", "twin_id": i, "answers": {},
+         "lever_order": [1, 2, 3, 4, 5], "seed": 1, "wording": "A", "model": "m"}
+        for p, i in enumerate(ids)
+    ]
+    if real_on_panel:
+        await backend.insert(
+            "twins", [{"twin_id": "UBR-REAL", "source": "real", "consent_twin": True}]
+        )
+        panel.append(
+            {"session_id": "sess", "twin_id": "UBR-REAL", "stratum": "Pune|cab", "position": n}
+        )
+    await backend.insert("session_panel", panel)
+    await backend.insert("twin_answers", answers)
+    # A validity verdict computed on this panel, which the purge must also withdraw: a verdict
+    # about twins that no longer exist describes nothing.
+    await backend.insert("validity_results", [
+        {"validity_run_id": "v1", "session_id": "sess", "test_id": "wrong_person",
+         "twins_n": n, "statistics": {}, "verdict": "FAIL", "headline": "h", "detail": "d"}
+    ])
+    return ids
+
+
+async def test_the_preflight_tells_a_synthetic_only_session_from_a_mixed_one(backend):
+    """The distinction the whole feature rests on. `purge_sessions` may take the first, never
+    the second."""
+    ids = await _blocked_batch(backend, FakeStorage())
+    pre = await synthetic_delete_preflight(backend)
+    assert pre["blocked_twin_ids"] == sorted(ids), "the twins should be blocked to begin with"
+    assert pre["purgeable_session_ids"] == ["sess"]
+    assert pre["mixed_session_ids"] == []
+    assert pre["dependent_sessions"][0]["name"] == "My test sweep"
+    assert pre["dependent_sessions"][0]["real_twin_ids"] == []
+
+
+async def test_a_session_holding_one_real_driver_is_not_synthetic_only(backend):
+    """One real twin on the panel makes the session real evidence, whatever else is on it."""
+    await _blocked_batch(backend, FakeStorage(), real_on_panel=True)
+    pre = await synthetic_delete_preflight(backend)
+    assert pre["purgeable_session_ids"] == []
+    assert pre["mixed_session_ids"] == ["sess"]
+    assert pre["dependent_sessions"][0]["real_twin_ids"] == ["UBR-REAL"]
+
+
+async def test_purge_sessions_clears_the_whole_batch_and_leaves_nothing_dangling(backend):
+    """What the researcher asked for: delete all, with no orphaned result left behind.
+
+    The point is the *second* half of that sentence. Deleting the twins while keeping the `runs`
+    row would leave a stored `index_value` computed over twins that no longer exist — a number
+    nobody can audit or reproduce, which is a worse breach of rule 6 than the refusal it replaced.
+    The session goes as one unit: panel, runs, answers and validity verdict together.
+    """
+    await _blocked_batch(backend, FakeStorage())
+    result = await delete_synthetic(backend, purge_sessions=True)
+
+    assert result["twins"] == 3, "every synthetic twin should now be gone"
+    assert result["blocked"] == []
+    assert result["purged"]["sessions"] == 1
+    assert result["purged"]["validity_results"] == 1
+    assert result["purged"]["twin_answers"] == 3
+
+    for table in ("twins", "sessions", "runs", "twin_answers", "session_panel",
+                  "validity_results", "survey_submissions"):
+        assert await backend.select(table, None) == [], f"{table} still holds a row"
+
+
+async def test_deleting_synthetic_never_touches_a_session_holding_a_real_twin(backend):
+    """*Delete all synthetic surveys* means **synthetic**, whatever is ticked.
+
+    The Generator screen does not plumb ``allow_real_loss`` through at all, so a session mixing
+    synthetic twins with a real driver is left intact and the synthetic twins sitting on it stay
+    blocked. Clearing those is a per-twin decision made in Twin Lab > Twins, where the researcher
+    picks the rows and is shown the real twins affected.
+    """
+    await _blocked_batch(backend, FakeStorage(), real_on_panel=True)
+    with pytest.raises(DeleteBlocked, match="rule 6"):
+        await delete_synthetic(backend, purge_sessions=True)
+    # The real twin, the session, its run and its verdict are all untouched.
+    assert len(await backend.select("sessions", None)) == 1
+    assert len(await backend.select("runs", None)) == 1
+    assert len(await backend.select("validity_results", None)) == 1
+    assert any(
+        t["twin_id"] == "UBR-REAL" for t in await backend.select("twins", None)
+    ), "the real twin must survive a synthetic delete"
+
+
+async def test_allow_real_loss_is_the_per_twin_route_and_is_opt_in(backend):
+    """The capability exists for Twin Lab > Twins, and only takes effect when asked for.
+
+    It withdraws the contaminated session, which costs the real driver their run answers and
+    panel place. Their **survey, answers and twin row survive** — `delete_synthetic` matches
+    `twins` on ``source = synthetic`` — so nothing hard to replace is lost.
+    """
+    await _blocked_batch(backend, FakeStorage(), real_on_panel=True)
+    result = await delete_synthetic(backend, purge_sessions=True, allow_real_loss=True)
+
+    assert result["twins"] == 3, "the synthetic twins should now be gone"
+    assert await backend.select("sessions", None) == []
+    assert await backend.select("twin_answers", None) == []
+    # The real driver keeps their twin row, and with it their persona.
+    surviving = [t["twin_id"] for t in await backend.select("twins", None)]
+    assert surviving == ["UBR-REAL"]
+
+
+async def test_purge_is_off_by_default(backend):
+    """The old refusal is unchanged unless the researcher explicitly asks for the purge."""
+    await _blocked_batch(backend, FakeStorage())
+    with pytest.raises(DeleteBlocked, match="rule 6"):
+        await delete_synthetic(backend)
+    assert len(await backend.select("sessions", None)) == 1
+
+
+# ------------------------------------------- per-twin delete (Twin Lab > Twins)
+
+
+async def test_delete_twins_removes_an_explicit_selection_including_a_real_one(backend):
+    """The researcher ticks the rows, so a real twin goes if that is what they ticked.
+
+    The Generator's bulk delete is keyed on `data_type` and can never reach a real row. This path
+    is the other half of the design: an explicit selection, which is itself the guard.
+    """
+    await backend.insert("twins", [
+        {"twin_id": "UBR-1", "source": "real", "consent_twin": True},
+        {"twin_id": "SYN-1", "source": "synthetic", "consent_twin": True},
+        {"twin_id": "UBR-2", "source": "real", "consent_twin": True},
+    ])
+    for i in ("UBR-1", "SYN-1", "UBR-2"):
+        await backend.upsert(
+            "survey_submissions",
+            [{"submission_id": i, "data_type": "REAL", "outcome": "completed"}],
+            on_conflict="submission_id",
+        )
+
+    result = await delete_twins(["UBR-1", "SYN-1"], backend)
+    assert result["twins"] == 2
+    assert result["real_twins"] == ["UBR-1"]
+    assert result["submissions"] == 2, "deleting a twin deletes the survey it was built from"
+    assert [t["twin_id"] for t in await backend.select("twins", None)] == ["UBR-2"]
+
+
+async def test_delete_twins_refuses_a_twin_that_is_evidence_unless_sessions_go_too(backend):
+    """Rule 6, from the other direction: a twin may not leave a result computed over it behind."""
+    ids = await _blocked_batch(backend, FakeStorage())
+    with pytest.raises(DeleteBlocked, match="withdraw their sessions"):
+        await delete_twins(ids[:1], backend)
+    assert len(await backend.select("twins", None)) == 3
+
+    result = await delete_twins(ids[:1], backend, purge_sessions=True)
+    assert result["twins"] == 1
+    assert result["purged"]["sessions"] == 1
+    assert await backend.select("runs", None) == []
+
+
+async def test_the_preflight_names_the_twins_that_would_be_caught_in_the_blast(backend):
+    """Deleting two twins must not silently void a run forty others answered.
+
+    ``collateral_twin_ids`` is what the confirm screen shows. Without it the researcher ticks one
+    row, loses a session, and finds out afterwards that nine other twins' answers went with it.
+    """
+    ids = await _blocked_batch(backend, FakeStorage(), n=4)
+    pre = await twin_delete_preflight(ids[:1], backend)
+    assert pre["twin_ids"] == ids[:1]
+    assert pre["blocked_twin_ids"] == ids[:1]
+    assert pre["collateral_twin_ids"] == sorted(ids[1:]), (
+        "the other three twins on that session are collateral and must be named"
+    )
+
+
+async def test_delete_twins_can_keep_the_survey_for_a_re_import(backend):
+    """``delete_surveys=False`` drops the twin and leaves the respondent's answers to re-import."""
+    await backend.insert(
+        "twins", [{"twin_id": "UBR-9", "source": "real", "consent_twin": True}]
+    )
+    await backend.upsert(
+        "survey_submissions",
+        [{"submission_id": "UBR-9", "data_type": "REAL", "outcome": "completed"}],
+        on_conflict="submission_id",
+    )
+    result = await delete_twins(["UBR-9"], backend, delete_surveys=False)
+    assert result["twins"] == 1
+    assert result["submissions"] == 0
+    assert len(await backend.select("survey_submissions", None)) == 1
+
+
+async def test_delete_twins_on_an_empty_selection_does_nothing(backend):
+    """A delete that reports work it did not do is worse than one that reports none."""
+    assert await delete_twins([], backend) == {
+        "twins": 0, "submissions": 0, "answers": 0, "purged": {}, "blocked": [],
+    }
+
+
+def test_the_salience_pre_flight_orders_the_mix_and_reports_the_null_as_a_null():
+    """`v10`'s service half, beside `clipping`. Derives only, and takes no backend.
+
+    The ordering is what the screen reads first — a note that opened on a 4% lever would tell the
+    researcher nothing — and the empty list is `docs/06` §4's no-reaction batch, which the page
+    says out loud rather than rendering nothing (`CLAUDE.md` rule 7).
+    """
+    from twinlab.models.reference import LEVERS
+    from twinlab.models.view import GeneratorSpec
+    from twinlab.services.generator import SALIENCE_NOTICE_SHARE, salience
+
+    mix = salience(GeneratorSpec(seed=1))
+    assert [row.share_value for row in mix] == sorted(
+        (row.share_value for row in mix), reverse=True
+    ), "the note must open on the lever most of the batch cares about"
+    assert mix[0].lever == "L1" and mix[0].label == "Pay", (
+        "the default weighting doubles pay, so the batch's top salience is pay"
+    )
+    assert mix[0].share_value > SALIENCE_NOTICE_SHARE, (
+        "the default batch is pay-dominated enough to warrant the warning branch, which is the "
+        "number Route A owes the researcher"
+    )
+    assert all(row.label != row.lever for row in mix), "every lever has §4's own label"
+
+    # The no-reaction null: no driver has a change that matters most to them.
+    assert salience(
+        GeneratorSpec(seed=1, lever_reactions=dict.fromkeys(LEVERS, 0.0))
+    ) == []
+
+
+def test_the_salience_note_distinguishes_a_dominated_batch_from_a_mixed_one():
+    """The screen must not call a pay-dominated batch and a mixed one the same thing.
+
+    `v10`'s repair is that every persona *states* the batch's weighting. Whether the batch also
+    contains drivers who want different things is a separate claim, and the note is where the
+    researcher reads which one they are about to generate.
+    """
+    from twinlab.models.reference import LEVERS
+    from twinlab.models.view import GeneratorSpec
+    from twinlab.services.generator import salience
+    from twinlab.ui.pages.generator import _salience_note
+
+    dominated = _salience_note(salience(GeneratorSpec(seed=1, salience_spread=0.0)))
+    assert "tl-note-warn" in dominated and "Pay" in dominated
+
+    flat = GeneratorSpec(
+        seed=1, lever_reactions=dict.fromkeys(LEVERS, 1.0), salience_spread=0.5
+    )
+    mixed = _salience_note(salience(flat))
+    assert "tl-note-warn" not in mixed and "tl-note-info" in mixed
+
+    off = GeneratorSpec(seed=1, lever_reactions=dict.fromkeys(LEVERS, 0.0))
+    null = _salience_note(salience(off))
+    assert "no-reaction null" in null, "an empty mix must be reported, never rendered as nothing"

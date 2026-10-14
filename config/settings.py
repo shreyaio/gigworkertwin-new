@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     ollama_base_url: str = "https://ollama.com/v1"
     twinlab_model: str = "gpt-oss:120b"
 
+    #: A **genuinely different** OpenAI-compatible endpoint, for `ModelRef.provider = "openai"`.
+    #:
+    #: Empty by default, and `agents.registry.resolve_model` refuses that provider while it is
+    #: empty rather than falling back. Ollama Cloud speaks the OpenAI wire format, so `openai`
+    #: used to resolve through the **same** `OpenAIProvider(base_url=ollama_base_url,
+    #: api_key=ollama_api_key)` as `ollama` — selecting it in Agent Studio changed nothing, sent
+    #: the Ollama key to Ollama, and recorded a provider the call never reached. Harmless while
+    #: both landed somewhere real; a silent misattribution in the evidence the moment a second
+    #: endpoint exists, which validity test 7 is the reason to want (`docs/DECISIONS.md`
+    #: 2026-10-08).
+    openai_base_url: str = ""
+    openai_api_key: str = ""
+
     # --- Telemetry ---
     logfire_token: str = ""
 
@@ -84,8 +97,10 @@ class Settings(BaseSettings):
 
     # --- Versioned artefacts frozen onto every run (I11) ---
     # v2 from 2026-10-01: the design agent is now shown the reading-grade band.
+    # v3 from 2026-10-03: the word band is resolved per (lever, dial) from the commitment
+    # count rather than being one pair of scalars. See `config/style_contract.yaml` HISTORY.
     # Must equal `style_contract.yaml`'s own key; a test asserts it.
-    style_version: str = "v2"
+    style_version: str = "v9"
     persona_template_version: str = "v1"
 
     # --- UI ---

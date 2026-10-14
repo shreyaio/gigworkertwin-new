@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from twinlab.ingest.reference_store import ReferenceData, reference
-from twinlab.models.analysis import CellShifts
+from twinlab.models.analysis import CellShifts, NoiseFloor
 
 
 class MetricError(ValueError):
@@ -218,9 +218,51 @@ def compute_index(
     return round(numerator / denominator, decimals)
 
 
-def noise_floor(index_00000: float | None) -> float | None:
-    """``|index(00000)|`` — how much a twin moves when nothing changed. `docs/07` §6."""
-    return None if index_00000 is None else round(abs(index_00000), 3)
+def measure_noise_floor(
+    *,
+    baseline_vectors: dict[str, dict[str, int]],
+    control_vectors: dict[str, dict[str, int]],
+    decimals: int = 4,
+    ref: ReferenceData | None = None,
+) -> NoiseFloor | None:
+    """How much a twin moves when nothing changed, at both levels. `docs/07` §6.
+
+    Measured from the `00000` control's own answers rather than read off its stored
+    ``index_value``. **This replaced ``|index(00000)|`` on 2026-10-07** (`docs/DECISIONS.md`): the
+    index applies `index_sign` and averages the six metrics, so a floor taken from it is an
+    absolute-of-a-signed-mean, while every statistic it gates is a mean-of-absolutes. By Jensen the
+    former can never exceed the latter, which made every floor-judged test lean toward `FAIL`.
+
+    **The twin set is the intersection, taken once and used for both sides** (`docs/07` §3.1), for
+    the same reason :func:`compute_shifts` takes it once.
+
+    ``None`` when no twin answered both the control and its own baseline — a floor is measured or
+    it is absent, never assumed.
+    """
+    ref = ref or reference()
+    twin_ids = sorted(set(baseline_vectors) & set(control_vectors))
+    if not twin_ids:
+        return None
+
+    cell_by_metric: dict[str, float] = {}
+    twin_by_metric: dict[str, float] = {}
+    for metric in ref.metrics:
+        deltas = [
+            score(control_vectors[t], metric, ref) - score(baseline_vectors[t], metric, ref)
+            for t in twin_ids
+        ]
+        # The two functionals, taken over the same deltas: the cell moves by the mean, a twin
+        # moves by the size of its own delta regardless of which way it went.
+        cell_by_metric[metric] = round(abs(sum(deltas) / len(deltas)), decimals)
+        twin_by_metric[metric] = round(sum(abs(d) for d in deltas) / len(deltas), decimals)
+
+    return NoiseFloor(
+        cell=round(sum(cell_by_metric.values()) / len(cell_by_metric), decimals),
+        twin=round(sum(twin_by_metric.values()) / len(twin_by_metric), decimals),
+        cell_by_metric=cell_by_metric,
+        twin_by_metric=twin_by_metric,
+        twins_n=len(twin_ids),
+    )
 
 
 def demand_floor(index_sham: float | None, index_00000: float | None) -> float | None:

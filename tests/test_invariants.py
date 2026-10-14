@@ -155,15 +155,13 @@ def test_i2_the_design_agent_renders_and_never_proposes():
 
 
 def test_i3_a_commitment_outside_the_delta_spec_is_a_hard_failure():
-    """I3 — containment is enforced, not trusted. **One hit fails the cell**, with no threshold.
-
-    Threshold 2.2 material in an `01000` render makes `01000` and `02000` the same stimulus, and
-    the Conditions lever stops measuring anything. Unlike a coverage failure, this is not
-    detectable anywhere downstream, which is why there is no tolerance.
+    """I3 (amended 2026-10-04) — containment is detected and recorded on every render, but a hit is
+    **reported, not enforced**: two predefined commitments can share wording, so a hit alone does
+    not fail the cell. The hit itself must still be detected and must be visible in the report.
     """
     from twinlab.variant import checker as ck
     from twinlab.variant.lookup import commitments_for_lever, lookup
-    from twinlab.variant.render import forbidden_for, load_style_contract
+    from twinlab.variant.render import band_for, forbidden_for, load_style_contract
 
     spec = lookup("01000")
     allowed = commitments_for_lever(spec, "L2")
@@ -173,14 +171,20 @@ def test_i3_a_commitment_outside_the_delta_spec_is_a_hard_failure():
     hits = ck.containment_hits(leaked, forbidden, allowed)
     assert "2.2.a" in hits
 
+    style = load_style_contract()
     report = ck.build_report(
         paragraphs={"L2": LeverParagraph(text=leaked)},
         dials={"L2": 1},
-        style=load_style_contract(),
+        style=style,
         coverage=dict.fromkeys(allowed, True),
         containment=hits,
+        # `L2` at dial 1 carries three commitments, so that is the band gate 3 grades against
+        # (style_version v3). The containment verdict does not depend on it — a hit fails the
+        # cell at any length — but the gate refuses to grade a paragraph it was given no band for.
+        bands={"L2": band_for(len(allowed), style)},
     )
-    assert not report.passed, "a containment hit must fail the cell"
+    assert report.containment == hits, "a containment hit must be recorded, not dropped"
+    assert "info: containment hit" in report.notes
 
     # And the gate is not vacuous: the same machinery clears text that carries no forbidden
     # commitment, so failure means something.
@@ -197,6 +201,9 @@ def test_i3_every_render_passes_the_checker_before_a_twin_sees_it():
     from twinlab.variant.render import load_style_contract
 
     style = load_style_contract()
+    # No `bands`: a refusal is rejected before gate 3 is reached, so the report must not need a
+    # word band to refuse one. If that ever stopped being true this would raise `CheckerMisuse`
+    # rather than quietly pass a refusal through.
     refusal = ck.build_report(
         paragraphs={"L2": LeverParagraph(text="", status="cannot_render", reason="blocked")},
         dials={"L2": 1},
@@ -414,7 +421,7 @@ def test_i8_the_persona_and_the_round_prompt_are_separate_documents():
         persona_hash="a" * 64,
         paragraphs={lever: f"Paragraph for {lever}." for lever in LEVER_BY_POSITION},
         baseline=answers,
-        battery={i: (ref.items[i].stem, ref.scale_points(i)) for i in ref.battery_item_ids},
+        battery={i: ref.battery_item(i) for i in ref.battery_item_ids},
         seed=4242,
     )
     prompt = build_user_prompt(round_prompt, persona)

@@ -26,14 +26,16 @@ Five properties are research commitments rather than plumbing:
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from config.settings import settings
-from twinlab.analysis.metrics import compute_index, score, score_all
+from twinlab.analysis.metrics import compute_index, measure_noise_floor, score, score_all
 from twinlab.db.client import DbBackend, get_backend
 from twinlab.ingest.reference_store import ReferenceData, reference
+from twinlab.models.analysis import NoiseFloor
 from twinlab.models.validity import (
     AblatedPersona,
     TemperatureRecommendation,
@@ -45,6 +47,8 @@ from twinlab.models.view import BudgetView
 from twinlab.orchestrator import budget as budget_calc
 from twinlab.orchestrator.odometer import CONTROL_CODE, SHAM_CODE
 from twinlab.validity import tests as vt
+
+log = logging.getLogger(__name__)
 
 #: `app_config` key test 8 writes. **Not** `temperature`: a recommendation and an applied setting
 #: are different things, and only one of them is frozen onto a session (`docs/02` §7.3).
@@ -82,16 +86,33 @@ def calls_for(number: int, twins: int) -> int:
 
 
 async def validity_budget_view(
-    number: int, *, twins: int | None = None, backend: DbBackend | None = None
+    number: int,
+    *,
+    twins: int | None = None,
+    session_id: str | None = None,
+    backend: DbBackend | None = None,
 ) -> BudgetView:
     """The confirm step's budget, like every other long action (`docs/06` §9).
 
     A zero-call test still gets a budget card, showing zero. That is the point: it is how the
     researcher sees that tests 1 and 3 are free and can be run early and often (`docs/08` §4).
+
+    ``session_id``, when given, is **authoritative**. Tests 2 and 4-8 put a stimulus to that
+    session's frozen panel (I14) — the panel's own size is the true call count, not a number typed
+    into a box next to it. Before M19 WP-7 the confirm step showed a budget for whatever "Twins
+    per test" said while the run itself always used the full panel, so the two numbers could (and
+    did) disagree. ``twins`` stays as an explicit override for a caller with no session yet — a
+    direct test, or the confirm step before a session is chosen.
     """
+    db = backend or get_backend()
     from twinlab.services.runs import budget_view
 
-    n = twins if twins is not None else settings.panel_size
+    if session_id is not None:
+        n = await db.count("session_panel", [("eq", "session_id", session_id)])
+    elif twins is not None:
+        n = twins
+    else:
+        n = settings.panel_size
     return budget_view(budget_calc.ask_budget(panel_size=calls_for(number, n)))
 
 
@@ -112,48 +133,77 @@ async def _human_answers(twin_id: str, db: DbBackend) -> dict[str, int]:
     return {r["item_id"]: int(r["value_num"]) for r in rows if r.get("value_num") is not None}
 
 
-async def h2_vectors(db: DbBackend) -> dict[str, dict[str, int]]:
+async def h2_vectors(
+    db: DbBackend, *, twin_prefix: str | None = None
+) -> dict[str, dict[str, int]]:
     """Every twin's stored H2 answer vector. `docs/08` §3.1.
 
     Read from the latest H2 `twin_quality_runs` row's `detail`, which is where the quality gate
     files it. A twin whose row carries no vector is **absent** from the result rather than present
     and empty: test 1 must not score a twin it has no answers for.
+
+    ``twin_prefix`` restricts the read to one batch — `"SYN-20261013"` for a single generator
+    version, and tests 1 and 3 pass it through. Without it this returns **every** twin in the
+    database, which on a database holding several synthetic batches pools generator versions:
+    `docs/08` §4's tests compare a twin against its own driver and against a stranger's, and a
+    stranger drawn under a different construct mapping, lever matrix or reaction gain is not the
+    stranger the test means. That pooling made one reading of test 3 meaningless
+    (`docs/DECISIONS.md`, 2026-10-13) and `tools/gate_diagnostic.py` already requires `--prefix`
+    for exactly this reason; this is the same guard on the validity path.
     """
     rows = await db.select(
         "twin_quality_runs", [("eq", "is_latest", True), ("eq", "holdout_set", "H2")]
     )
     out: dict[str, dict[str, int]] = {}
     for row in rows:
+        twin_id = str(row["twin_id"])
+        if twin_prefix is not None and not twin_id.startswith(twin_prefix):
+            continue
         answers = (row.get("detail") or {}).get(H2_ANSWERS_KEY) or {}
         vector = {k: int(v) for k, v in answers.items() if v is not None}
         if vector:
-            out[str(row["twin_id"])] = vector
+            out[twin_id] = vector
     return out
 
 
+def _scoped(outcome: ValidityOutcome, twin_prefix: str | None) -> ValidityOutcome:
+    """Record the batch a result describes **on the result**, so a stored row cannot mislead.
+
+    `validity_results` is append-only and read months later. A row that says "twin closer to its
+    own driver than to a stranger's" over a pool of four generator versions and a row that says
+    it over one batch are different claims, and nothing on the row distinguished them. The scope
+    goes in `detail`, which `docs/08` §5 keeps for "what the test measures".
+    """
+    if twin_prefix is None:
+        return outcome
+    return outcome.model_copy(
+        update={"detail": f"{outcome.detail} Scored on batch {twin_prefix} only."}
+    )
+
+
 async def noise_floor(
-    session_id: str | None, db: DbBackend
-) -> float | None:
-    """``|index(00000)|`` for this session. `docs/07` §6. ``None`` when the control never ran.
+    session_id: str | None, db: DbBackend, ref: ReferenceData | None = None
+) -> NoiseFloor | None:
+    """This session's `00000` floor, at both levels. `docs/07` §6, `models.analysis.NoiseFloor`.
+
+    Measured from the control run's **own answer vectors**, not from its stored ``index_value``.
+    Reading the index gave a single number that had already had `index_sign` applied and the six
+    metrics averaged, so opposing movements cancelled before the floor was taken — on the study
+    database that produced a floor of exactly `0.000`, against which every test judged. See
+    :func:`~twinlab.analysis.metrics.measure_noise_floor` for why the two levels exist.
 
     Never pooled across sessions: a floor drawn from a different panel describes different twins,
     and a cell reported against it is reported against nothing.
     """
     if session_id is None:
         return None
-    rows = await db.select(
-        "runs",
-        [
-            ("eq", "session_id", session_id),
-            ("eq", "version_code", CONTROL_CODE),
-            ("eq", "status", "completed"),
-        ],
-        order=("started_at", True),
-        limit=1,
-    )
-    if not rows or rows[0].get("index_value") is None:
+    control = await _run_answers(session_id, CONTROL_CODE, db)
+    if not control:
         return None
-    return round(abs(float(rows[0]["index_value"])), 4)
+    baselines = await _baseline_vectors(sorted(control), db, ref or reference())
+    return measure_noise_floor(
+        baseline_vectors=baselines, control_vectors=control, ref=ref or reference()
+    )
 
 
 async def _run_answers(
@@ -229,6 +279,30 @@ def pair_with_another(twin_ids: list[str], *, seed: int) -> dict[str, str]:
     return {t: ids[(i + offset) % len(ids)] for i, t in enumerate(ids)}
 
 
+def _note_drops(outcome: ValidityOutcome, *, requested: int) -> ValidityOutcome:
+    """Fold a silent-drop count into the headline. M19 WP-7.
+
+    Every test here can start with more twins than it ends with — a twin that failed the output
+    contract (`ask_panel_twins`), had no complete baseline (`_baseline_vectors`), or did not survive
+    an intersection with another presentation of the same cell. Before this, that gap only ever
+    reached a `log.warning` line; the Results table showed `twins_n` with no way to tell whether it
+    was the whole panel or a quietly narrowed subset of it. `twins_n` on the stored outcome already
+    is the "used" count (every test here sets it from the same final twin set this reports against),
+    so there is nothing to pass in but what the test started with.
+
+    A no-op when nothing was dropped, or when the test could not run at all — `INCONCLUSIVE` already
+    says why in its own headline, and a drop count beside it would double up on the same fact.
+    """
+    dropped = requested - outcome.twins_n
+    if dropped <= 0 or outcome.verdict == "INCONCLUSIVE":
+        return outcome
+    note = (
+        f" ({dropped} of {requested} twins had no usable answer for this comparison and were "
+        "excluded.)"
+    )
+    return outcome.model_copy(update={"headline": outcome.headline + note})
+
+
 # ------------------------------------------------------------------------ appending a row
 
 
@@ -236,6 +310,7 @@ async def append_result(
     outcome: ValidityOutcome,
     *,
     session_id: str | None = None,
+    version_code: str | None = None,
     backend: DbBackend | None = None,
     mode: str | None = None,
     provider: str = "ollama",
@@ -246,6 +321,13 @@ async def append_result(
     The zero-twin rule is checked once more immediately before the write. It is already
     unconstructible on :class:`ValidityOutcome` and rejected by the database, and it is checked
     here too because this is the line the prototype's defect went through.
+
+    ``version_code`` is the stimulus the test was run against — ``SHAM_CODE`` for test 2,
+    ``settings.start_code`` or the chosen version for tests 4-8, ``None`` for tests 1 and 3, which
+    use no stimulus at all. Before this it was not recorded anywhere: a `validity_results` row said
+    a test ran and what it found, but not what it was shown, so two FAIL rows for the same test
+    could not be told apart. **Requires `006_validity_version_code.sql`** — see
+    `services/config._REQUIRED_COLUMNS`, which refuses to boot without it rather than failing here.
     """
     db = backend or get_backend()
     if outcome.twins_n == 0 and outcome.verdict != "INCONCLUSIVE":
@@ -259,6 +341,7 @@ async def append_result(
         [{
             "test_id": outcome.test_id,
             "session_id": session_id,
+            "version_code": version_code,
             "twins_n": outcome.twins_n,
             "mode": mode or ("live" if live else "mock"),
             "provider": provider,
@@ -304,7 +387,193 @@ async def record_temperature_recommendation(
     )
 
 
+async def test_readiness(
+    number: int,
+    *,
+    session_id: str | None = None,
+    version_code: str | None = None,
+    second_model_name: str | None = None,
+    backend: DbBackend | None = None,
+) -> dict[str, Any]:
+    """What this validity test still needs, **before** the button is pressed. M19 WP-6 item 5.
+
+    Returns ``{"ready": bool, "reason": str}``. Computed from the same reads the test itself makes,
+    never guessed from a card's metadata — a readiness line that can disagree with the test is
+    worse than no line.
+
+    This exists because eight cards with eight buttons could produce no row and, for five of them,
+    no error either: tests 1 and 3 read H2 vectors the quality gate writes (`twin_quality_runs` was
+    empty), test 2 reads a completed `SHAM` run in the chosen session (`runs` was empty), tests 4-8
+    need a Checker-passed stimulus (`settings.start_code` had never been rendered), and test 7
+    needs a second model name the screen never supplied. Every one of those is knowable without
+    making a call.
+    """
+    db = backend or get_backend()
+    if number not in vt.TEST_IDS:
+        raise ValidityRunError(f"there are eight validity tests; {number} is not one of them")
+
+    def not_ready(reason: str) -> dict[str, Any]:
+        return {"ready": False, "reason": reason, "number": number}
+
+    # --- tests 1 and 3: stored H2 vectors, no call.
+    if number in (1, 3):
+        stored = await db.count(
+            "twin_quality_runs",
+            [("eq", "is_latest", True), ("eq", "holdout_set", "H2")],
+        )
+        if stored < 2:
+            total = await db.count("twins", None)
+            return not_ready(
+                f"needs the quality gate: {stored} of {total} twins have a stored H2 vector, and "
+                "this test compares one twin's answers against another's, so it needs at least "
+                "two. Run the twin quality test with Part 16 on."
+            )
+        return {
+            "ready": True,
+            "reason": f"{stored} twins have a stored H2 vector.",
+            "number": number,
+        }
+
+    # --- test 7: a second model to compare against.
+    if number == 7:
+        named = (second_model_name or "").strip()
+        if not named:
+            return not_ready(
+                "needs a second model name. The test asks whether the same twins answer the same "
+                "way under a different model, which cannot be answered against one model."
+            )
+        if named == settings.twinlab_model:
+            return not_ready(
+                f"{named} is already the model this installation runs. Test 7 asks whether the "
+                "finding is a property of one model, which a model cannot be asked about itself."
+            )
+        unready = await _model_not_served(named)
+        if unready is not None:
+            return not_ready(unready)
+
+    # --- everything else needs a session with a frozen panel.
+    if session_id is None:
+        from twinlab.services.runs import latest_session_with_panel
+
+        session_id = await latest_session_with_panel(db)
+    if not session_id:
+        return not_ready(
+            "needs a session with a frozen panel. A render session and a quality session have "
+            "none by construction, so there is nobody to put a stimulus to. Ask the twins for a "
+            "version on the Dial board first."
+        )
+    panel = await db.count("session_panel", [("eq", "session_id", session_id)])
+    if not panel:
+        return not_ready(
+            f"session {session_id[:8]} has no frozen panel, so there is nobody to put a stimulus "
+            "to (I14)."
+        )
+
+    # --- test 2: a completed SHAM run in that session.
+    if number == 2:
+        sham = await db.select(
+            "runs",
+            [
+                ("eq", "session_id", session_id),
+                ("eq", "version_code", SHAM_CODE),
+                ("eq", "status", "completed"),
+            ],
+            limit=1,
+        )
+        if not sham:
+            return not_ready(
+                f"needs a completed {SHAM_CODE} run in session {session_id[:8]}. The sham is the "
+                "demand-characteristic floor, and without it there is nothing to compare a live "
+                "cell against."
+            )
+        return {"ready": True, "reason": f"{panel} twins on the panel.", "number": number}
+
+    # --- tests 4-8: a Checker-passed stimulus.
+    code = version_code or settings.start_code
+    paragraphs = await _paragraphs_for(code, db)
+    if not paragraphs:
+        return not_ready(
+            f"needs a stored, Checker-passed variant for {code}; there is none, so there is "
+            "nothing verified to put to a twin (I3). Render it in Twin Studio, or pick a version "
+            "that has been run."
+        )
+    return {
+        "ready": True,
+        "reason": f"{panel} twins on the panel, stimulus {code} is verified.",
+        "number": number,
+    }
+
+
+async def _model_not_served(name: str) -> str | None:
+    """Why ``name`` cannot be asked, or ``None`` to proceed. M21.
+
+    **Fails open.** A listing that is slow, blocked or unreadable yields ``None`` and the test
+    runs: this exists to catch a typo before it costs a round of calls, not to become a second
+    gate between the researcher and a test they are entitled to run. `served_model_names` returns
+    ``None`` for "could not ask", which is not "serves nothing".
+
+    It is worth the one cached request because test 7 asks **model A first**. A name misspelled in
+    the box passes an emptiness check, spends a full panel of calls on the model already in use,
+    and only then dies on model B — so the cost of the typo is N serial calls on the scarcest
+    resource in the system (`ARCHITECTURE.md` §7.1), paid before anything can notice.
+    """
+    from twinlab.agents.registry import served_model_names
+
+    served = await served_model_names()
+    if served is None or name in served:
+        return None
+
+    stem = name.split(":")[0].split("-")[0].lower()
+    near = sorted(m for m in served if m.lower().startswith(stem))
+    suggestion = f" Did you mean {' or '.join(near)}?" if near else ""
+    return (
+        f"{name} is not served by {settings.ollama_base_url}. Test 7 would spend a full round on "
+        f"{settings.twinlab_model} before failing on it.{suggestion}"
+    )
+
+
+async def runnable_version_codes(backend: DbBackend | None = None) -> list[str]:
+    """Every version with a stored, Checker-**passed** variant at the current style version.
+
+    What the Validity tab's *Version to test* control offers. Filtered on `passed` for the same
+    reason :func:`_paragraphs_for` is: these paragraphs go straight to a twin (I3).
+    """
+    db = backend or get_backend()
+    rows = await db.select(
+        "variants", [("eq", "style_version", settings.style_version)]
+    )
+    codes = {
+        str(row["version_code"])
+        for row in rows
+        if dict(row.get("checker") or {}).get("passed")
+    }
+    return sorted(codes)
+
 # ------------------------------------------------------------------------ the eight runs
+
+
+#: Validity tasks in flight, held so the event loop cannot garbage-collect one mid-run. M19 WP-6.
+#:
+#: `asyncio.create_task` keeps only a weak reference, so a task nobody holds can be collected
+#: while it is still running and whatever it raises becomes an "exception was never retrieved"
+#: warning at interpreter shutdown. Every other background path in this codebase guards against
+#: exactly this — `services.runs._spawn`, `services.quality._TASKS`, `services.studio._RENDERS`,
+#: each with a comment calling it the documented failure mode rather than a theoretical one. This
+#: one did not: `ui/pages/lab` discarded the returned task, and the handler had already told the
+#: researcher *"Queued test N. The result appears in the table below when it finishes."*
+_TASKS: set[asyncio.Task[ValidityOutcome]] = set()
+
+
+def pending_validity_tests() -> int:
+    """How many validity tests are still running in the background. Pure, no I/O.
+
+    The Validity tab's results table is painted once on load; a queued test's row would not appear
+    until the page was reloaded by hand, though the confirm step already promised "the result
+    appears in the table below when it finishes." This is what lets the tab poll **only** while
+    something is actually in flight, the same idiom the Agents tab's ticker already uses — an idle
+    tab with nothing running makes zero database calls.
+    """
+    return len(_TASKS)
 
 
 def enqueue_validity_test(number: int, **kwargs: Any) -> asyncio.Task[ValidityOutcome]:
@@ -314,8 +583,65 @@ def enqueue_validity_test(number: int, **kwargs: Any) -> asyncio.Task[ValidityOu
     path — at `3N` calls test 8 is a twenty-minute action at one concurrent request. The task keeps
     running if the researcher changes tab, exactly as a session does, and the appended row is how
     the screen learns it finished.
+
+    The task is **held** in :data:`_TASKS` and its death is **reported** (WP-6). A background
+    failure must appear where the researcher is looking: the done-callback appends an
+    `INCONCLUSIVE` row naming the exception, so a test that cannot run says so in the same table a
+    test that ran writes to, rather than in a console line nobody reads.
     """
-    return asyncio.create_task(run_validity_test(number, **kwargs))
+    task = asyncio.create_task(run_validity_test(number, **kwargs))
+    _TASKS.add(task)
+    task.add_done_callback(_TASKS.discard)
+    task.add_done_callback(
+        lambda done: _report_validity_death(
+            number, done, kwargs.get("session_id"), kwargs.get("version_code")
+        )
+    )
+    return task
+
+
+def _report_validity_death(
+    number: int,
+    task: asyncio.Task[ValidityOutcome],
+    session_id: str | None,
+    version_code: str | None = None,
+) -> None:
+    """Turn a dead validity task into a visible `INCONCLUSIVE` row. WP-6.
+
+    `INCONCLUSIVE` and not `FAIL`: the test did not fail, it did not run (I15 applied to a
+    validity test — "a test that ran on zero twins reports INCONCLUSIVE, never PASS", and the same
+    reasoning covers a test that ran on nobody because it raised). Recording it as `FAIL` would
+    put an opinion about the instrument into the evidence table on the strength of a traceback.
+
+    Appending is itself async, so it is scheduled rather than awaited — a done-callback cannot
+    await. If the append also fails there is nothing left to write to, and the log is the last
+    resort.
+    """
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is None:
+        return
+
+    async def _append() -> None:
+        try:
+            await append_result(
+                vt.inconclusive(
+                    number,
+                    f"the test did not finish: {type(exc).__name__}: {exc}"[:500],
+                ),
+                session_id=session_id,
+                version_code=version_code,
+            )
+        except Exception:  # noqa: BLE001 — the last resort when the table cannot be written
+            log.exception("validity test %s died and its INCONCLUSIVE row could not be written",
+                          number)
+
+    log.error("validity test %s raised %r", number, exc)
+    try:
+        asyncio.get_running_loop().create_task(_append())
+    except RuntimeError:  # pragma: no cover — no loop, so nothing can be appended
+        log.error("no running loop to record validity test %s's failure", number)
 
 
 async def run_validity_test(
@@ -326,6 +652,7 @@ async def run_validity_test(
     ask: AskTwins | None = None,
     second_model_name: str | None = None,
     version_code: str | None = None,
+    twin_prefix: str | None = None,
     append: bool = True,
 ) -> ValidityOutcome:
     """Run one validity test and append its result. `docs/08` §4.
@@ -334,22 +661,71 @@ async def run_validity_test(
     it and never reference it**: they re-score stored vectors, which is why `docs/08` §4 gives them
     a cost of zero and why `docs/11` M13 asserts that against the call counter.
 
+    ``twin_prefix`` scopes tests 1 and 3 to **one batch**, and `docs/08` §4 means them to be read
+    that way: a stranger drawn under a different generator version is not the stranger test 1
+    compares against, and pooling two versions is what made one reading of test 3 meaningless
+    (`docs/DECISIONS.md`, 2026-10-13). The scope is recorded on the appended row. It is refused
+    on tests 2 and 4-8 rather than ignored (`CLAUDE.md` rule 7): those read a **frozen panel**
+    (I10), so the set of twins is the session's and not a prefix's, and accepting the argument
+    there would suggest a filter that never applied.
+
     A test that cannot run returns `INCONCLUSIVE` and — because `INCONCLUSIVE` is a result about
     the test, not an error — is still appended, so the attempt is in the log.
     """
     if number not in vt.TEST_IDS:
         raise ValidityRunError(f"there are eight validity tests; {number} is not one of them")
+    if twin_prefix is not None and number not in (1, 3):
+        raise ValidityRunError(
+            f"test {number} reads the session's frozen panel (I10), so it cannot be scoped to "
+            f"batch {twin_prefix!r}. Only tests 1 and 3 re-score stored vectors across whichever "
+            "twins have them, and only they take a prefix."
+        )
+    # The stimulus this attempt is recorded against, resolved once and used on every append below
+    # — including the early refusals, so even a session-config mismatch or a missing stimulus is
+    # attributable to the version the researcher was trying to test (docs/DECISIONS.md, 2026-10-07).
+    resolved_version = (
+        None if number in (1, 3)
+        else SHAM_CODE if number == 2
+        else (version_code or settings.start_code)
+    )
     db = backend or get_backend()
     ref = reference()
     if session_id is None:
-        from twinlab.services.runs import latest_session_id
+        # WP-6 item 3. It defaulted to `latest_session_id` — the newest session of **any** kind.
+        # On the study database that was `Render 01000` (`kind='render'`, `panel_size=0`), so
+        # tests 4-8 read `session_panel`, found nothing, and could only ever report INCONCLUSIVE.
+        # A render session and a quality session have no panel by construction.
+        from twinlab.services.runs import latest_session_with_panel
 
-        session_id = await latest_session_id(db)
+        session_id = await latest_session_with_panel(db)
+
+    # RESEARCHER 2026-10-05. A validity test reads a session's answers, and those answers belong to
+    # the config the session started under. If the live config has since changed, the test would
+    # be reading one config's answers as if they described another, so it is INCONCLUSIVE with the
+    # reason, and it is still appended so the attempt is on the record.
+    if session_id is not None:
+        from twinlab.services.config_match import current_fingerprint
+
+        rows = await db.select("sessions", [("eq", "session_id", session_id)], limit=1)
+        stored = str((rows[0].get("config") or {}).get("config_fingerprint") or "") if rows else ""
+        live = await current_fingerprint(db)
+        if stored != live:
+            outcome = vt.inconclusive(
+                number,
+                f"session {session_id[:8]} was run under config "
+                f"{stored or 'with no recorded config'}, and the live config is {live}. Run the "
+                "twin quality test for the live config and a session on it, then run this test.",
+            )
+            if append:
+                await append_result(
+                    outcome, session_id=session_id, version_code=resolved_version, backend=db
+                )
+            return outcome
 
     if number == 1:
-        outcome = await _test1(db, ref, session_id)
+        outcome = await _test1(db, ref, session_id, twin_prefix=twin_prefix)
     elif number == 3:
-        outcome = await _test3(db, ref)
+        outcome = await _test3(db, ref, twin_prefix=twin_prefix)
     else:
         outcome = await _live_test(
             number,
@@ -362,7 +738,9 @@ async def run_validity_test(
         )
 
     if append:
-        await append_result(outcome, session_id=session_id, backend=db)
+        await append_result(
+            outcome, session_id=session_id, version_code=resolved_version, backend=db
+        )
     return outcome
 
 
@@ -370,11 +748,15 @@ async def run_validity_test(
 
 
 async def _test1(
-    db: DbBackend, ref: ReferenceData, session_id: str | None
+    db: DbBackend,
+    ref: ReferenceData,
+    session_id: str | None,
+    *,
+    twin_prefix: str | None = None,
 ) -> ValidityOutcome:
     """Test 1 end to end, **with no model call anywhere in this function.**"""
     h2_items = ref.holdout_h2_item_ids
-    twin_vectors = await h2_vectors(db)
+    twin_vectors = await h2_vectors(db, twin_prefix=twin_prefix)
     if not twin_vectors:
         return vt.inconclusive(
             1,
@@ -394,28 +776,42 @@ async def _test1(
 
     own_errors: dict[str, float] = {}
     other_errors: dict[str, float] = {}
+    # How far apart the two *humans* are, on the same items — the gap a flawless twin would score.
+    # Reported on the row, never thresholded; see `vt.wrong_person`'s docstring.
+    distances: list[float] = []
     for twin_id, vector in twin_vectors.items():
         other_id = pairs.get(twin_id)
         if other_id is None:
             continue
-        own = vt.mae(vector, await _human_answers(twin_id, db), h2_items)
-        other = vt.mae(vector, await _human_answers(other_id, db), h2_items)
+        own_human = await _human_answers(twin_id, db)
+        other_human = await _human_answers(other_id, db)
+        own = vt.mae(vector, own_human, h2_items)
+        other = vt.mae(vector, other_human, h2_items)
         # Both or neither. A twin scored against only one side is not a paired observation, and
         # pairing it with a mean from elsewhere would be imputation (I17).
         if own is None or other is None:
             continue
         own_errors[twin_id] = own
         other_errors[twin_id] = other
+        between = vt.mae(own_human, other_human, h2_items)
+        if between is not None:
+            distances.append(between)
 
-    return vt.wrong_person(
-        own_errors=own_errors, other_errors=other_errors, model=settings.model_badge
+    outcome = vt.wrong_person(
+        own_errors=own_errors,
+        other_errors=other_errors,
+        between_person_distance=vt.mean(distances),
+        model=settings.model_badge,
     )
+    return _scoped(_note_drops(outcome, requested=len(twin_vectors)), twin_prefix)
 
 
 # ------------------------------------------------------------- test 3: simple guesses
 
 
-async def _test3(db: DbBackend, ref: ReferenceData) -> ValidityOutcome:
+async def _test3(
+    db: DbBackend, ref: ReferenceData, *, twin_prefix: str | None = None
+) -> ValidityOutcome:
     """Test 3 end to end, **with no model call anywhere in this function.**
 
     The two naive predictors are `docs/08` §4's. Both are built from the H2 items' `mirrors` link:
@@ -429,7 +825,7 @@ async def _test3(db: DbBackend, ref: ReferenceData) -> ValidityOutcome:
             3, "no H2 item names the battery item it mirrors, so there is no baseline predictor"
         )
 
-    twin_vectors = await h2_vectors(db)
+    twin_vectors = await h2_vectors(db, twin_prefix=twin_prefix)
     if not twin_vectors:
         return vt.inconclusive(
             3, "no twin has a stored H2 answer vector. Run the quality gate first."
@@ -466,12 +862,13 @@ async def _test3(db: DbBackend, ref: ReferenceData) -> ValidityOutcome:
             continue
         twin_errors[twin_id], nochange_errors[twin_id], groupshift_errors[twin_id] = errors  # type: ignore[assignment]
 
-    return vt.simple_guesses(
+    outcome = vt.simple_guesses(
         twin_errors=twin_errors,
         nochange_errors=nochange_errors,
         groupshift_errors=groupshift_errors,
         model=settings.model_badge,
     )
+    return _scoped(_note_drops(outcome, requested=len(twin_vectors)), twin_prefix)
 
 
 def _group_shift(
@@ -521,7 +918,7 @@ async def _live_test(
         return vt.inconclusive(number, "no session has been run, so there is nothing to test")
 
     if number == 2:
-        return await _test2(db, ref, session_id, floor, ask)
+        return await _test2(db, ref, session_id, floor)
     if ask is None:
         return vt.inconclusive(
             number,
@@ -547,18 +944,18 @@ async def _test2(
     ref: ReferenceData,
     session_id: str,
     floor: float | None,
-    ask: AskTwins | None,
 ) -> ValidityOutcome:
     """Test 2 — the placebo. `docs/08` §4 test 2.
 
     `SHAM` is one of the two control cells every fresh session runs before its sweep
-    (`docs/03` §6.1), so its answers are normally already stored and this test costs nothing extra.
-    That is the cache the whole orchestrator is built on, not a shortcut: the vectors were produced
-    by the same twins, the same stimulus and the same model.
+    (`docs/03` §6.1), so its answers are **always** already stored, and this test never makes a
+    call of its own — it is the one live-feeling test with a true cost of zero. There used to be a
+    fallback that called ``ask(twin_ids=[], paragraphs={})`` when no SHAM was stored; with an empty
+    `twin_ids` it could only ever return `{}`, so it was dead code that looked like an attempt.
+    Removed rather than fixed: `docs/03` §6.1 is explicit that SHAM is asked once per session before
+    the sweep, never by a validity test.
     """
     variant = await _run_answers(session_id, SHAM_CODE, db)
-    if not variant and ask is not None:
-        variant = await ask(twin_ids=[], paragraphs={}, purpose="sham")
     if not variant:
         return vt.inconclusive(
             2,
@@ -574,13 +971,14 @@ async def _test2(
         )
 
     shifts, per_twin = _shifts_and_moves(baselines, variant, twins, ref)
-    return vt.placebo_change(
+    outcome = vt.placebo_change(
         sham_shifts=shifts,
         per_twin_abs_move=per_twin,
         noise_floor=floor,
         median_live_shift=await _median_live_shift(session_id, db),
         model=settings.model_badge,
     )
+    return _note_drops(outcome, requested=len(variant))
 
 
 def _shifts_and_moves(
@@ -644,6 +1042,17 @@ async def _test_with_calls(
     """
     code = version_code or settings.start_code
     paragraphs = await _paragraphs_for(code, db)
+    if not paragraphs:
+        # WP-6. Nothing checked this, and the default `code` is `settings.start_code` ("10000"),
+        # which has never been rendered — so every live test read `{}` here and carried on.
+        # `agents.twin.build_round_prompt` then raised `RoundPromptError("expected all five
+        # levers, got [])`, which nothing in the codebase caught, inside a task nobody held.
+        # Refusing here is both the honest answer and the one that costs no model call.
+        return vt.inconclusive(
+            number,
+            f"{code} has no stored, Checker-passed variant, so there is nothing verified to put "
+            "to a twin (I3). Render it in Twin Studio, or pick a version that has been run.",
+        )
     baseline_ids: list[str] = []
     panel = await db.select("session_panel", [("eq", "session_id", session_id)])
     baseline_ids = [str(r["twin_id"]) for r in panel]
@@ -675,13 +1084,14 @@ async def _test_with_calls(
             t: score(answers[t], "happiness", ref) - score(baselines[t], "happiness", ref)
             for t in twins
         }
-        return vt.impossible_version(
+        outcome = vt.impossible_version(
             happiness_shift=vt.mean(list(per_twin.values())),
             per_twin_happiness_shift=per_twin,
             noise_floor=floor,
             model=settings.model_badge,
             temperature=temperature,
         )
+        return _note_drops(outcome, requested=len(twin_ids))
 
     if number == 5:
         first = await ask(
@@ -701,7 +1111,7 @@ async def _test_with_calls(
             for m in ref.metrics
         }
         own, _ = _shifts_and_moves(baselines, first, twins, ref)
-        return vt.order_and_wording(
+        outcome = vt.order_and_wording(
             diff_per_metric=diff,
             twins_n=len(twins),
             noise_floor=floor,
@@ -709,11 +1119,21 @@ async def _test_with_calls(
             model=settings.model_badge,
             temperature=temperature,
         )
+        return _note_drops(outcome, requested=len(twin_ids))
 
     if number == 6:
         fairness_items = [i.item_id for i in ref.block_items("FAIR")]
         with_answers = await ask(
             twin_ids=twin_ids, paragraphs=paragraphs, purpose="fairness_with",
+            temperature=temperature,
+        )
+        # The control (2026-10-07). The same twins, the **unablated** persona, the same stimulus,
+        # asked again: whatever this moves is call-to-call variance and not an ablation effect.
+        # Without it `fairness_with` vs `fairness_without` cannot tell the two apart, and the test
+        # would report PASS for a twin that ignored its persona entirely. It is asked before the
+        # ablated round so a provider failure costs the control rather than the comparison.
+        retest_answers = await ask(
+            twin_ids=twin_ids, paragraphs=paragraphs, purpose="fairness_retest",
             temperature=temperature,
         )
         ablated = await _ablated_personas(twin_ids, fairness_items, db)
@@ -727,13 +1147,18 @@ async def _test_with_calls(
         twins = sorted(set(with_answers) & set(without_answers))
         if not twins:
             return vt.inconclusive(6, "no twin answered both with and without its fairness clauses")
-        return vt.ablation(
+        outcome = vt.ablation(
             fairness_with={t: score(with_answers[t], "fairness", ref) for t in twins},
             fairness_without={t: score(without_answers[t], "fairness", ref) for t in twins},
+            fairness_retest={
+                t: score(retest_answers[t], "fairness", ref)
+                for t in sorted(set(retest_answers) & set(with_answers))
+            },
             noise_floor=floor,
             model=settings.model_badge,
             temperature=temperature,
         )
+        return _note_drops(outcome, requested=len(twin_ids))
 
     if number == 7:
         other = second_model_name or ""
@@ -756,7 +1181,7 @@ async def _test_with_calls(
             )
         shifts_a, _ = _shifts_and_moves(baselines, first, twins, ref)
         shifts_b, _ = _shifts_and_moves(baselines, second, twins, ref)
-        return vt.second_model(
+        outcome = vt.second_model(
             index_a=_index_per_twin(baselines, first, twins, ref),
             index_b=_index_per_twin(baselines, second, twins, ref),
             shifts_a=shifts_a,
@@ -765,6 +1190,7 @@ async def _test_with_calls(
             model_b=other,
             temperature=temperature,
         )
+        return _note_drops(outcome, requested=len(twin_ids))
 
     # number == 8
     index_by_temp: dict[float, dict[str, float]] = {}
@@ -785,7 +1211,7 @@ async def _test_with_calls(
         model=settings.model_badge,
     )
     await record_temperature_recommendation(recommendation, backend=db)
-    return outcome
+    return _note_drops(outcome, requested=len(twin_ids))
 
 
 def _temperature() -> float:
@@ -795,10 +1221,18 @@ def _temperature() -> float:
 
 
 async def _paragraphs_for(version_code: str, db: DbBackend) -> dict[str, str]:
-    """The stored, Checker-passed paragraphs for a cell. ``{}`` when it has never been rendered.
+    """The stored, Checker-**passed** paragraphs for a cell. ``{}`` when there are none.
 
     Read from `variants`, never re-rendered here: **`ParagraphPool` is the only thing that may
     render a paragraph and `check_variant` the only thing that may declare one usable** (I3).
+
+    **The `passed` check is the point of this function, and it was missing.** Until 2026-10-03 the
+    query filtered on `(version_code, style_version)` only and returned the latest row whatever
+    its verdict, so a variant the Checker had *rejected* would have been handed to tests 4-8 and
+    put to the panel. The docstring said "Checker-passed"; the code did not. That is I3, which has
+    no exemption for a validity test — `services/studio._stimulus` and
+    `services/quality._render_stimuli` both refuse on the same ground, and this was the third read
+    site that did not.
     """
     # Both halves of `(version_code, style_version)`: these paragraphs go straight to a twin
     # (tests 4-8), and a stimulus verified under another style contract is not verified for this
@@ -810,6 +1244,8 @@ async def _paragraphs_for(version_code: str, db: DbBackend) -> dict[str, str]:
         limit=1,
     )
     if not rows:
+        return {}
+    if not dict(rows[0].get("checker") or {}).get("passed"):
         return {}
     out: dict[str, str] = {}
     for lever, entry in dict(rows[0].get("paragraphs") or {}).items():
@@ -855,7 +1291,10 @@ __all__ = [
     "h2_vectors",
     "noise_floor",
     "pair_with_another",
+    "pending_validity_tests",
     "record_temperature_recommendation",
     "run_validity_test",
+    "runnable_version_codes",
+    "test_readiness",
     "validity_budget_view",
 ]

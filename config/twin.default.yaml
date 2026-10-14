@@ -21,12 +21,15 @@ quality_runs_per_twin: 3
 mae_max: 1.0
 pct_within_1_min: 0.80
 
-# A recorded field, NOT a UI control: there is no no-baseline arm (docs/03 §8). Anchoring a twin to
-# its own numbers is what keeps it recognisably its own driver, and the bound on that anchoring is
-# SHAM - 00000, reported with every cell.
-# The quality gate overrides this to false for its own rounds, because the human had no baseline
-# either (docs/08 §2.1 step 2).
-show_baseline: true
+# A recorded field, NOT a UI control -- a researcher-set default, not a per-run toggle.
+# Default reversed to false 2026-10-07 (docs/DECISIONS.md). The earlier default (true) rested on
+# the claim that anchoring a twin to its own numbers was bounded by SHAM - 00000; in practice the
+# twin prompt's own wording ("leaving a number exactly where it was is a real and common answer")
+# made the 00000 control return the stored baseline on all 37 items for most twins, so the floor
+# came out at 0.000 and nothing judged against it could ever be distinguished from the floor
+# itself. The quality gate already ran with no baseline (docs/08 §2.1 step 2); this brings the
+# rest of the elicitation to match it. twin_v3.md is the prompt written for this default.
+show_baseline: false
 
 # Which wording variant of the battery stems is used. Validity test 5 swaps it to show the result
 # does not depend on the phrasing.

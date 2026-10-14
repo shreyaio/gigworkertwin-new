@@ -780,6 +780,8 @@ class InMemoryBackend:
                     "detail": params["p_detail"],
                     "model": params["p_model"],
                     "config_version": params.get("p_config_version", 1),
+                    # `005`: a verdict with no fingerprint qualifies nobody under a live config.
+                    "config_fingerprint": params.get("p_config_fingerprint"),
                     "is_latest": True,
                 },
             )

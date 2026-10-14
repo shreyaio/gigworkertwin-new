@@ -30,16 +30,25 @@ import logging
 from config.settings import settings
 from twinlab.agents.contract import ContractError
 from twinlab.db.client import DbBackend, get_backend
-from twinlab.db.repositories import SessionRepo, VariantRepo
+from twinlab.db.repositories import ControlAnswerRepo, SessionRepo, VariantRepo
 from twinlab.ingest.reference_store import ReferenceData, reference
 from twinlab.models.run import Session
-from twinlab.models.twin import QualityScore, TwinConfig
+from twinlab.models.twin import BatteryItem, QualityScore, TwinConfig
 from twinlab.orchestrator.events import EventLog
+from twinlab.orchestrator.odometer import CONTROL_CODE, SHAM_CODE
+from twinlab.services.config_match import current_fingerprint
 from twinlab.services.twin_runtime import (
+    H3_PROTOCOL,
+    H3_PROTOCOL_ISOLATED,
     TwinPathError,
+    ask_h3_round,
+    ask_h3_round_isolated,
     ask_items,
+    battery_for,
     driver_answers,
+    h3_protocol_is_isolated,
     render_and_check,
+    round_seed,
 )
 from twinlab.validity.quality import (
     QualityScoreEmpty,
@@ -95,14 +104,14 @@ def active_gate() -> str | None:
 # --------------------------------------------------------------------------- item sets
 
 
-def h3_items(ref: ReferenceData | None = None) -> dict[int, dict[str, tuple[str, int]]]:
-    """``version_shown → {item_id: (stem, points)}``. Three items per round, six rounds.
+def h3_items(ref: ReferenceData | None = None) -> dict[int, dict[str, BatteryItem]]:
+    """``version_shown → {item_id: BatteryItem}``. Three items per round, six rounds.
 
     Built from the frozen register, never from a list here: `docs/01` §3.6 already encodes which
     code each Part 17 item belongs to, and a second copy would drift from it.
     """
     ref = ref or reference()
-    out: dict[int, dict[str, tuple[str, int]]] = {}
+    out: dict[int, dict[str, BatteryItem]] = {}
     for item_id in ref.holdout_h3_item_ids:
         item = ref.items[item_id]
         if item.version_shown is None:
@@ -110,10 +119,7 @@ def h3_items(ref: ReferenceData | None = None) -> dict[int, dict[str, tuple[str,
                 f"{item_id} is an H3 holdout with no `version_shown`, so there is no round to ask "
                 "it in. The register is frozen; this is a data defect, not a case to skip."
             )
-        out.setdefault(int(item.version_shown), {})[item_id] = (
-            item.stem,
-            ref.scale_points(item_id),
-        )
+        out.setdefault(int(item.version_shown), {})[item_id] = ref.battery_item(item_id)
     return out
 
 
@@ -132,9 +138,9 @@ def h3_items_by_outcome(ref: ReferenceData | None = None) -> dict[str, list[str]
     return out
 
 
-def h2_items(ref: ReferenceData | None = None) -> dict[str, tuple[str, int]]:
+def h2_items(ref: ReferenceData | None = None) -> dict[str, BatteryItem]:
     ref = ref or reference()
-    return {i: (ref.items[i].stem, ref.scale_points(i)) for i in ref.holdout_h2_item_ids}
+    return {i: ref.battery_item(i) for i in ref.holdout_h2_item_ids}
 
 
 def arm_code(arm_id: str, ref: ReferenceData | None = None) -> str:
@@ -191,13 +197,21 @@ async def start_quality_gate(
             "make some in the Generator."
         )
 
+    fingerprint = await current_fingerprint(db)
     session = await SessionRepo(db).create(
         name=f"Quality gate ({len(chosen)} twins × {times})",
         kind="quality",
         iterations=0,
         start_code=settings.start_code,
         panel_size=len(chosen),
-        config={**config, "quality_runs_per_twin": times, "twin_ids": chosen[:200]},
+        config={
+            **config,
+            "quality_runs_per_twin": times,
+            "twin_ids": chosen[:200],
+            # The config this gate qualifies twins under (`005`). Shown on the session, so the
+            # Agents log says which model the verdicts are for.
+            "config_fingerprint": fingerprint,
+        },
     )
     from twinlab.orchestrator import budget as budget_calc
 
@@ -263,6 +277,9 @@ async def run_quality_gate(
     )
     verdicts: dict[str, bool | None] = {}
     try:
+        # The fingerprint of the config this whole run is made under. Read once, so a config edit
+        # made mid-run cannot split one gate across two configs.
+        fingerprint = await current_fingerprint(db)
         stimuli = await _render_stimuli(
             session_id, ref, events, parent, db, include_h2=include_h2
         )
@@ -276,6 +293,21 @@ async def run_quality_gate(
                 await sessions.set_status(session_id, "paused")
                 await sessions.advance(session_id, 0, done)
                 return verdicts
+            current = await _already_qualified(twin_id, fingerprint, db)
+            if current is not None:
+                # Answered under this config already. Asking again would spend calls and write
+                # nothing new (`005`: one answer per twin per control per config).
+                verdicts[twin_id] = current
+                await events.emit(
+                    stage="ask", label=f"quality {twin_id}: already scored under this config",
+                    status="skipped", parent_event_id=parent,
+                    payload={
+                        "twin_id": twin_id, "kept": current, "config_fingerprint": fingerprint,
+                    },
+                )
+                done += 1
+                await sessions.advance(session_id, 0, done)
+                continue
             verdicts[twin_id] = await _gate_one_twin(
                 twin_id=twin_id,
                 stimuli=stimuli,
@@ -288,6 +320,7 @@ async def run_quality_gate(
                 events=events,
                 parent=parent,
                 db=db,
+                fingerprint=fingerprint,
             )
             done += 1
             await sessions.advance(session_id, 0, done)
@@ -326,12 +359,26 @@ async def _render_stimuli(
     stops the gate rather than being shown with a note. Every code is stored on `variants`, which
     is both the durable cache and what `services/lab.scenario_paragraphs` reads back — the
     researcher can then see exactly what each twin was shown.
+
+    **All six are rendered before the halt** (M19 WP-4, decision D2). The halt itself is correct
+    and unchanged: an H3 score over 15 of 18 items is a different measurement from one over 18,
+    and scoring the five that rendered would break the "never impute" rule. What was wrong was the
+    *granularity of the diagnosis*. `12220` is the first entry in `h3_version_codes`, so raising
+    on the first failure meant three renders that would also have failed were never attempted —
+    the researcher was told about one bad code when two underlying lever paragraphs were bad and
+    four of six codes were affected, and the real scale of the problem stayed invisible for a
+    fortnight. `docs/08` §2.1 step 1 says render the six; it does not say stop at the first.
     """
     codes = list(ref.h3_version_codes)
     if include_h2:
         for arm in ref.arms.values():
             if arm.version_code not in codes:
                 codes.append(arm.version_code)
+    # The two control stimuli are rendered here too, so every stimulus a twin can see is checked by
+    # the same Checker and stored with its verdict (I3). `00000` is dial zero, never generated (I5).
+    for control in (CONTROL_CODE, SHAM_CODE):
+        if control not in codes:
+            codes.append(control)
 
     style_version = settings.style_version
     event = await events.emit(
@@ -339,9 +386,15 @@ async def _render_stimuli(
         payload={"codes": codes, "style_version": style_version},
     )
     out: dict[str, dict[str, str]] = {}
+    failed: dict[str, str] = {}
     for code in codes:
         await events.set_label(event, f"render {code}")
-        variant, report = await render_and_check(code, style_version, backend=db)
+        variant, report = await render_and_check(
+            code, style_version, backend=db, events=events
+        )
+        # Stored **with its verdict, pass or fail**, unchanged: a cell that failed and left no
+        # trace is indistinguishable from one never attempted, and I3 is enforced at the read.
+        # From WP-2 a stored failure no longer forbids a later attempt.
         await VariantRepo(db).put(
             version_code=code,
             style_version=style_version,
@@ -351,15 +404,28 @@ async def _render_stimuli(
             checker=report.model_dump(),
         )
         if not report.passed:
-            await events.set_status(
-                event, "error", label=f"{code} failed the Checker",
+            failed[code] = str(report.notes or "")[:300]
+            await events.emit(
+                stage="check", agent="checker", label=f"{code} failed the Checker",
+                status="error", parent_event_id=event,
                 payload={"containment": report.containment, "notes": report.notes[:400]},
             )
-            raise QualityGateError(
-                f"{code} failed the Checker, so it must not be shown to a twin (I3). "
-                f"{report.notes[:300]}"
-            )
+            continue
         out[code] = {k: v.text for k, v in variant.paragraphs.items()}
+
+    if failed:
+        await events.set_status(
+            event, "error",
+            label=f"render — {len(failed)} of {len(codes)} stimuli failed the Checker",
+            payload={"failed": sorted(failed), "passed": sorted(out)},
+        )
+        raise QualityGateError(
+            f"{len(failed)} of {len(codes)} stimuli did not pass the Checker, so the "
+            "gate cannot run: a twin scored on fewer than 18 items is a different measurement "
+            "from one scored on 18, and the missing items are never imputed (I15, I17). "
+            + "; ".join(f"{code}: {why}" for code, why in sorted(failed.items()))
+        )
+
     await events.set_status(
         event, "ok", label=f"render ({len(out)} stimuli)", payload={"codes": sorted(out)}
     )
@@ -379,8 +445,15 @@ async def _gate_one_twin(
     events: EventLog,
     parent: int,
     db: DbBackend,
+    fingerprint: str,
 ) -> bool | None:
-    """H3 for one twin, then H2. Returns the H3 verdict, or ``None`` when nothing scored."""
+    """H3 for one twin, then H2. Returns the H3 verdict, or ``None`` when nothing scored.
+
+    The two control answers (`00000`, `SHAM`) are asked **before** the verdict is written, and a
+    twin whose control answers fail gets no verdict at all. A verdict without its floors would
+    qualify a twin for a panel that could not be measured against them, which is the same mistake
+    as a verdict with no items behind it (I15).
+    """
     event = await events.emit(
         stage="ask", label=f"quality {twin_id}", parent_event_id=parent,
         payload={"twin_id": twin_id, "repeats": repeats},
@@ -394,32 +467,42 @@ async def _gate_one_twin(
     last_vector: dict[str, int] = {}
     failures = 0
     for attempt in range(repeats):
-        vector: dict[str, int] = {}
-        for position, code in enumerate(codes, start=1):
-            await events.set_label(event, f"quality {twin_id} (run {attempt + 1}, {code})")
-            try:
-                answers, _ = await ask_items(
-                    twin_id=twin_id,
-                    paragraphs=stimuli[code],
-                    items=by_version[position],
-                    baseline={},
-                    seed=_seed(session_id, twin_id, code, attempt),
-                    wording=config.wording,
-                    # docs/08 §2.1 step 2 — the human had no baseline either. Overridden here
-                    # whatever TwinConfig says, because it is a property of the gate.
-                    show_baseline=False,
-                    version_code=code,
-                    backend=db,
-                )
-            except (ContractError, TwinPathError) as exc:
-                failures += 1
-                await events.emit(
-                    stage="ask", label=f"{twin_id} {code} run {attempt + 1}", status="error",
-                    parent_event_id=event,
-                    payload={"error": f"{type(exc).__name__}: {exc}"[:300]},
-                )
-                continue
-            vector.update(answers)
+        await events.set_label(event, f"quality {twin_id} (run {attempt + 1} of {repeats})")
+        # **One call, all six versions** (M19 WP-3). It was six calls, one per version, with
+        # three holdout items read from each. `docs/01` §3.6 describes Part 17 as one section of
+        # one questionnaire — six versions x three questions — answered in one sitting by a
+        # respondent who could see and compare the six worlds, and `docs/08` §3.3 scores the twin
+        # on whether it *orders* those six the way its driver did. A twin asked about each
+        # version in an isolated context has nothing to compare, so six calls was both six times
+        # the cost and the less faithful protocol. See `docs/DECISIONS.md` M19 WP-3.
+        # `h3_six_calls_v1` when selected (2026-10-14). The stage-7 decomposition implicated
+        # the single context: the residual error is a per-outcome offset of ~1.0 with scatter of
+        # ~0.65, which is one impression emitted six times. The two protocols are different
+        # measurements, the name is recorded on the row, and `current_config` carries it so a
+        # verdict taken under one is superseded under the other rather than read as current.
+        ask_h3 = ask_h3_round_isolated if h3_protocol_is_isolated() else ask_h3_round
+        try:
+            vector, _telemetry = await ask_h3(
+                twin_id=twin_id,
+                paragraphs_by_version={
+                    position: stimuli[codes[position - 1]] for position in sorted(by_version)
+                },
+                items_by_version=by_version,
+                seed=_seed(session_id, twin_id, "H3", attempt),
+                wording=config.wording,
+                backend=db,
+            )
+        except (ContractError, TwinPathError) as exc:
+            # One failed call now loses all 18 answers rather than 3. The ladder's targeted
+            # repair has already asked for just the missing ids and been refused, so this is a
+            # twin that could not answer Part 17 — the repeat is discarded, never part-scored.
+            failures += 1
+            await events.emit(
+                stage="ask", label=f"{twin_id} Part 17 run {attempt + 1}", status="error",
+                parent_event_id=event,
+                payload={"error": f"{type(exc).__name__}: {exc}"[:300]},
+            )
+            continue
 
         if not vector:
             continue
@@ -443,6 +526,16 @@ async def _gate_one_twin(
         )
         return None
 
+    controls_ok = await _answer_controls(
+        twin_id=twin_id, stimuli=stimuli, config=config, fingerprint=fingerprint,
+        session_id=session_id, events=events, parent=event, db=db,
+    )
+    if not controls_ok:
+        await events.set_status(
+            event, "error", label=f"quality {twin_id}: control answers failed, no verdict",
+        )
+        return None
+
     averaged = average_scores(scores)
     correlations = h3_correlations(human, last_vector, h3_items_by_outcome(ref))
     kept = averaged.keeps(mae_max=config.mae_max, pct_within_1_min=config.pct_within_1_min)
@@ -456,11 +549,21 @@ async def _gate_one_twin(
             repeats=len(scores),
             # The vector is filed under `detail` because `docs/01` §6 gives the table a `detail`
             # jsonb and no column for it. It is what validity tests 1 and 3 re-score.
-            detail={"answers": last_vector, "failed_calls": failures},
+            # `protocol` is not decoration: six-in-one-context and six-in-isolation are
+            # different measurements and must never be pooled, so every row says which one
+            # produced it rather than leaving a future reader to infer it from a date.
+            detail={
+                "answers": last_vector,
+                "failed_calls": failures,
+                "protocol": (
+                    H3_PROTOCOL_ISOLATED if h3_protocol_is_isolated() else H3_PROTOCOL
+                ),
+            },
             config=config,
             session_id=session_id,
             correlations=correlations,
             config_version=config_version,
+            config_fingerprint=fingerprint,
         ),
     )
     await events.set_status(
@@ -480,8 +583,101 @@ async def _gate_one_twin(
         await _h2_for_twin(
             twin_id=twin_id, stimuli=stimuli, config=config, config_version=config_version,
             session_id=session_id, ref=ref, events=events, parent=event, db=db,
+            fingerprint=fingerprint,
         )
     return kept
+
+
+async def _already_qualified(
+    twin_id: str, fingerprint: str, db: DbBackend
+) -> bool | None:
+    """The twin's H3 verdict under ``fingerprint``, when its controls are also answered; else None.
+
+    ``None`` means "this twin still needs the gate for this config". A verdict with a missing
+    control is not a finished result, so it is not returned as one.
+    """
+    latest = await db.select(
+        "twin_quality_runs",
+        [
+            ("eq", "twin_id", twin_id),
+            ("eq", "holdout_set", "H3"),
+            ("eq", "is_latest", True),
+            ("eq", "config_fingerprint", fingerprint),
+        ],
+        limit=1,
+    )
+    if not latest or latest[0].get("kept") is None:
+        return None
+    controls = ControlAnswerRepo(db)
+    for code in (CONTROL_CODE, SHAM_CODE):
+        if await controls.get(twin_id, code, fingerprint) is None:
+            return None
+    return bool(latest[0]["kept"])
+
+
+async def _answer_controls(
+    *,
+    twin_id: str,
+    stimuli: dict[str, dict[str, str]],
+    config: TwinConfig,
+    fingerprint: str,
+    session_id: str,
+    events: EventLog,
+    parent: int,
+    db: DbBackend,
+) -> bool:
+    """`00000` and `SHAM` for one twin, once per config. **One call each. Nothing else.**
+
+    Each control is a single battery round over the same paragraphs a session would show, with the
+    twin's own baseline, so the floors a session later assembles are the same measurement its
+    versions get. A control already stored under this config is not asked again. Returns ``False``
+    when a control could not be answered, which stops the verdict being written (see
+    :func:`_gate_one_twin`).
+    """
+    repo = ControlAnswerRepo(db)
+    baseline = await driver_answers(twin_id, db)
+    battery = battery_for(reference())
+    for code in (CONTROL_CODE, SHAM_CODE):
+        if await repo.get(twin_id, code, fingerprint) is not None:
+            continue
+        seed = round_seed(fingerprint, twin_id, code)
+        try:
+            answers, telemetry = await ask_items(
+                twin_id=twin_id,
+                paragraphs=stimuli[code],
+                items=battery,
+                baseline=baseline,
+                seed=seed,
+                wording=config.wording,
+                show_baseline=config.show_baseline,
+                version_code=code,
+                backend=db,
+            )
+        except (ContractError, TwinPathError) as exc:
+            await events.emit(
+                stage="ask", label=f"{twin_id} {code} control", status="error",
+                parent_event_id=parent,
+                payload={"error": f"{type(exc).__name__}: {exc}"[:300]},
+            )
+            return False
+        await repo.record(
+            twin_id=twin_id,
+            control_code=code,
+            fingerprint=fingerprint,
+            answers=answers,
+            lever_order=telemetry["lever_order"],
+            seed=seed,
+            wording=config.wording,
+            model=telemetry["model"],
+            prompt_version=telemetry.get("prompt_version"),
+            retries=int(telemetry.get("retries", 0)),
+            session_id=session_id,
+        )
+        await events.emit(
+            stage="ask", label=f"{twin_id} {code} control answered", status="ok",
+            parent_event_id=parent, payload={"control": code},
+        )
+    return True
 
 
 async def _h2_for_twin(
@@ -495,6 +691,7 @@ async def _h2_for_twin(
     events: EventLog,
     parent: int,
     db: DbBackend,
+    fingerprint: str,
 ) -> None:
     """H2 for one twin, at **its own driver's arm**. `docs/08` §3.1. H2 does not gate.
 
@@ -560,6 +757,7 @@ async def _h2_for_twin(
             session_id=session_id,
             arm=arm,
             config_version=config_version,
+            config_fingerprint=fingerprint,
         ),
     )
     await events.emit(

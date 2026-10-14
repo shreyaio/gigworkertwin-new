@@ -239,7 +239,13 @@ def test_the_h2_block_moves_by_the_respondents_own_arm():
 
 
 def test_the_captive_voice_checkbox_changes_only_the_representation_lever():
-    """§4's one interaction: a driver who needs the money reacts more to a drivers' forum."""
+    """§4's one interaction: a driver who needs the money reacts more to a drivers' forum.
+
+    Since `v5` `reaction_shift` returns a **signed shift per construct** rather than one
+    direction-free magnitude, so the comparison is on `abs()` of the forum's own outcome:
+    representation lowers pushback, and "reacts more" means it falls further, not that the number
+    rises.
+    """
     from twinlab.generator.synthetic import reaction_shift
     from twinlab.models.view import GeneratorSpec
 
@@ -248,8 +254,8 @@ def test_the_captive_voice_checkbox_changes_only_the_representation_lever():
 
     forum = "00001"  # representation alone
     pay = "10000"  # pay alone
-    assert reaction_shift(forum, on, economic_dependence=1.0) > reaction_shift(
-        forum, on, economic_dependence=0.0
+    assert abs(reaction_shift(forum, on, economic_dependence=1.0)["VOIC"]) > abs(
+        reaction_shift(forum, on, economic_dependence=0.0)["VOIC"]
     )
     assert reaction_shift(forum, off, economic_dependence=1.0) == reaction_shift(
         forum, off, economic_dependence=0.0
@@ -339,7 +345,8 @@ def test_the_driver_survey_counts_its_numbers_rather_than_stating_them():
 
     status = _run(survey_status(InMemoryBackend()))
     assert status["parts"] == 17
-    assert status["questions"] == 112
+    # 112 until the why-probe layer landed (2026-10-08); 34 optional probes took it to 146.
+    assert status["questions"] == 146
     assert status["items"] == 73
     assert len(status["languages"]) == 3
 

@@ -28,8 +28,14 @@ import logging
 from typing import Any
 
 from twinlab.agents.contract import ContractError, run_answer_ladder
-from twinlab.agents.registry import default_agent_configs, get_client, resolve_prompt
+from twinlab.agents.registry import (
+    AgentDisabled,
+    get_client,
+    live_agent,
+    resolve_prompt,
+)
 from twinlab.agents.twin import (
+    RoundPromptError,
     assert_no_forbidden_content,
     build_round_prompt,
     build_user_prompt,
@@ -44,6 +50,7 @@ from twinlab.models.twin import (
     OWN_WORDS_IDS,
     WHY_PROBE_IDS,
     AnswerVector,
+    BatteryItem,
     PanelCandidate,
     QualityAnswerSet,
     RoundPrompt,
@@ -148,7 +155,11 @@ class StoredParagraphPool(ParagraphPool):
 
 
     async def rerender(
-        self, brief: Any, *, instruction: str | None = None
+        self,
+        brief: Any,
+        *,
+        instruction: str | None = None,
+        missing: dict[str, str] | None = None,
     ) -> LeverParagraph:
         """Spend the **one** re-render `docs/03` §5 allows on a gate failure, for this key.
 
@@ -190,8 +201,29 @@ class StoredParagraphPool(ParagraphPool):
         ]
         if spent:
             await self.db.update("lever_paragraphs", {"attempts": charged}, filters)
+        current = self.cached().get(key)
         _rerendered.add(key)
         self._cache.pop(key, None)
+
+        if missing and current is not None and current.status == "ok":
+            # The one repair, targeted: the same design agent writes only the sentences the
+            # paragraph left out, and they are appended to the text already written. The rest of
+            # the paragraph is not regenerated, so a fix for one commitment cannot break another.
+            # The Checker judges the combined text on the next pass (I3).
+            from twinlab.agents.design import missing_instruction, run_design
+
+            addition = await run_design(
+                live_agent("design"), brief, self.client,
+                instruction=missing_instruction(missing),
+            )
+            if addition.status != "ok":
+                # Same refusal semantics as a full re-render: the old row stays, marked spent.
+                self._cache[key] = addition
+                return addition
+            paragraph = LeverParagraph(text=f"{current.text} {addition.text}", status="ok")
+            self._cache[key] = paragraph
+            await self._store(brief, paragraph)
+            return paragraph
 
         if not instruction:
             # No repair to make, so the key is evicted outright and re-rendered from the brief.
@@ -201,8 +233,12 @@ class StoredParagraphPool(ParagraphPool):
 
         from twinlab.agents.design import run_design
 
+        # The **live** config (WP-8). A disabled design agent fails the render loudly: there
+        # is no rule-based fallback, because replacing the rendering half with a template would
+        # turn the stimulus from Uber-voice prose into a bulleted list of commitments, which is a
+        # different experiment (plan §3.3).
         paragraph = await run_design(
-            default_agent_configs()["design"], brief, self.client, instruction=instruction
+            live_agent("design"), brief, self.client, instruction=instruction
         )
         self._cache[key] = paragraph
         if paragraph.status == "ok":
@@ -286,14 +322,22 @@ def _variant_from_row(row: dict) -> RenderedVariant:
     stored = dict(row.get("paragraphs") or {})
     paragraphs: dict[str, LeverParagraph] = {}
     for lever in LEVER_BY_POSITION:
-        entry = stored.get(lever)
-        text = entry.get("text", "") if isinstance(entry, dict) else str(entry or "")
-        if not text:
+        if lever not in stored:
             raise TwinPathError(
                 f"stored variant {code} has no paragraph for {lever}. A cell missing a lever is "
                 "not a cell; delete the row and re-render rather than showing a twin four "
                 "paragraphs."
             )
+        entry = stored[lever]
+        text = entry.get("text", "") if isinstance(entry, dict) else str(entry or "")
+        if not text:
+            # A stored empty lever is a **refusal** the design agent returned, not a missing row
+            # (`_render_stimuli` writes refusals as empty text). Keep it as one, so the stored
+            # failing report stands and no twin is shown an empty paragraph (I3).
+            paragraphs[lever] = LeverParagraph(
+                text="", status="cannot_render", reason="stored refusal (empty paragraph)"
+            )
+            continue
         paragraphs[lever] = LeverParagraph(text=text)
     return RenderedVariant(
         version_code=code,
@@ -305,19 +349,42 @@ def _variant_from_row(row: dict) -> RenderedVariant:
 
 
 async def render_and_check(
-    code: str, style_version: str, *, backend: DbBackend | None = None
+    code: str,
+    style_version: str,
+    *,
+    backend: DbBackend | None = None,
+    events: Any = None,
 ) -> tuple[RenderedVariant, CheckerReport]:
     """`SessionRunner`'s ``render_and_check``. Returns the variant **and its verdict**.
 
-    A stored `(version_code, style_version)` row short-circuits both the render and the Checker.
-    That is the `variants` cache of `docs/04` §6 doing its job: the coverage probe is one model
-    call per commitment, so re-checking a cached cell would be the single most expensive thing
-    this module could do for no new information.
+    A stored `(version_code, style_version)` row that **passed** short-circuits both the render
+    and the Checker. That is the `variants` cache of `docs/04` §6 doing its job: the coverage probe
+    is one model call per commitment, so re-checking a passing cell would be the single most
+    expensive thing this module could do for no new information.
+
+    **A stored row that did not pass is a cache of the verdict, not of the attempt** (M19 WP-2,
+    decision D1). Until 2026-10-03 the short-circuit was unconditional, which combined with "store
+    the report pass or fail" to make a cell that failed once fail for ever — no path in the
+    application to clear it, no event saying a second attempt was a cache hit, and nothing on
+    screen distinguishing "genuinely unrenderable" from "unlucky once in September".
+
+    What bounds the cost is the **durable paragraph budget** (`lever_paragraphs.attempts`,
+    :data:`RENDER_ATTEMPTS_MAX`), which survives a restart. So a re-entry on a stored failure
+    either re-renders inside that budget or returns the stored verdict having made **zero** model
+    calls — not even a coverage probe, which is why the budget is tested before anything is
+    re-assembled. I3 is untouched: the refusal is at every *read* of a non-passing variant, and
+    this re-opens the attempt, never the verdict.
+
+    ``events`` is an optional :class:`orchestrator.events.EventLog`. When supplied, a re-entry on a
+    stored failure emits a row, so a second press is visibly a second press.
     """
     db = backend or get_backend()
     cached = await VariantRepo(db).get(code, style_version)
+    stored_report: CheckerReport | None = None
     if cached is not None:
-        return _variant_from_row(cached), CheckerReport(**dict(cached.get("checker") or {}))
+        stored_report = CheckerReport(**dict(cached.get("checker") or {}))
+        if stored_report.passed:
+            return _variant_from_row(cached), stored_report
 
     pool = paragraph_pool(backend=db)
     if pool.style_version != style_version:
@@ -327,6 +394,25 @@ async def render_and_check(
             "disagree — bump `config/style_contract.yaml` and `settings.style_version` together."
         )
     from twinlab.variant.render import render_variant
+
+    if cached is not None and stored_report is not None:
+        # Re-entry on a stored failure. The budget is read **first** and nothing is assembled or
+        # probed until it is known to be spendable: `_rerender_cell` would also decline to spend
+        # a design call, but it hands back a re-assembled variant and the caller then pays a
+        # coverage probe per commitment — 24 of them on `12220` — for a verdict already on record.
+        stored_variant = _variant_from_row(cached)
+        remaining = await _levers_with_budget(code, pool)
+        if events is not None:
+            await _emit_recheck(code, stored_report, remaining, events)
+        if not remaining:
+            return stored_variant, stored_report
+        second = await _rerender_cell(code, pool, stored_report)
+        if second is None:
+            return stored_variant, stored_report
+        recheck = await check_variant(
+            second, client=pool.client, style=pool.style, ref=pool.ref
+        )
+        return second, recheck
 
     variant = await render_variant(code, pool)
     report = await check_variant(variant, client=pool.client, style=pool.style, ref=pool.ref)
@@ -340,7 +426,54 @@ async def render_and_check(
     if second is None:
         return variant, report
     recheck = await check_variant(second, client=pool.client, style=pool.style, ref=pool.ref)
-    return (second, recheck) if recheck.passed else (second, recheck)
+    return second, recheck
+
+
+async def _levers_with_budget(code: str, pool: StoredParagraphPool) -> list[str]:
+    """The non-dial-0 levers of ``code`` that still have their one durable re-render. WP-2.
+
+    Read **before** anything is re-assembled or re-probed, because the whole point of WP-2 is that
+    a re-entry on an exhausted cell costs nothing. `_rerender_cell` would also decline to spend a
+    design call, but it would hand back a re-assembled variant and the caller would then pay a
+    coverage probe per commitment — 24 of them on `12220` — for a verdict already on record.
+    """
+    await pool._load()
+    out: list[str] = []
+    for lever, dial in _dials_for(code).items():
+        if dial == 0:
+            continue
+        if pool.key(lever, dial) not in _rerendered:
+            out.append(lever)
+    return out
+
+
+async def _emit_recheck(
+    code: str, stored: CheckerReport, remaining: list[str], events: Any
+) -> None:
+    """Say out loud that this is a second look at a cell that already failed. WP-2 item 2.
+
+    The 04:44/04:48 experience — the identical error twice, the second free and uninformative —
+    was possible because a cache hit on a failure emitted nothing. A press that costs nothing must
+    still say so.
+    """
+    if remaining:
+        label = (
+            f"{code} failed the Checker before; re-rendering "
+            f"{len(remaining)} lever paragraph(s) that still have a re-render available "
+            f"({', '.join(remaining)})"
+        )
+        status = "running"
+    else:
+        label = (
+            f"{code} failed the Checker before and every lever paragraph has spent its one "
+            f"re-render, so this attempt makes no model call and the verdict stands: "
+            f"{str(stored.notes or '')[:200]}"
+        )
+        status = "error"
+    try:
+        await events.emit(stage="check", agent="checker", label=label[:400], status=status)
+    except Exception:  # noqa: BLE001 — a log that cannot write must not fail the render
+        log.warning("could not emit the re-check event for %s", code, exc_info=True)
 
 
 async def _rerender_cell(
@@ -382,7 +515,12 @@ async def _rerender_cell(
             # after). It was read there as the repair failing to converge; it was a passing
             # paragraph being discarded and re-sampled without an instruction.
             continue
-        await pool.rerender(brief, instruction=repair)
+        missing = {
+            gap_id: brief.commitments[gap_id]
+            for gap_id in sorted(brief.commitments)
+            if report.coverage.get(gap_id) is False
+        }
+        await pool.rerender(brief, instruction=repair, missing=missing or None)
         spent += 1
     if not spent:
         return None
@@ -423,7 +561,10 @@ def _repair_for(brief: Any, pool: StoredParagraphPool, report: CheckerReport) ->
         )
 
     if current is not None and current.status == "ok":
-        in_band, _grade, violations = check_invariance(current.text, pool.style)
+        # `brief.style_contract`, not `pool.style`: from style_version v3 the word band is
+        # resolved per (lever, dial) from the commitment count, and the brief's copy is the
+        # resolved one — the same two numbers the agent was shown and gate 3 graded against.
+        in_band, _grade, violations = check_invariance(current.text, brief.style_contract)
         for violation in violations:
             if violation.startswith("reading grade"):
                 parts.append(
@@ -440,7 +581,8 @@ def _repair_for(brief: Any, pool: StoredParagraphPool, report: CheckerReport) ->
             count = word_count(current.text)
             parts.append(
                 f"The previous version was {count} words, outside "
-                f"{pool.style['word_min']}-{pool.style['word_max']}. Write within that range."
+                f"{brief.style_contract['word_min']}-{brief.style_contract['word_max']}. "
+                "Write within that range."
             )
 
     if not parts:
@@ -467,14 +609,15 @@ def round_seed(session_id: str, twin_id: str, version_code: str) -> int:
     return int(digest[:8], 16)
 
 
-def battery_for(ref: ReferenceData | None = None) -> dict[str, tuple[str, int]]:
-    """The 37-item battery as `item_id → (stem, points)`, in register order.
+def battery_for(ref: ReferenceData | None = None) -> dict[str, BatteryItem]:
+    """The 37-item battery as `item_id → BatteryItem`, in register order.
 
-    Each item's **own** range travels with it (`docs/02` §4.2 rule 6). The prototype's prompt said
-    "1 to 7" for every item and three of its nine constructs were 5-point.
+    Each item's **own** range and anchors travel with it (`docs/02` §4.2 rule 6). The prototype's
+    prompt said "1 to 7" for every item and three of its nine constructs were 5-point; this build
+    said "1 to 7" correctly and never said which end was which (`docs/DECISIONS.md` 2026-10-12).
     """
     ref = ref or reference()
-    return {i: (ref.items[i].stem, ref.scale_points(i)) for i in ref.battery_item_ids}
+    return {i: ref.battery_item(i) for i in ref.battery_item_ids}
 
 
 async def twin_row(twin_id: str, db: DbBackend) -> dict:
@@ -568,28 +711,79 @@ def _why_texts(row: dict) -> list[str]:
     return out
 
 
-def twin_agent_config(*, temperature: float | None = None, model: str | None = None) -> AgentConfig:
+#: The H3 gate's own system prompt. A sibling of `twin_v1.md`, not an edit of it: the H3 round has
+#: three fences rather than four and asks the twin to hold six worlds side by side, so one prompt
+#: could not describe both without describing each of them loosely. Both go through
+#: `resolve_prompt`, so both are held to the six-section skeleton and both are hashed onto the run.
+H3_PROMPT_REF = "file:twin_h3_v4.md"
+
+#: What `twin_quality_runs.detail["protocol"]` records. Six-in-one-context and six-in-isolation are
+#: **different measurements** and must never be pooled: a row that does not say which presentation
+#: produced it cannot be excluded later, so the name is written on every row rather than inferred.
+H3_PROTOCOL = "h3_single_call_v1"
+
+#: The name the **six-call** protocol records. `h3_six_calls_v1`, restored 2026-10-14.
+#:
+#: This was the protocol before M19 WP-3 replaced it with one call. It is back as a selectable
+#: alternative, not as a replacement, because the stage-7 error decomposition pointed at it: every
+#: twin's 18 H3 errors reduce to a **per-outcome offset of ~1.0 scale points plus scatter of
+#: ~0.65**, and scatter alone is comfortably inside the gate. A constant per outcome with almost
+#: no version signal is exactly what one impression emitted six times looks like, which is what a
+#: single context invites (`docs/DECISIONS.md`, 2026-10-13 stage 7).
+#:
+#: **The two are different measurements and must never be pooled.** That is why the name is
+#: written onto every row rather than inferred, and why `config_match.current_config` carries it:
+#: without that the gate would report "already scored under this config" and skip every twin.
+H3_PROTOCOL_ISOLATED = "h3_six_calls_v1"
+
+#: Which protocol the gate uses. `TWINLAB_H3_PROTOCOL=six` selects the six-call one; anything else
+#: leaves the shipped single call in place. An environment switch rather than a new config column
+#: because this is a **research comparison being run**, not a setting the study has adopted: the
+#: default is unchanged, and whichever ran is recorded on the row either way.
+def h3_protocol_is_isolated() -> bool:
+    """``True`` when the six-call protocol is selected. Read at call time, never cached."""
+    import os
+
+    return os.environ.get("TWINLAB_H3_PROTOCOL", "").strip().lower() in {"six", "isolated"}
+
+
+def twin_agent_config(
+    *,
+    temperature: float | None = None,
+    model: str | None = None,
+    prompt_ref: str | None = None,
+) -> AgentConfig:
     """The twin agent's config, with the **live** temperature applied. `docs/09` §4.
 
     `agents.default.yaml` seeds a temperature and `TwinConfig` carries the live one; they are two
     declarations of the same value, and the live one wins because it is what a session freezes
     onto its `config` column and reports with its results.
+
+    ``prompt_ref`` swaps the system prompt for a sibling file — :data:`H3_PROMPT_REF` is the only
+    caller. It goes through `resolve_prompt` like any other, so the replacement is held to the same
+    six-section skeleton and its own hash is frozen onto the run.
     """
     from twinlab.services.config import load_twin_config
 
-    cfg = default_agent_configs()["twin"]
+    # The **live** config (WP-8), so a prompt, model, output mode or retry policy edited in
+    # Agent Studio governs the next thing asked. A disabled twin raises: nothing can be asked, and
+    # asking anyway would make the toggle a lie in the other direction.
+    cfg = live_agent("twin")
     temp = load_twin_config().temperature if temperature is None else float(temperature)
     update: dict[str, Any] = {"temperature": temp}
     if model:
         update["name"] = model
-    return cfg.model_copy(update={"model": cfg.model.model_copy(update=update)})
+    copy: dict[str, Any] = {"model": cfg.model.model_copy(update=update)}
+    if prompt_ref:
+        copy["system_prompt"] = prompt_ref
+    return cfg.model_copy(update=copy)
 
 
 async def ask_items(
     *,
     twin_id: str,
     paragraphs: dict[str, str],
-    items: dict[str, tuple[str, int]],
+    items: dict[str, BatteryItem],
     baseline: dict[str, int],
     seed: int,
     wording: str = "A",
@@ -664,7 +858,7 @@ async def ask_items(
     system_prompt = resolved
     client = get_client()
     expected = list(items)
-    points_for = {item_id: points for item_id, (_, points) in items.items()}
+    points_for = {item_id: item.points for item_id, item in items.items()}
     calls = 0
 
     async def ask(instruction: str | None):
@@ -712,6 +906,225 @@ async def ask_items(
         "rationale": getattr(outcome.output, "rationale", ""),
     }
     return answers, telemetry
+
+
+async def ask_h3_round(
+    *,
+    twin_id: str,
+    paragraphs_by_version: dict[int, dict[str, str]],
+    items_by_version: dict[int, dict[str, BatteryItem]],
+    seed: int,
+    wording: str = "A",
+    persona_text: str | None = None,
+    temperature: float | None = None,
+    model: str | None = None,
+    backend: DbBackend | None = None,
+) -> tuple[dict[str, int], dict[str, Any]]:
+    """The whole of Part 17 in **one** twin call. Returns ``(answers, telemetry)``. M19 WP-3.
+
+    A sibling of :func:`ask_items`, not a replacement for it: the battery round, the Studio and the
+    validity tests all still go through that. This exists because the H3 gate is the one place the
+    human answered **six stimuli in one sitting** (`docs/01` §3.6) and is scored on whether the
+    twin *orders* those six the way its driver did (`docs/08` §3.3). Six isolated calls cannot
+    produce an ordering by comparison, and they cost six times as much.
+
+    **No new validation path.** It reuses :func:`run_answer_ladder` with
+    :class:`QualityAnswerSet` over the 18 named ids, so the existing targeted repair asks only for
+    whatever is missing and a vector that cannot be made valid **fails the repeat** — it is never
+    padded, clamped or part-scored (I13, I15).
+
+    I8's guard runs over the assembled prompt exactly as it does for a battery round: no version
+    code reaches the text, no why-text travels with the stimulus, and no holdout item outside the
+    18 being asked is named.
+    """
+    from twinlab.agents.twin import build_h3_prompt, build_h3_user_prompt
+
+    db = backend or get_backend()
+    ref = reference()
+    row = await twin_row(twin_id, db)
+    persona = persona_text if persona_text is not None else await persona_for(twin_id, db)
+    if not persona.strip():
+        raise TwinPathError(f"{twin_id} has an empty persona passage; there is nobody to ask")
+
+    prompt = build_h3_prompt(
+        persona_hash=str(row.get("persona_hash") or ""),
+        paragraphs_by_version=paragraphs_by_version,
+        items_by_version=items_by_version,
+        seed=seed,
+        wording=wording,
+    )
+    expected = prompt.item_ids
+    assembled = build_h3_user_prompt(prompt, persona)
+    # The H3 round asks 18 holdout items, so those 18 are legitimately named; every *other*
+    # holdout item — the 16 H2 ones — is still forbidden, as is any version code.
+    assert_no_forbidden_content(
+        assembled,
+        holdout_ids=[
+            i
+            for i in ref.holdout_h3_item_ids + ref.holdout_h2_item_ids
+            if i not in expected
+        ],
+        why_texts=_why_texts(row),
+        version_code=None,
+    )
+    for code in {
+        c for c in _h3_codes_shown(paragraphs_by_version, ref) if c
+    }:
+        # Checked per code rather than by passing one: the round shows six, and
+        # `assert_no_forbidden_content` takes a single code.
+        if code in assembled:
+            raise TwinPathError(
+                f"the H3 round prompt names the version code {code} (I8). The six blocks are "
+                "labelled by position only."
+            )
+
+    cfg = twin_agent_config(temperature=temperature, model=model, prompt_ref=H3_PROMPT_REF)
+    resolved, prompt_hash = resolve_prompt(cfg)
+    client = get_client()
+    points_for = {
+        item_id: item.points
+        for version in sorted(prompt.battery)
+        for item_id, item in prompt.battery[version].items()
+    }
+    calls = 0
+
+    async def ask(instruction: str | None):
+        nonlocal calls
+        calls += 1
+        body = assembled if instruction is None else f"{assembled}\n\n{instruction}"
+        result = await client.run(
+            # The permissive transport shape, never the validating one (`CLAUDE.md` rule 4).
+            cfg, system_prompt=resolved, user_prompt=body, output_type=AnswerVector
+        )
+        return result.output
+
+    outcome = await run_answer_ladder(
+        ask,
+        expected=expected,
+        points_for=points_for,
+        schema=QualityAnswerSet,
+        attempts=cfg.retry.attempts,
+        schema_extra={"holdout_set": "H3", "expected_items": expected},
+    )
+    if not outcome.ok or outcome.output is None:
+        raise ContractError(
+            outcome.reason or "; ".join(str(d) for d in outcome.defects)
+            or "the twin did not produce a valid 18-item Part 17 vector"
+        )
+
+    answers = {k: int(v) for k, v in outcome.output.answers.items()}
+    telemetry = {
+        # Keyed by version, because there are six orders in this round and not one. Stored so the
+        # round reconstructs through `agents.twin.rebuild_h3_prompt` (I11).
+        "lever_order": {str(k): v for k, v in prompt.lever_order.items()},
+        "seed": seed,
+        "wording": wording,
+        "model": cfg.model.name,
+        "prompt_version": prompt_hash[:16],
+        "retries": outcome.retries,
+        "calls": calls,
+        "protocol": H3_PROTOCOL,
+        "rationale": getattr(outcome.output, "rationale", ""),
+    }
+    return answers, telemetry
+
+
+async def ask_h3_round_isolated(
+    *,
+    twin_id: str,
+    paragraphs_by_version: dict[int, dict[str, str]],
+    items_by_version: dict[int, dict[str, BatteryItem]],
+    seed: int,
+    wording: str = "A",
+    persona_text: str | None = None,
+    temperature: float | None = None,
+    model: str | None = None,
+    backend: DbBackend | None = None,
+) -> tuple[dict[str, int], dict[str, Any]]:
+    """Part 17 as **six calls, one per version**. Returns ``(answers, telemetry)``.
+
+    The pre-WP-3 protocol, restored as a selectable alternative because the stage-7 decomposition
+    implicated the single-context one: the twin's whole residual error is a **per-outcome offset**
+    of about one scale point, with scatter of 0.65 that the gate would pass comfortably. A
+    constant per outcome and almost no version signal is the signature of one impression emitted
+    six times, and a single context is what invites that.
+
+    Each version is asked in its own context through :func:`ask_items` — **the one place a twin is
+    called** — so I8's guard, the repair ladder and the output contract are the same ones the
+    battery round uses, and no new validation path exists for this to drift through. The six
+    three-item vectors are merged into the 18-item vector the scorer expects.
+
+    **A version that cannot be answered fails the whole round**, exactly as the single call does
+    when its ladder is refused: a 15-item vector is a different measurement from an 18-item one
+    and the missing items are never imputed (I15, I17). The caller discards the repeat.
+
+    ``show_baseline`` is **False** for every call. The driver's own battery answers are in the
+    persona as words (I7) and must not arrive as numbers beside a counterfactual question — and
+    the single-call protocol shows no baseline either, so this keeps the two comparable in the one
+    respect that is not meant to differ.
+    """
+    ref = reference()
+    codes = list(ref.h3_version_codes)
+    answers: dict[str, int] = {}
+    lever_order: dict[str, Any] = {}
+    calls = 0
+    retries = 0
+    for position in sorted(items_by_version):
+        items = items_by_version[position]
+        paragraphs = paragraphs_by_version[position]
+        code = codes[position - 1] if 1 <= position <= len(codes) else None
+        vector, telemetry = await ask_items(
+            twin_id=twin_id,
+            paragraphs=paragraphs,
+            items=items,
+            baseline={},
+            # Each version gets its own seed, so paragraph position cannot become a confound
+            # within a version and the six orders are not identical to one another — the same
+            # property `build_h3_prompt` gives the single call.
+            seed=seed + position,
+            wording=wording,
+            show_baseline=False,
+            persona_text=persona_text,
+            temperature=temperature,
+            model=model,
+            version_code=code,
+            backend=backend,
+        )
+        answers.update(vector)
+        lever_order[str(position)] = telemetry.get("lever_order")
+        calls += int(telemetry.get("calls") or 0)
+        retries += int(telemetry.get("retries") or 0)
+
+    expected = set(ref.holdout_h3_item_ids)
+    missing = sorted(expected - set(answers))
+    if missing:
+        raise ContractError(
+            f"the six-call Part 17 round produced {len(answers)} of {len(expected)} items; "
+            f"missing {missing}. A part-scored round is a different measurement and is discarded "
+            "rather than imputed (I15, I17)."
+        )
+
+    return answers, {
+        "lever_order": lever_order,
+        "seed": seed,
+        "wording": wording,
+        "model": (model or twin_agent_config().model.name),
+        "retries": retries,
+        "calls": calls,
+        "protocol": H3_PROTOCOL_ISOLATED,
+        "rationale": "",
+    }
+
+
+def _h3_codes_shown(
+    paragraphs_by_version: dict[int, dict[str, str]], ref: ReferenceData
+) -> list[str]:
+    """The version codes this round's blocks stand for, by position. Never shown to the twin."""
+    codes = list(ref.h3_version_codes)
+    return [
+        codes[position - 1] if 1 <= position <= len(codes) else ""
+        for position in sorted(paragraphs_by_version)
+    ]
 
 
 async def ask_twin(
@@ -786,12 +1199,13 @@ async def candidates(session: Session, *, backend: DbBackend | None = None) -> l
     `orchestrator.panel.eligible_candidates`, which is pure. This only reports what the database
     knows, including twins that failed, so the filtering stays in one tested place.
     """
+    from twinlab.services.config_match import current_fingerprint, qualified_twin_ids
+
     db = backend or get_backend()
     rows = await db.select("twins", None, order=("twin_id", False))
-    verdicts = await db.select(
-        "twin_quality_runs", [("eq", "is_latest", True), ("eq", "holdout_set", "H3")]
-    )
-    kept = {str(r["twin_id"]) for r in verdicts if r.get("kept")}
+    # Qualified under the **live** config only (`005`). A verdict from another model or temperature
+    # does not put a twin on a panel, however recently it was kept.
+    kept = await qualified_twin_ids(await current_fingerprint(db), db)
     return [
         PanelCandidate(
             twin_id=str(r["twin_id"]),
@@ -896,10 +1310,24 @@ async def _reading(
         interactions=None,
         sham_floor=await _sham_floor(session_id, db),
     )
+    # RESEARCHER 2026-10-05. The two control floors are not versions: nothing is read from their prose
+    # except to label them, and the Analyst's job is prose about a dialled cell. They get the
+    # deterministic writer, so a session makes no model call for them. The numbers are the same
+    # either way, because the prose never produces one (I12).
+    if code in (CONTROL_CODE, SHAM_CODE):
+        return f"{FALLBACK_PREFIX} {template_reading(bundle)}"
     try:
-        result, used_fallback = await write_analysis(
-            default_agent_configs()["analyst"], bundle, get_client()
+        analyst = live_agent("analyst")
+    except AgentDisabled:
+        # WP-8 item 4. The one agent whose switch has a defined, already-tested meaning: the
+        # deterministic template, carrying `FALLBACK_PREFIX` so a reader always knows which they
+        # are looking at. **No model call is made** — that is what the switch now buys.
+        log.info(
+            "the Results Analyst is switched off; using the deterministic template for %s", code
         )
+        return f"{FALLBACK_PREFIX} {template_reading(bundle)}"
+    try:
+        result, used_fallback = await write_analysis(analyst, bundle, get_client())
     except Exception as exc:  # noqa: BLE001 — a raised analyst falls back, never fails the cell
         log.warning("analyst failed for %s: %r", code, exc)
         return f"{FALLBACK_PREFIX} {template_reading(bundle)}"
@@ -1006,10 +1434,18 @@ async def ask_panel_twins(
     Nothing here is written to `twin_answers`. These are stimuli built for a validity test — test
     4's probe bypassed the lookup and the Checker by construction — and filing them as evidence is
     exactly what `assert_not_a_probe` exists to refuse.
+
+    ``show_baseline`` is read from the **live** `TwinConfig`, never hard-coded. A validity test puts
+    the live instrument to the panel; a test that quietly ran a different elicitation than the one
+    the live config actually uses would be testing an instrument the study is not running
+    (`docs/DECISIONS.md`, 2026-10-07).
     """
+    from twinlab.services.config import load_twin_config
+
     db = backend or get_backend()
     ref = reference()
     battery = battery_for(ref)
+    show_baseline = load_twin_config().show_baseline
     out: dict[str, dict[str, int]] = {}
     for twin_id in twin_ids:
         baseline = await driver_answers(twin_id, db)
@@ -1021,14 +1457,18 @@ async def ask_panel_twins(
                 baseline=baseline,
                 seed=round_seed(purpose, twin_id, wording),
                 wording=wording,
-                show_baseline=True,
+                show_baseline=show_baseline,
                 persona_text=(personas or {}).get(twin_id),
                 temperature=temperature,
                 model=model,
                 reverse_order=reverse_order,
                 backend=db,
             )
-        except (ContractError, TwinPathError) as exc:
+        except (ContractError, TwinPathError, RoundPromptError) as exc:
+            # `RoundPromptError` added M19 WP-6. It was caught **nowhere** in the codebase —
+            # grep-confirmed — so a malformed round killed the whole validity test instead of
+            # that twin's turn in it, inside a task that was not being held. It is a `ValueError`,
+            # so it slipped past this clause's two named types.
             log.warning("validity %s: %s failed: %s", purpose, twin_id, exc)
             continue
         out[twin_id] = answers

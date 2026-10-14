@@ -31,6 +31,15 @@ Screening = Literal["strict", "none"]
 #: `docs/07` §7.1 and `docs/01` §6.8.
 Population = Literal["real", "synthetic", "both"]
 
+#: Which mediation structure a model spec carries. `docs/07` §7.2.
+#:
+#: ``full`` is **the reported model** and the default everywhere. ``partial`` adds the three direct
+#: justice->intention paths and exists only as a declared robustness check
+#: (`twinlab.stats.spec.PARTIAL_MEDIATION_EDGES`). The two produce different
+#: :meth:`ModelSpec.fingerprint` values, so a result under one can never be read as a result under
+#: the other.
+ModelVariant = Literal["full", "partial"]
+
 #: `docs/01` §6.8's `analysis_results.stage` enumeration, in computation order.
 STAGES: tuple[str, ...] = (
     "reliability",
@@ -156,6 +165,12 @@ class CaseMatrix(_Stats):
     dropped: tuple[tuple[str, str], ...] = ()
     #: Submissions carrying any answer on the prototype's 1–7 scale. Excluded unless pooled.
     legacy_excluded: int = 0
+    #: The straight-lining SD threshold this matrix was screened under. `docs/07` §7.1. Recorded on
+    #: the analysis run, because the rule that produced a result is part of the result: §7.1 is
+    #: explicit that a screening rule chosen after seeing results is a researcher degree of freedom,
+    #: and a threshold nobody can read off the run is one nobody can audit. ``None`` under
+    #: `screening="none"`, where no dispersion rule was applied at all.
+    straight_line_sd_min: float | None = None
 
     @property
     def n_cases(self) -> int:

@@ -45,6 +45,8 @@ from twinlab.orchestrator.loop import (
 )
 from twinlab.orchestrator.odometer import index_from_code
 
+from ._qualify import TEST_FINGERPRINT, qualify
+
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
@@ -121,31 +123,44 @@ class Harness:
 
 
 async def _session(harness: Harness, **kwargs):
+    # The controls are recorded from each panel twin's stored answers under the session's own
+    # fingerprint (RESEARCHER 2026-10-05), so the candidates and the session must share one.
+    for twin in _candidates():
+        await qualify(harness.backend, twin.twin_id, fingerprint=TEST_FINGERPRINT)
     return await harness.sessions.create(
         name="test", iterations=kwargs.pop("iterations", 1),
         start_code=kwargs.pop("start_code", "10000"),
         panel_size=kwargs.pop("panel_size", 4), panel_seed=7,
-        config={"style_version": "v1", "wording": "A"}, **kwargs,
+        config={
+            "style_version": "v1", "wording": "A",
+            "config_fingerprint": TEST_FINGERPRINT,
+        },
+        **kwargs,
     )
 
 
 # ---------------------------------------------------------------- controls and the panel
 
 
-async def test_a_fresh_session_freezes_its_panel_then_runs_00000_and_sham_first(backend):
-    """`docs/11` M7, verbatim. `docs/03` §6.1 — the controls consume no iteration."""
+async def test_a_fresh_session_freezes_its_panel_then_records_00000_and_sham_from_the_gate(backend):
+    """`docs/03` §6.1 as amended by RESEARCHER 2026-10-05.
+
+    The controls are **not asked** in a session any more. Each panel twin answered them once, in the
+    quality test, under this config. The session records them from the stored answers, so the twin
+    path is called for the swept version only, and the controls consume no iteration.
+    """
     h = Harness(backend)
     session = await _session(h, iterations=1, start_code="10000")
 
     await h.runner(session.session_id).run()
 
-    codes_in_order = [c for c, _ in h.twin_calls]
-    first_three = []
-    for code in codes_in_order:
-        if code not in first_three:
-            first_three.append(code)
-    assert first_three[:2] == list(CONTROL_CELLS) == ["00000", "SHAM"]
-    assert first_three[2] == "10000", "the swept code runs after both controls"
+    asked = {c for c, _ in h.twin_calls}
+    assert asked == {"10000"}, "no session asks a control; the floors come from the gate"
+
+    runs = {r.version_code: r for r in await h.runs.for_session(session.session_id)}
+    for control in CONTROL_CELLS:
+        assert runs[control].status == "completed"
+        assert runs[control].twins_n == 4, "a floor over the frozen panel, never a partial one"
 
     # The controls did not consume the iteration.
     final = await h.sessions.get(session.session_id)
@@ -391,12 +406,15 @@ async def test_a_run_where_every_twin_failed_is_failed_never_completed(backend):
     final = await h.runner(session.session_id).run()
 
     runs = {r.version_code: r for r in await h.runs.for_session(session.session_id)}
-    for code in ("00000", "SHAM", "10000"):
-        assert runs[code].status == "failed"
-        assert runs[code].twins_n == 0
-        assert runs[code].index_value is None
-        assert "I15" in runs[code].error
-    assert final.status == "completed"      # the SESSION finished; every cell failed
+    # The version's twins all failed, so its run is failed (I15), never an index of 0.000.
+    assert runs["10000"].status == "failed"
+    assert runs["10000"].twins_n == 0
+    assert runs["10000"].index_value is None
+    assert "I15" in runs["10000"].error
+    # The controls are recorded from stored answers and do not depend on the version's twins.
+    for control in CONTROL_CELLS:
+        assert runs[control].status == "completed"
+    assert final.status == "completed"      # the SESSION finished; the version failed
 
 
 async def test_the_ddl_constraint_rejects_a_completed_run_with_no_twins(backend):
@@ -603,12 +621,57 @@ def test_the_budget_warns_before_it_blocks():
     assert any("config has changed" in w for w in changed.warnings)
 
 
-def test_the_quality_gate_is_the_dominant_cost_not_the_sweep():
-    """`docs/10` — 18 calls per twin at the default repeats, 9,000 at N=500."""
+def test_the_gate_scales_with_the_population_and_the_sweep_with_the_panel():
+    """What the gate-versus-sweep comparison actually rests on. **`docs/10` needs updating.**
+
+    `docs/10` names the quality gate "the dominant cost of the study, not the sweep", and that
+    was arithmetically true: 18 calls per twin x 500 twins x 3 repeats = 9,000 calls, against
+    4,915 for a full 243-cell sweep at K=20.
+
+    **M19 WP-3 inverts the arithmetic.** One call per repeat showing all six Part-17 versions
+    (`docs/01` §3.6 describes Part 17 as one section of one questionnaire, answered in one
+    sitting) makes the gate 1,500 calls at N=500 x 3. A full sweep at K=20 is still 4,915, so the
+    **sweep is now the larger number** — by about 3.3x.
+
+    So this test asserts the structural claim, which is what the comparison was ever for and which
+    is unchanged: **the gate is paid on every consented twin, the sweep only on the frozen panel.**
+    That is why the gate is the cost that grows with fieldwork and the one to budget before
+    collection, and it is still the largest single action a researcher can start before any sweep
+    has been scheduled — the full 243-cell sweep is deferred (`ARCHITECTURE.md` §10.4, `docs/10`
+    §6 rung 5).
+
+    The literal "dominant cost" sentence in `docs/10` is superseded and must be corrected there.
+    """
+    assert bud.H3_CALLS_PER_REPEAT == 1, (
+        "one call per repeat, showing all six versions — six-in-one-context and "
+        "six-in-isolation are different measurements and must not be silently swapped"
+    )
+    assert bud.H3_VERSIONS_PER_CALL == 6, "all 18 holdout items still come from six versions"
+
+    # Each twin: three H3 calls plus the two control answers (RESEARCHER 2026-10-05).
+    per_twin = bud.H3_CALLS_PER_REPEAT * 3 + bud.CONTROL_CALLS_PER_TWIN
     q = bud.quality_budget(twins=500, repeats=3)
-    assert q.calls == 500 * bud.H3_CALLS_PER_REPEAT * 3 == 9000
+    assert q.calls == 500 * per_twin == 2500
     assert bud.quality_budget(twins=500, repeats=3, already_scored=500).calls == 0
-    assert bud.full_sweep_budget(panel_size=20).calls < q.calls
+
+    # The gate scales with the population: 10x the twins is 10x the calls, whatever the panel is.
+    assert bud.quality_budget(twins=50, repeats=3).calls * 10 == q.calls
+
+    # The sweep scales with the **panel**, not the population — which is I14's whole purpose and
+    # the reason 500 twins in 243 cells was never affordable.
+    assert bud.full_sweep_budget(panel_size=20).calls < bud.full_sweep_budget(
+        panel_size=200
+    ).calls
+    assert bud.full_sweep_budget(panel_size=20).calls == bud.full_sweep_budget(
+        panel_size=20
+    ).calls
+
+    # And the inversion itself, pinned so it cannot be rediscovered by surprise.
+    assert bud.full_sweep_budget(panel_size=20).calls > q.calls, (
+        "after WP-3 a full sweep at K=20 costs more than the gate at N=500 x 3; docs/10's "
+        "'the gate is the dominant cost' no longer holds arithmetically and says so in this "
+        "test's docstring"
+    )
 
 
 # ---------------------------------------------------------------- the variant cache key

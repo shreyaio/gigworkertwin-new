@@ -42,14 +42,32 @@ from twinlab.variant import checker as ck
 from twinlab.variant.lookup import commitments_for_lever, lookup
 from twinlab.variant.render import (
     ParagraphPool,
+    band_for,
     build_brief,
     forbidden_for,
     load_style_contract,
     render_all,
     render_variant,
+    resolved_style,
     select_anchors,
     sham_briefs,
 )
+
+#: The band most of these tests are graded against: `L2` at dial 1, three commitments. From
+#: `style_version: v3` there is no global `word_min`/`word_max` to pass, because there is no
+#: global band — the band is resolved per `(lever, dial)` from the commitment count, and
+#: `check_invariance` takes the resolved pair. Three is used because it is the modal dial-1 count.
+COMMITMENTS_L2_D1 = 3
+
+
+def graded_style(n: int = COMMITMENTS_L2_D1) -> dict:
+    """The style contract with the band resolved for ``n`` commitments."""
+    return resolved_style(load_style_contract(), n)
+
+
+def bands(n: int = COMMITMENTS_L2_D1, lever: str = "L2") -> dict[str, tuple[int, int]]:
+    """``build_report``'s per-lever band argument, for one lever at ``n`` commitments."""
+    return {lever: band_for(n, load_style_contract())}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROMPTS = REPO_ROOT / "src" / "twinlab" / "agents" / "prompts"
@@ -79,16 +97,85 @@ FILLER = (
 )
 
 
-def _paragraph(text: str = FILLER) -> LeverParagraph:
-    return LeverParagraph(text=text)
+#: Plain, commitment-free clause stock for :func:`filler_words`. Everyday words only, so a
+#: generated paragraph sits near the middle of the reading-grade band whatever its length.
+_FILLER_CLAUSES: tuple[str, ...] = (
+    "the way this works for you is changing from today onwards",
+    "the notes below explain what that means in ordinary language",
+    "you can read them whenever you like and find them again later",
+    "they stay in the same place so you always know where they are",
+    "nothing here asks anything further of you at any point whatsoever",
+    "you can carry on driving exactly as you did before",
+    "there is no form to fill in and no one to call",
+    "the wording below is identical to the wording everybody else is shown",
+)
 
 
-def design_stub(text: str = FILLER):
-    """A client whose design calls return ``text`` and whose coverage probes all pass."""
+def filler_words(count: int) -> str:
+    """A gate-clearing paragraph of exactly ``count`` words.
+
+    **Needed from `style_version: v3`**, where the word band is resolved per `(lever, dial)` from
+    the commitment count and runs `[51, 85]` at two commitments to `[159, 265]` at eight. Those
+    bands are disjoint, so there is no longer any single fixed string a stub can return for all
+    ten lever paragraphs — the old 59-word `FILLER` now fails gate 3 for seven of them. A stub
+    that returned it would make every v3 render test fail for a reason that has nothing to do
+    with what the test is about.
+
+    Carries no commitment vocabulary at all, for the reason recorded on :data:`FILLER`: a fixture
+    that has to dodge the containment gate is the wrong fixture.
+    """
+    words: list[str] = []
+    index = 0
+    while len(words) < count:
+        clause = _FILLER_CLAUSES[index % len(_FILLER_CLAUSES)].split()
+        index += 1
+        words.extend(clause)
+        if len(words) >= count:
+            break
+        words.append("and")
+    words = words[:count]
+    # A full stop every sixteen words. The length is set by gate 3's *other* half: at eight-word
+    # sentences of everyday one-syllable words the Flesch-Kincaid grade comes out near 2.5, below
+    # the 4.0 floor, and the fixture would fail the register band it is meant to clear.
+    out: list[str] = []
+    for position, word in enumerate(words, start=1):
+        out.append(word)
+        if position % 16 == 0 and position != len(words):
+            out[-1] = word + "."
+    return " ".join(out).capitalize() + "."
+
+
+def _paragraph(text: str | None = None) -> LeverParagraph:
+    """A paragraph that clears gate 3 for a three-commitment brief — the common test case."""
+    return LeverParagraph(text=text if text is not None else filler_words(80))
+
+
+def _band_in_prompt(prompt: str) -> tuple[int, int]:
+    """The resolved word band the design prompt's STYLE block actually asked for.
+
+    Read back out of the prompt rather than recomputed from the brief, which makes it a check as
+    well as a convenience: if `build_brief` ever stopped resolving the band, the stub would emit
+    the wrong length and gate 3 would fail the test.
+    """
+    low = int(re.search(r'"word_min":\s*(\d+)', prompt).group(1))
+    high = int(re.search(r'"word_max":\s*(\d+)', prompt).group(1))
+    return low, high
+
+
+def design_stub(text: str | None = None):
+    """A client whose design calls return a band-fitting paragraph and whose probes all pass.
+
+    With ``text``, that exact string is returned for every lever — for tests that are about the
+    text. Without it, each paragraph is generated to sit inside **that brief's own** resolved
+    band, which is the only way one stub can serve all ten paragraphs under v3.
+    """
 
     def handler(cfg, prompt, out):
         if out is LeverParagraph:
-            return LeverParagraph(text=text)
+            if text is not None:
+                return LeverParagraph(text=text)
+            low, high = _band_in_prompt(prompt)
+            return LeverParagraph(text=filler_words((low + high) // 2))
         if out is CoverageVerdict:
             return CoverageVerdict(entailed=True, reason="stub")
         raise AssertionError(f"unexpected output type {out}")
@@ -205,22 +292,124 @@ def test_the_style_contract_guards_reject_a_drifted_or_empty_contract():
     for mutation, expected in (
         ({"dial_zero_text": "No change from today"}, "I5"),
         ({"style_version": "v99"}, "style_version"),
-        # Inverted relative to whatever the band currently is, so widening it cannot quietly turn
-        # this case into a valid contract the way `word_min: 90` did when word_max became 150.
-        ({"word_min": good["word_max"] + 1}, "band"),
+        # The clamp, inverted. Not a band scalar: from v3 there are none.
+        ({"word_floor": good["word_ceiling"] + 1}, "clamp"),
+        # Coefficients that cross over. This is the v3-specific failure the guard exists for: a
+        # per-commitment pair can be valid at one commitment count and empty at another, and the
+        # cell that hit it would be the first to know. `validate_style_contract` therefore probes
+        # the whole range the frozen lookup can produce rather than one value.
+        ({"word_max_per_commitment": 0, "word_max_base": 30}, "empty band"),
     ):
         with pytest.raises(RenderFailed, match=expected):
             validate_style_contract({**good, **mutation})
+
+    # And a coefficient that is simply absent must be refused rather than defaulted: a missing
+    # one would not fail, it would quietly become a *different* band, which is the confound the
+    # `style_version` key exists to prevent.
+    for key in (
+        "word_min_base",
+        "word_min_per_commitment",
+        "word_max_base",
+        "word_max_per_commitment",
+        "word_floor",
+        "word_ceiling",
+    ):
+        missing = {k: v for k, v in good.items() if k != key}
+        with pytest.raises(RenderFailed, match="missing"):
+            validate_style_contract(missing)
+
+
+def test_the_word_band_is_a_function_of_the_commitment_count():
+    """WP-1. The calibration table from the plan's Q1, as an executable assertion.
+
+    One band of `[45, 150]` served commitment sets of 2 to 8, giving `L1` dial 1 seventy-five
+    words per commitment and `L3`/`L4` dial 2 nineteen. The design prompt asks for each commitment
+    in its own short sentence and the Checker probes each one for entailment, so at eight
+    commitments the model had to compress and the compression lost the entailments.
+
+    The formula is **calibrated against the eight paragraphs this project actually rendered**: it
+    accepts all six that passed and rejects both that failed, and it rejects them for being too
+    *short*, which is the correct diagnosis.
+    """
+    style = load_style_contract()
+    observed = [
+        (2, 77, True),      # L1 dial 1 — passed
+        (3, 88, True),      # L2 dial 1 — passed
+        (3, 92, True),      # L1 dial 2 — passed
+        (3, 96, True),      # L5 dial 1 — passed
+        (3, 109, True),     # L4 dial 1 — passed
+        (6, 138, True),     # L2 dial 2 — passed
+        (8, 150, False),    # L3 dial 2 — FAILED on coverage
+        (8, 152, False),    # L4 dial 2 — FAILED on band and coverage
+    ]
+    for n, words, should_pass in observed:
+        low, high = band_for(n, style)
+        assert (low <= words <= high) is should_pass, (
+            f"{n} commitments, {words} words: band [{low}, {high}]"
+        )
+        if not should_pass:
+            assert words < low, "both historical failures were too SHORT, not too long"
+
+    # Monotonic, so more commitments never buys less room.
+    for n in range(2, 9):
+        assert band_for(n, style)[0] <= band_for(n + 1, style)[0]
+        assert band_for(n, style)[1] <= band_for(n + 1, style)[1]
+
+    # Constant for a given commitment count, so it cannot vary with the cell (I4 untouched).
+    assert band_for(4, style) == band_for(4, style)
+
+
+def test_the_resolved_band_is_what_the_agent_is_shown_and_what_the_gate_uses():
+    """WP-1. One pair of numbers, reaching the prompt and gate 3 from the same place.
+
+    The brief carries the resolved band, `agents.design.style_block` shows it, and
+    `check_invariance` reads the same two keys — so the agent cannot be graded against a band it
+    was not told about, which is what happened at eight commitments under v2.
+    """
+    style = load_style_contract()
+    for code, lever, expected_n in (("01000", "L2", 3), ("02000", "L2", 6), ("22222", "L3", 8)):
+        brief = build_brief(lookup(code), lever)
+        assert len(brief.commitments) == expected_n
+        assert (
+            brief.style_contract["word_min"],
+            brief.style_contract["word_max"],
+        ) == band_for(expected_n, style)
+        shown = build_user_prompt(brief)
+        assert f'"word_min": {band_for(expected_n, style)[0]}' in shown
+        assert f'"word_max": {band_for(expected_n, style)[1]}' in shown
+
+
+def test_the_sham_is_held_to_its_levers_dial_one_band():
+    """`ARCHITECTURE.md` §5.2 — "same word band and voice as a live cell". WP-1.
+
+    The sham announces one or two slots per lever, so resolving its band from its own count would
+    put four of its five levers in `[45, 55]` while every live lever sits at `[51, 85]` or wider.
+    The sham would then be the shortest cell in the study and recognisable as the control by
+    length alone — and a twin that can tell it is looking at a control is not measuring the demand
+    characteristic the cell exists to measure.
+    """
+    style = load_style_contract()
+    ref = reference()
+    briefs = sham_briefs()
+    for lever, brief in briefs.items():
+        dial_one_n = len(ref.dial_lookup[lever]["1"])
+        assert (
+            brief.style_contract["word_min"],
+            brief.style_contract["word_max"],
+        ) == band_for(dial_one_n, style), lever
+        # Which is a real live cell's band, not a band of its own.
+        assert brief.style_contract["word_min"] >= band_for(2, style)[0]
 
 
 # ---------------------------------------------------------------- I3: containment
 
 
 def test_a_poisoned_render_containing_2_2_language_fails_containment_for_01000():
-    """I3 — **one hit fails the cell.** There is no threshold. `docs/11` M5.
+    """I3 as amended 2026-10-04 (researcher decision): a containment hit is **recorded**, not
+    enforced, because two predefined commitments can share wording. The hit must still be
+    detected and reported verbatim, so the overlap stays visible in the data.
 
-    The poison is threshold 2.2 material, which `01000` must not carry: if it leaks, `01000` and
-    `02000` become the same stimulus and the Conditions lever stops measuring anything.
+    The poison is threshold 2.2 material, which `01000` must not carry.
     """
     spec = lookup("01000")
     allowed = commitments_for_lever(spec, "L2")
@@ -239,21 +428,24 @@ def test_a_poisoned_render_containing_2_2_language_fails_containment_for_01000()
         style=load_style_contract(),
         coverage={g: True for g in allowed},
         containment=hits,
+        bands=bands(len(allowed)),
     )
-    assert not report.passed
     assert report.containment == hits
+    assert "info: containment hit" in report.notes
 
 
-def test_one_containment_hit_is_enough_to_fail():
-    """There is no tolerance. A report with a single hit and everything else perfect fails."""
+def test_a_containment_hit_is_recorded_and_does_not_fail_the_cell():
+    """Amended I3 (2026-10-04): containment is informational. A hit is reported, never hidden."""
     report = ck.build_report(
         paragraphs={"L2": _paragraph()},
         dials={"L2": 1},
         style=load_style_contract(),
         coverage={"2.1.a": True},
         containment=["2.2.a"],
+        bands=bands(),
     )
-    assert not report.passed
+    assert report.passed
+    assert report.containment == ["2.2.a"]
 
 
 def test_the_specifications_own_known_good_render_passes_containment():
@@ -331,34 +523,38 @@ def test_a_bigram_shared_between_commitments_is_not_a_leak():
 # ---------------------------------------------------------------- gate 3: invariance
 
 
-@pytest.mark.parametrize("count", [41, 44, 151, 200])
+@pytest.mark.parametrize("count", [41, 44, 68, 116, 151, 200])
 def test_an_out_of_band_render_fails_in_band(count: int):
-    """`docs/11` M5's word-band criterion, re-expressed after the researcher widened the band.
+    """`docs/11` M5's word-band criterion, re-expressed twice as the band changed.
 
-    **`docs/11` M5 says verbatim: "A 41-word or 80-word render fails `in_band`."** That was written
-    against a 45-70 band. The researcher set the band to **45-150** on 2026-09-29, so an 80-word
-    render is now legitimately *inside* it and asserting that it fails would be asserting the old
-    threshold, not the gate.
+    **`docs/11` M5 says verbatim: "A 41-word or 80-word render fails `in_band`."** That was
+    written against a 45-70 band. The researcher widened it to 45-150 on 2026-09-29, and on
+    2026-10-03 replaced it with a **function of the commitment count** (`style_version: v3`, M19
+    WP-1) because one band could not serve sets of 2 to 8 commitments.
 
-    The criterion's **intent** — the gate rejects a render that is too short or too long, at both
-    ends — is what is tested here: 41 and 44 fail below, 151 and 200 fail above. The literal 80 is
-    superseded by a researcher decision, recorded in `docs/DECISIONS.md`, and **`docs/11` M5 needs
-    updating to match.** This is the one M5 acceptance bullet that no longer holds as written.
+    So there is no longer one band to assert against, and the criterion's **intent** — the gate
+    rejects a render that is too short or too long, at both ends — is what is tested, against the
+    band for three commitments, `[69, 115]`: 41, 44 and 68 fail below; 116, 151 and 200 fail
+    above. 68 and 116 are the just-outside cases, which is where an off-by-one would hide.
+
+    **`docs/11` M5's literal numbers are superseded and need updating**; the decisions are in
+    `docs/DECISIONS.md`.
     """
-    in_band, _, _ = ck.check_invariance(" ".join(["policy"] * count), load_style_contract())
+    in_band, _, _ = ck.check_invariance(" ".join(["policy"] * count), graded_style())
     assert not in_band
 
 
-@pytest.mark.parametrize("count", [45, 71, 80, 150])
+@pytest.mark.parametrize("count", [69, 71, 80, 115])
 def test_a_render_inside_the_band_passes_in_band(count: int):
     """The band is inclusive at both ends, so the gate admits what it is meant to admit.
 
-    71 is the length of the specification's own exemplar. **80 is here to make the supersession
-    explicit and executable**: `docs/11` M5 says an 80-word render must fail, and under the band the
-    researcher set, it must now pass. If the band is ever narrowed again, this test fails loudly
-    rather than leaving the contradiction buried in prose.
+    Against the three-commitment band `[69, 115]`. 69 and 115 are the ends, asserted inclusive.
+    71 is the length of the specification's own exemplar (`docs/03` §4.2), which must stay
+    admissible under every band the project has had — it is the one piece of known-good output in
+    the repository. **80 is here to make a supersession explicit and executable**: `docs/11` M5
+    says an 80-word render must fail, and it must now pass.
     """
-    in_band, _, _ = ck.check_invariance(" ".join(["policy"] * count), load_style_contract())
+    in_band, _, _ = ck.check_invariance(" ".join(["policy"] * count), graded_style())
     assert in_band
 
 
@@ -374,13 +570,13 @@ def test_the_word_count_does_not_count_a_bare_em_dash_as_a_word():
     """
     assert ck.word_count("a — b") == 2
     assert ck.word_count(SPEC_RENDER) == 71
-    assert ck.check_invariance(SPEC_RENDER, load_style_contract())[0]
+    assert ck.check_invariance(SPEC_RENDER, graded_style())[0]
 
 
 def test_a_forbidden_term_fails_the_invariance_gate():
     """`docs/02` §3.5 — `forbidden_terms` apply to everything a twin can see."""
-    style = load_style_contract()
-    text = " ".join(["policy"] * 55) + " this meets the Fairwork threshold today."
+    style = graded_style()
+    text = " ".join(["policy"] * 80) + " this meets the Fairwork threshold today."
     _, _, violations = ck.check_invariance(text, style)
     assert any("Fairwork" in v for v in violations)
     assert any("threshold" in v for v in violations)
@@ -388,8 +584,8 @@ def test_a_forbidden_term_fails_the_invariance_gate():
 
 def test_a_forbidden_intensifier_fails_the_invariance_gate():
     """Cell-specific drama is a confound: one cell must not read as more triumphant than another."""
-    style = load_style_contract()
-    text = " ".join(["policy"] * 55) + " this is a dramatically unprecedented change today."
+    style = graded_style()
+    text = " ".join(["policy"] * 80) + " this is a dramatically unprecedented change today."
     _, _, violations = ck.check_invariance(text, style)
     assert any("dramatically" in v for v in violations)
     assert any("unprecedented" in v for v in violations)
@@ -397,14 +593,14 @@ def test_a_forbidden_intensifier_fails_the_invariance_gate():
 
 def test_a_clean_paragraph_raises_no_invariance_violation():
     """The gate admits ordinary policy prose — including the specification's own exemplar."""
-    _, grade, violations = ck.check_invariance(SPEC_RENDER, load_style_contract())
+    _, grade, violations = ck.check_invariance(SPEC_RENDER, graded_style())
     assert violations == []
     assert 4.0 <= grade <= 16.0
 
 
 def test_reading_grade_outside_the_band_is_a_violation():
     """Gate 3's grade half can fail, in both directions."""
-    style = load_style_contract()
+    style = graded_style()
     dense = (
         "Notwithstanding aforementioned indemnification obligations, remuneration recalibration "
         "necessitates comprehensive administrative reconsideration internationally whenever "
@@ -416,7 +612,11 @@ def test_reading_grade_outside_the_band_is_a_violation():
 
 
 def test_a_cannot_render_paragraph_fails_the_report():
-    """`docs/02` §4.1 — the cell is marked failed and logged, never generically filled."""
+    """`docs/02` §4.1 — the cell is marked failed and logged, never generically filled.
+
+    No `bands`: a refusal is rejected before gate 3, so the report must not need a word band to
+    refuse one. If that stopped being true this would raise `CheckerMisuse`.
+    """
     report = ck.build_report(
         paragraphs={"L2": LeverParagraph(text="", status="cannot_render", reason="blocked")},
         dials={"L2": 1},
@@ -468,6 +668,7 @@ def test_a_missing_verdict_counts_as_not_entailed():
         style=load_style_contract(),
         coverage=coverage,
         containment=[],
+        bands=bands(),
     )
     assert not report.passed
     assert "not entailed" in report.notes
@@ -733,10 +934,37 @@ def test_the_design_prompt_is_byte_identical_in_a_fresh_interpreter():
 
 
 def test_the_style_contract_is_constant_across_every_cell():
-    """`docs/03` §4.2 — anything that varies with the cell is a confound."""
-    seen = {
-        json.dumps(build_brief(lookup(code), lever).style_contract, sort_keys=True)
-        for code in ("01000", "02000", "22222", "11111")
-        for lever in LEVER_BY_POSITION
+    """`docs/03` §4.2 — anything that varies **with the cell** is a confound.
+
+    From `style_version: v3` the contract a brief carries is not byte-identical across all five
+    levers, because the word band is resolved from that `(lever, dial)`'s commitment count. The
+    property that matters is unchanged and is what is asserted: the contract is a function of
+    `(lever, dial)` **only**, so every one of the 243 cells that uses a given lever paragraph
+    shows the byte-identical contract, and no cell can be given a band another cell was not.
+
+    Asserted as "group by (lever, dial), and each group has exactly one contract" rather than
+    "there is exactly one contract overall". The weaker-looking form is the stronger assertion
+    here: the old version would also have passed if the band had been dropped from the brief
+    altogether.
+    """
+    by_key: dict[tuple[str, int], set[str]] = {}
+    for code in ("01000", "02000", "22222", "11111", "21012", "00000"):
+        for lever in LEVER_BY_POSITION:
+            brief = build_brief(lookup(code), lever)
+            key = (lever, brief.dial)
+            body = json.dumps(brief.style_contract, sort_keys=True)
+            by_key.setdefault(key, set()).add(body)
+
+    for key, bodies in sorted(by_key.items()):
+        assert len(bodies) == 1, f"{key} was shown {len(bodies)} different style contracts"
+
+    # And the only thing that differs between groups is the band — not the person, the tense, the
+    # forbidden terms or the reading-grade band, any of which varying would be a real confound.
+    # `json.dumps` per value, because `forbidden_terms` is a list and lists are not hashable.
+    contracts = [json.loads(next(iter(bodies))) for bodies in by_key.values()]
+    varying = {
+        key
+        for key in contracts[0]
+        if len({json.dumps(c.get(key), sort_keys=True) for c in contracts}) > 1
     }
-    assert len(seen) == 1
+    assert varying <= {"word_min", "word_max"}, varying

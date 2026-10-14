@@ -284,7 +284,6 @@ def test_repeats_are_averaged_within_twin_first():
 
 def test_the_two_floors_and_the_interpretability_test():
     """`docs/07` §6 — a cell that does not exceed the demand floor is not interpretable."""
-    assert mx.noise_floor(-0.08) == 0.08
     assert mx.demand_floor(0.31, 0.05) == pytest.approx(0.26)
 
     assert mx.below_floor(0.20, 0.26) is True
@@ -294,7 +293,52 @@ def test_the_two_floors_and_the_interpretability_test():
     # different claims and only one supports a finding.
     assert mx.demand_floor(None, 0.05) is None
     assert mx.below_floor(0.4, None) is None
-    assert mx.noise_floor(None) is None
+
+
+def test_the_noise_floor_does_not_let_opposing_twins_cancel():
+    """`docs/07` §6 — the defect that made every floor-judged validity test lean toward FAIL.
+
+    Two twins move the same metric by the same amount in opposite directions. The **cell** has not
+    moved, and the old floor — `|index(00000)|` — reported exactly that: `0.000`. But each twin
+    moved a full point, and tests 4, 5 and 6 measure per-twin movement, so they were judged against
+    a floor describing a quantity none of them computes.
+    """
+    ref = reference()
+    battery = ref.battery_item_ids
+    base = {item: 4 for item in battery}
+    floor = mx.measure_noise_floor(
+        baseline_vectors={"up": dict(base), "down": dict(base)},
+        control_vectors={
+            "up": {item: 5 for item in battery},
+            "down": {item: 3 for item in battery},
+        },
+        ref=ref,
+    )
+    assert floor is not None
+    assert floor.twins_n == 2
+    # The cell did not move, on any metric: the two twins cancel exactly.
+    assert floor.cell == pytest.approx(0.0, abs=1e-9)
+    assert all(v == pytest.approx(0.0, abs=1e-9) for v in floor.cell_by_metric.values())
+    # Every twin did move, on every metric. `happiness` moves by a third of a point rather than a
+    # full one because `SAT2` is reverse coded, so a raw +1 on it scores -1 and cancels two of the
+    # three SAT items — which is `docs/07` §2.1 working, not a defect in the floor.
+    assert floor.twin == pytest.approx(0.8889, abs=5e-4)
+    assert all(v > 0 for v in floor.twin_by_metric.values())
+    assert floor.twin_by_metric["happiness"] == pytest.approx(1 / 3, abs=5e-4)
+    assert floor.cell < floor.twin, "a cancelling floor must not be used to gate per-twin movement"
+    # An unknown metric falls back to the overall figure, never to zero.
+    assert floor.for_metric("not-a-metric", per_twin=True) == floor.twin
+    assert floor.for_metric("happiness", per_twin=True) > floor.for_metric(
+        "happiness", per_twin=False
+    )
+
+
+def test_a_floor_measured_on_nobody_is_not_a_floor():
+    """`docs/07` §6, I15's shape — ``None``, never a zero that reads as "nothing moved"."""
+    assert (
+        mx.measure_noise_floor(baseline_vectors={}, control_vectors={"a": {}}, ref=reference())
+        is None
+    )
 
 
 # ---------------------------------------------------------------- interactions and I17

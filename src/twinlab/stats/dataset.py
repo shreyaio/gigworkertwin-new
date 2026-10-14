@@ -28,12 +28,32 @@ from typing import Any
 from twinlab.db.client import DbBackend, get_backend
 from twinlab.ingest.reference_store import ReferenceData, reference
 from twinlab.models.stats import CaseMatrix, ModelSpec, Population, Screening
-from twinlab.stats.spec import ARM_REFERENCE, MODERATED, MODERATOR, build_model_spec
+from twinlab.stats.spec import (
+    ARM_PREFIX,
+    ARM_REFERENCE,
+    MODERATED,
+    MODERATOR,
+    build_model_spec,
+)
 
 log = logging.getLogger(__name__)
 
 #: `docs/07` §7.1. Under eight minutes is a speeder; the DDL computes this as a stored column.
 SPEEDER_SECONDS = 480
+
+#: `docs/07` §7.1. Below this standard deviation across the **raw** battery answers, a respondent
+#: gave near-identical answers and is dropped under `strict`.
+#:
+#: **Fixed 2026-10-11, before any real data existed** — a screening rule chosen after seeing
+#: results is a researcher degree of freedom, which §7.1 warns about and which is why the number
+#: is here with a date rather than tuned later.
+#:
+#: 0.30 is the Apps Script prototype's own threshold, carried over deliberately so it can be cited
+#: as pre-specified. What is *not* carried over is the prototype's arithmetic: it computed the SD
+#: **after** reverse-coding, so an all-7s respondent had their reversed items sitting at 1, an SD
+#: near 2.8, and passed. The rule only ever caught straight-lining at the scale midpoint. This one
+#: reads raw answers, which is the only ordering under which the statistic means what its name says.
+STRAIGHT_LINE_SD_MIN = 0.30
 
 #: `twins.source` / `survey_submissions.data_type` for generated rows.
 SYNTHETIC_DATA_TYPE = "SYNTHETIC"
@@ -58,12 +78,43 @@ def _population_matches(data_type: str | None, population: Population) -> bool:
     return is_synthetic if population == "synthetic" else not is_synthetic
 
 
+def battery_sd(raw: dict[str, int], ref: ReferenceData) -> float | None:
+    """Population SD of one respondent's **raw** battery answers, or ``None`` below two answers.
+
+    Raw, pre-reversal, and over `battery_item_ids` — the same item set
+    `ingest/survey_intake._straight_lining` uses, so the dispersion rule here and the exact-equality
+    flag stored at intake describe the same battery and stay comparable.
+
+    ``None`` rather than ``0.0`` when there is nothing to disperse: one answer has no spread, and a
+    respondent with one answer is already dropped for missing indicators. Returning 0.0 would route
+    them to the straight-lining reason instead, which would be the wrong account of why they left.
+    """
+    values = [raw[i] for i in ref.battery_item_ids if i in raw]
+    if len(values) < 2:
+        return None
+    return statistics.pstdev(values)
+
+
 def screen(
-    submission: dict[str, Any], screening: Screening
+    submission: dict[str, Any],
+    screening: Screening,
+    *,
+    answer_sd: float | None = None,
 ) -> str | None:
     """Why this respondent is excluded, or ``None`` to keep them. `docs/07` §7.1.
 
     ``strict`` drops an attention failure, a speeder or a straight-liner. ``none`` keeps everyone.
+
+    ``answer_sd`` is :func:`battery_sd` of this respondent's raw answers. It is a parameter rather
+    than something read off ``submission`` because the **judgement** lives here while the stored
+    `straight_liner` column is a **fact** — "every battery answer was identical", written by intake
+    and by the Edge Function (`rows.mjs`) in lockstep. Keeping the threshold out of intake is what
+    lets it change without an Edge Function deploy and without rewriting a single stored row
+    (rule 6): the same answers screen differently under a different rule, and the rule that produced
+    an analysis is recorded on that analysis.
+
+    Both tests run. The stored flag catches a respondent whose answers are no longer loadable, and
+    the SD catches near-identical answers the flag cannot see.
 
     **Failing the Part 15 manipulation check never drops anyone**, under either rule. That switch
     is built and defaults off (`ARCHITECTURE.md` §10.2, decided 2026-09-28); `mc_correct` is
@@ -84,6 +135,11 @@ def screen(
         return f"completed in under {SPEEDER_SECONDS // 60} minutes"
     if submission.get("straight_liner"):
         return "straight-lined the battery"
+    if answer_sd is not None and answer_sd < STRAIGHT_LINE_SD_MIN:
+        return (
+            f"gave near-identical answers across the battery "
+            f"(SD {answer_sd:.2f}, below {STRAIGHT_LINE_SD_MIN})"
+        )
     return None
 
 
@@ -137,7 +193,14 @@ def build_matrix(
         if construct.reflective
         for item in construct.items
     )
-    arm_columns = spec.construct("ARM").items
+    # Every arm construct's single dummy, in `arms.json` order. One construct per arm since
+    # 2026-10-11, so this is a union rather than one block's items.
+    arm_columns = tuple(
+        item
+        for construct in spec.constructs
+        if construct.code.startswith(ARM_PREFIX)
+        for item in construct.items
+    )
 
     kept: list[tuple[str, dict[str, int], str]] = []
     dropped: list[tuple[str, str]] = []
@@ -155,12 +218,12 @@ def build_matrix(
             dropped.append((sid, "answered on the prototype's 1-7 scale (legacy_scale)"))
             continue
 
-        reason = screen(submission, screening)
+        raw = by_submission.get(sid, {})
+        reason = screen(submission, screening, answer_sd=battery_sd(raw, ref))
         if reason:
             dropped.append((sid, reason))
             continue
 
-        raw = by_submission.get(sid, {})
         missing = [item for item in item_columns if item not in raw]
         if missing:
             # I17: casewise deletion, never imputation. The count is named so a systematically
@@ -203,6 +266,11 @@ def build_matrix(
         screening=screening,
         dropped=tuple(dropped),
         legacy_excluded=legacy_excluded,
+        # `None` under "none": no dispersion rule was applied, which is a different fact from
+        # "applied with this threshold and dropped nobody".
+        straight_line_sd_min=(
+            STRAIGHT_LINE_SD_MIN if screening != "none" else None
+        ),
     )
 
 

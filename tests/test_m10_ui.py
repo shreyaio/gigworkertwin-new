@@ -1069,19 +1069,14 @@ async def _eligible_twins(backend, n: int, *, source: str = "real") -> list[str]
     Both filters, because the pre-flight of `ARCHITECTURE_UPDATE.md` §3.5 counts them separately
     and a test that satisfied only one would pass against the wrong message.
     """
+    from tests._qualify import qualify
+
     ids = [f"EL{i:03d}" for i in range(n)]
     for twin_id in ids:
         await _twin(backend, twin_id, source=source)
-    await backend.insert(
-        "twin_quality_runs",
-        [
-            {
-                "twin_id": twin_id, "holdout_set": "H3", "mae": 0.5, "pct_within_1": 0.9,
-                "kept": True, "items_n": 18, "detail": {}, "is_latest": True,
-            }
-            for twin_id in ids
-        ],
-    )
+        # Qualified under the live config, with both controls (`005`). A verdict made under no
+        # fingerprint, or another one, does not put a twin on a panel.
+        await qualify(backend, twin_id, kept=True)
     return ids
 
 

@@ -341,6 +341,75 @@ class AnswerRepo:
         return await self.db.select("twin_answers", [("eq", "run_id", run_id)])
 
 
+class ControlAnswerRepo:
+    """`twin_control_answers` (`005`). One answer per twin, per control, per config. Append-only.
+
+    The control cells (`00000`, `SHAM`) are answered once per twin per config inside the quality
+    gate (`docs/08` §2.4). A session's floors are assembled from these rows, so no session asks
+    them again. ``record`` looks first: a second gate run under the same config finds the row and
+    writes nothing, which is what keeps repeat runs at zero calls.
+    """
+
+    def __init__(self, backend: DbBackend | None = None) -> None:
+        self.db = _backend(backend)
+
+    async def get(
+        self, twin_id: str, control_code: str, fingerprint: str
+    ) -> dict | None:
+        rows = await self.db.select(
+            "twin_control_answers",
+            [
+                ("eq", "twin_id", twin_id),
+                ("eq", "control_code", control_code),
+                ("eq", "config_fingerprint", fingerprint),
+            ],
+            limit=1,
+        )
+        return rows[0] if rows else None
+
+    async def for_fingerprint(self, control_code: str, fingerprint: str) -> list[dict]:
+        return await self.db.select(
+            "twin_control_answers",
+            [("eq", "control_code", control_code), ("eq", "config_fingerprint", fingerprint)],
+        )
+
+    async def record(
+        self,
+        *,
+        twin_id: str,
+        control_code: str,
+        fingerprint: str,
+        answers: dict[str, int],
+        lever_order: list[int],
+        seed: int,
+        wording: str,
+        model: str,
+        prompt_version: str | None,
+        retries: int,
+        session_id: str | None,
+    ) -> dict:
+        existing = await self.get(twin_id, control_code, fingerprint)
+        if existing is not None:
+            return existing
+        rows = await self.db.insert(
+            "twin_control_answers",
+            [{
+                "twin_id": twin_id,
+                "control_code": control_code,
+                "config_fingerprint": fingerprint,
+                "answers": answers,
+                "lever_order": lever_order,
+                "seed": seed,
+                "wording": wording,
+                "model": model,
+                "prompt_version": prompt_version,
+                "retries": retries,
+                "session_id": session_id,
+            }],
+        )
+        return rows[0]
+
+
 # --------------------------------------------------------------------------- variants
 
 
